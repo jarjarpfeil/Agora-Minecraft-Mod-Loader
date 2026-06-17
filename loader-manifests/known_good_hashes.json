@@ -1,29 +1,83 @@
 {
+  "domain_allowlist": [
+    "files.minecraftforge.net",
+    "maven.fabricmc.net",
+    "maven.neoforged.net",
+    "maven.quiltmc.org",
+    "meta.fabricmc.net",
+    "meta.quiltmc.org",
+    "minecraftforge.net",
+    "neoforged.net"
+  ],
   "loader_hashes": {
     "fabric": {
-      "fabric-loader-0.15.11-1.21.json": "sha256:ba55c147092e009ef417560f3fc56a8936b395e0efc1ee8bc19d0e48030c40b9",
-      "fabric-loader-0.15.10-1.21.json": null
-    },
-    "neoforge": {
-      "neoforge-21.0.0-beta.json": null
+      "fabric-loader-0.18.6-1.21.9.json": "sha256:95004c53d2592d7ecf02df8ec889e02ea3492aee0b3689379f88ce9b6c9b52e4",
+      "fabric-loader-0.19.0-1.21.9.json": "sha256:0cc9510ce5612472a0db6ee4c5535fc26601e44f2122efeb7dd0412e9be391e4",
+      "fabric-loader-0.19.1-1.21.9.json": "sha256:44d21cb5a319afe2a244b7f00f48f681613cf0b9c7889a08032119575c803ef6",
+      "fabric-loader-0.19.2-1.21.9.json": "sha256:102072c19adcb0606b0023e92028e2a745aa38a6e7dbe39acf48b29c29a5bf89",
+      "fabric-loader-0.19.3-1.21.9.json": "sha256:c89cdf4a1620c794432768ecba74518e6824cc900b5ace6d926bc87bd5c0401b",
+      "fabric-loader-0.18.6-1.21.10.json": "sha256:05a883956fc2d1698df826add29b964e9158a594f3bd6a9d8bf3033ab0915c57",
+      "fabric-loader-0.19.0-1.21.10.json": "sha256:048cc1d54d9e55f61334c7b76f256f3f2dc25d09b5ca54bbef8d89e94e0d85e9",
+      "fabric-loader-0.19.1-1.21.10.json": "sha256:e25429c4e13ab23279d24040e9aabf1026b54124bac89f934456cc79fb616e38",
+      "fabric-loader-0.19.2-1.21.10.json": "sha256:5e59f100cb45fc8694b1eb0dfbcb26d7ff21f8abb86ee9739bc65534feccd744",
+      "fabric-loader-0.19.3-1.21.10.json": "sha256:cfbcf19b2b85e00b2cf3120404e99a2f08cdb705df4ca5eb09517be934d01241",
+      "fabric-loader-0.18.6-1.21.11.json": "sha256:d1762fe905987480bb9f7b7d0cfcbc8ef84cfe793553f73d7b10158ea8fa40a2",
+      "fabric-loader-0.19.0-1.21.11.json": "sha256:86b8da3cd658dad292eb3abec50c5408e380d039a394adca4c30ee36d4de0b67",
+      "fabric-loader-0.19.1-1.21.11.json": "sha256:b7888b59184e894ea88080a90a6e11eda6264c37f86c1b43ed20c8caf65f3546",
+      "fabric-loader-0.19.2-1.21.11.json": "sha256:bf00999c1bcf216e3f02d42eaebae1efc1af165ff841fcfb47fb2f8e4bd62346",
+      "fabric-loader-0.19.3-1.21.11.json": "sha256:eee9fadddb3edac80b394ff683caae18dd300f95b65f5bafb98a3101cf53c29a"
     },
     "quilt": {
-      "quilt-loader-0.26.0-1.21.json": "sha256:2cfcdc85cf11ab8373b0250bafadc4b28c5efd8e1e6fa282dd9e0e1a4a7fcf7b"
+      "quilt-loader-0.30.0-beta.4-1.21.9.json": "sha256:caa4237111d4a23e086891f85ca26df44515bd6d839bdeb575db8e44896ddcfe",
+      "quilt-loader-0.30.0-beta.5-1.21.9.json": "sha256:ab2fb286641dba6a5cb491786ae743bf9cd0458fcc34b27b845005a255932f7e",
+      "quilt-loader-0.30.0-beta.6-1.21.9.json": "sha256:1a120336509c96a36fbc2e2036f900e8838c1a4322573d009c36d78b6ee44a5e",
+      "quilt-loader-0.30.0-beta.7-1.21.9.json": "sha256:0044a4a2135ffaf988a13eaf1d0564d0d1a4d1b9a41380f8bec9d1b29dc00a34",
+      "quilt-loader-0.30.0-beta.8-1.21.9.json": "sha256:c8078c1c9c13eff81d20b0420b217164d8b5ca58104c4f4ad54125a2fd1b9e23",
+      "quilt-loader-0.30.0-beta.4-1.21.10.json": "sha256:41728d5d5b8ce24e2221063357564b03115dcb4957305ce3c2facdb950b46220",
+      "quilt-loader-0.30.0-beta.5-1.21.10.json": "sha256:d76346c7db8adbbed2d23c0d5c6c9f9b2d85f8eb218e6f30ea5fdb6e7f70e1b6",
+      "quilt-loader-0.30.0-beta.6-1.21.10.json": "sha256:9760cc8281b16ca3e4a1ce11ff8f45446a9de8c82a7cb4fcda866307310b6711",
+      "quilt-loader-0.30.0-beta.7-1.21.10.json": "sha256:d3dbbce094c60113c34dcdb15b10ca88f1f8f27a91a7b35a11d16519c5f8f29a",
+      "quilt-loader-0.30.0-beta.8-1.21.10.json": "sha256:88b1e9477ac2efc836313f4ff5bc1bb961b17efd7fd4274699c5a9fea9e3161e",
+      "quilt-loader-0.30.0-beta.4-1.21.11.json": "sha256:db779ad0c8af84350e2d8dbb49701ddb2493cc080dfbb1a875995df3294c620e",
+      "quilt-loader-0.30.0-beta.5-1.21.11.json": "sha256:0761fbc3a64a35c9c8d92e57fe54be197d80d330a857acf4434ff270405dec63",
+      "quilt-loader-0.30.0-beta.6-1.21.11.json": "sha256:3ddc08d2ac71685a852f49fb3031a8d90ed2a3f4a5762ad00e6acc314ccb5065",
+      "quilt-loader-0.30.0-beta.7-1.21.11.json": "sha256:9bc6d434a0b9d04d6ebc229f708e59762f8f7e78c66b031c7f9ebc8cdeec9df4",
+      "quilt-loader-0.30.0-beta.8-1.21.11.json": "sha256:d7ae0bb0833cf85139e220fbd3ae4c12a0c6daa7c82cfcb67277f280a15fafbc"
+    },
+    "neoforge": {
+      "neoforge-21.9.12-beta-installer.jar": "sha256:0e8ec0e4c9aeabb769f8d6bf4ef74ee3b5f15b3286689def722f1da50131778f",
+      "neoforge-21.9.13-beta-installer.jar": "sha256:7c86248588ac055289d90468bd5da4807d3b63dd3fdff2fbfd2b6c6590346538",
+      "neoforge-21.9.14-beta-installer.jar": "sha256:303cd3c2bc6163a6e80e4d2f5ade05a8a22cd65a2b70c09adcc7d20369ace654",
+      "neoforge-21.9.15-beta-installer.jar": "sha256:845f8d0561f699e81ab556ffa20ab835dcf24e2595c1bcd314ffca73c0481bc6",
+      "neoforge-21.9.16-beta-installer.jar": "sha256:fde025c65f042a39308e5313b6023db9f17f3d77c35a27c66d9065115759a78e",
+      "neoforge-21.10.60-beta-installer.jar": "sha256:ba3feb5c687cb557570192112827fc9c482fd7b8d30ffd68a6023282fe334b34",
+      "neoforge-21.10.61-beta-installer.jar": "sha256:71937ec6aa067a3ac5f2854773ca6180d339d333972e1a3bf5af1bf41a7b9d79",
+      "neoforge-21.10.62-beta-installer.jar": "sha256:a265a942a33552acf46d20710c8d76d1788c32e44aa590b2c2c1733f9acbf4ad",
+      "neoforge-21.10.63-installer.jar": "sha256:f935d0bba4a3f34cbacc0a36f638c0422a1750855af2b7a2362a9bedadec6bd6",
+      "neoforge-21.10.64-installer.jar": "sha256:6adb1f063358b22b050834323a4f68df47c93d082bc49a8a0a97aec22b789427",
+      "neoforge-21.11.38-beta-installer.jar": "sha256:305eb5c8185dd1ace6484b97db4e79011cc1529aeb4b0d2e2cb3903623b84e72",
+      "neoforge-21.11.39-beta-installer.jar": "sha256:8f812d42e12690fa36d240f1fb423c9549007974e3dd2a75c18e695647905c75",
+      "neoforge-21.11.40-beta-installer.jar": "sha256:68aed4ad839b0ca5976fddb2bd8d6d61ebf8e69af027aa067330e41834344a07",
+      "neoforge-21.11.41-beta-installer.jar": "sha256:a326934f0c821afd7e54196746a599d823a8edbde4850195665f80f3d5006a22",
+      "neoforge-21.11.42-installer.jar": "sha256:6917a43438905b6c000fc03d5b0148f67f6b303ce517b2dba1ea962f13050c87"
     },
     "forge": {
-      "forge-1.21-51.0.0.json": null
+      "forge-1.21.9-59.0.1-installer.jar": "sha256:8318d35ed62178d523bc7f96f18a20e0a78a167e7dac3340defaa306414e687c",
+      "forge-1.21.9-59.0.2-installer.jar": "sha256:a6d626ef4ed168f3fa06e22112abc5c328c57b841ddedeaecdeccd8e71fd6376",
+      "forge-1.21.9-59.0.3-installer.jar": "sha256:8bc59cda5bea783e2d87ede888211ca55e54b58362771402aa80166fa2889181",
+      "forge-1.21.9-59.0.4-installer.jar": "sha256:cdab5d150d1c354b8ca1748f11f73dd92255eef6f7fe6d89fc367d0c6ea268a6",
+      "forge-1.21.9-59.0.5-installer.jar": "sha256:ba5d667c645d6de1f6b53a6d9cc9d2c07de6a84e2bc25110828fe50440cd2899",
+      "forge-1.21.10-60.1.4-installer.jar": "sha256:481982db378abfbaab202bb1be40d3d90d57df95d2b99f038fbb181edf2732c2",
+      "forge-1.21.10-60.1.5-installer.jar": "sha256:dd12d92087529af44f99db97d955bc63515335b4042cc3bf1aa753f65a85f9fa",
+      "forge-1.21.10-60.1.7-installer.jar": "sha256:8fd785ae17fd47fa5172792d59bf2931ace1c8ff7d8871f652dd9205fc6fb094",
+      "forge-1.21.10-60.1.8-installer.jar": "sha256:07caa0a561ff0109a27ea97a50662be0a6ae2b2234358e34129c8aa91c92cf08",
+      "forge-1.21.10-60.1.9-installer.jar": "sha256:cda75c8812a9ba1214d832716961ea2e8b5aa53daa83dc50b9b42fb8f0a6ac7d",
+      "forge-1.21.11-61.1.3-installer.jar": "sha256:8f291074d17774093f516a6bfe5f584d10aab531c3114a71fa57ca2d5c34d9a1",
+      "forge-1.21.11-61.1.4-installer.jar": "sha256:ea24ad020d60532bc7b0cd1da78e36dcf6b782203c4081653ecb41ccfb877709",
+      "forge-1.21.11-61.1.5-installer.jar": "sha256:98b545b71d40308be0585da12f8d16c54dec0a001d7f889f4e93178606198d07",
+      "forge-1.21.11-61.1.7-installer.jar": "sha256:0666f25bc077d1df212ed21bf1ff0c8b23146079cbf80d2ef84dff04ecafa0bf",
+      "forge-1.21.11-61.1.8-installer.jar": "sha256:6afb8ab977c666d619538780b8574610a38cf59dea30508eaf9d3a99e3548af1"
     }
   },
-  "domain_allowlist": [
-    "meta.fabricmc.net",
-    "maven.fabricmc.net",
-    "neoforged.net",
-    "maven.neoforged.net",
-    "meta.quiltmc.org",
-    "maven.quiltmc.org",
-    "minecraftforge.net",
-    "files.minecraftforge.net"
-  ],
-  "verified_loaders": ["fabric", "quilt"],
-  "_readme": "NeoForge and Forge version-JSON hashes must be curated before verification is enabled. Do not trust null hashes upstream without manual review."
+  "_source": "Generated from loader_manifests.json by scripts/fetch_loader_manifests.py. Do not edit manually."
 }

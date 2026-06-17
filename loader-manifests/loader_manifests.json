@@ -1,0 +1,532 @@
+{
+  "domain_allowlist": [
+    "files.minecraftforge.net",
+    "maven.fabricmc.net",
+    "maven.neoforged.net",
+    "maven.quiltmc.org",
+    "meta.fabricmc.net",
+    "meta.quiltmc.org",
+    "minecraftforge.net",
+    "neoforged.net"
+  ],
+  "loaders": {
+    "fabric": [
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.18.6",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.9/0.18.6/profile/json",
+        "sha256": "95004c53d2592d7ecf02df8ec889e02ea3492aee0b3689379f88ce9b6c9b52e4",
+        "file_name": "fabric-loader-0.18.6-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.19.0",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.9/0.19.0/profile/json",
+        "sha256": "0cc9510ce5612472a0db6ee4c5535fc26601e44f2122efeb7dd0412e9be391e4",
+        "file_name": "fabric-loader-0.19.0-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.19.1",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.9/0.19.1/profile/json",
+        "sha256": "44d21cb5a319afe2a244b7f00f48f681613cf0b9c7889a08032119575c803ef6",
+        "file_name": "fabric-loader-0.19.1-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.19.2",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.9/0.19.2/profile/json",
+        "sha256": "102072c19adcb0606b0023e92028e2a745aa38a6e7dbe39acf48b29c29a5bf89",
+        "file_name": "fabric-loader-0.19.2-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.19.3",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.9/0.19.3/profile/json",
+        "sha256": "c89cdf4a1620c794432768ecba74518e6824cc900b5ace6d926bc87bd5c0401b",
+        "file_name": "fabric-loader-0.19.3-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.18.6",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.10/0.18.6/profile/json",
+        "sha256": "05a883956fc2d1698df826add29b964e9158a594f3bd6a9d8bf3033ab0915c57",
+        "file_name": "fabric-loader-0.18.6-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.19.0",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.10/0.19.0/profile/json",
+        "sha256": "048cc1d54d9e55f61334c7b76f256f3f2dc25d09b5ca54bbef8d89e94e0d85e9",
+        "file_name": "fabric-loader-0.19.0-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.19.1",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.10/0.19.1/profile/json",
+        "sha256": "e25429c4e13ab23279d24040e9aabf1026b54124bac89f934456cc79fb616e38",
+        "file_name": "fabric-loader-0.19.1-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.19.2",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.10/0.19.2/profile/json",
+        "sha256": "5e59f100cb45fc8694b1eb0dfbcb26d7ff21f8abb86ee9739bc65534feccd744",
+        "file_name": "fabric-loader-0.19.2-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.19.3",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.10/0.19.3/profile/json",
+        "sha256": "cfbcf19b2b85e00b2cf3120404e99a2f08cdb705df4ca5eb09517be934d01241",
+        "file_name": "fabric-loader-0.19.3-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.18.6",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.11/0.18.6/profile/json",
+        "sha256": "d1762fe905987480bb9f7b7d0cfcbc8ef84cfe793553f73d7b10158ea8fa40a2",
+        "file_name": "fabric-loader-0.18.6-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.19.0",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.11/0.19.0/profile/json",
+        "sha256": "86b8da3cd658dad292eb3abec50c5408e380d039a394adca4c30ee36d4de0b67",
+        "file_name": "fabric-loader-0.19.0-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.19.1",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.11/0.19.1/profile/json",
+        "sha256": "b7888b59184e894ea88080a90a6e11eda6264c37f86c1b43ed20c8caf65f3546",
+        "file_name": "fabric-loader-0.19.1-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.19.2",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.11/0.19.2/profile/json",
+        "sha256": "bf00999c1bcf216e3f02d42eaebae1efc1af165ff841fcfb47fb2f8e4bd62346",
+        "file_name": "fabric-loader-0.19.2-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.19.3",
+        "source_url": "https://meta.fabricmc.net/v2/versions/loader/1.21.11/0.19.3/profile/json",
+        "sha256": "eee9fadddb3edac80b394ff683caae18dd300f95b65f5bafb98a3101cf53c29a",
+        "file_name": "fabric-loader-0.19.3-1.21.11.json",
+        "file_type": "profile_json"
+      }
+    ],
+    "quilt": [
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.30.0-beta.4",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.9/0.30.0-beta.4/profile/json",
+        "sha256": "caa4237111d4a23e086891f85ca26df44515bd6d839bdeb575db8e44896ddcfe",
+        "file_name": "quilt-loader-0.30.0-beta.4-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.30.0-beta.5",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.9/0.30.0-beta.5/profile/json",
+        "sha256": "ab2fb286641dba6a5cb491786ae743bf9cd0458fcc34b27b845005a255932f7e",
+        "file_name": "quilt-loader-0.30.0-beta.5-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.30.0-beta.6",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.9/0.30.0-beta.6/profile/json",
+        "sha256": "1a120336509c96a36fbc2e2036f900e8838c1a4322573d009c36d78b6ee44a5e",
+        "file_name": "quilt-loader-0.30.0-beta.6-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.30.0-beta.7",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.9/0.30.0-beta.7/profile/json",
+        "sha256": "0044a4a2135ffaf988a13eaf1d0564d0d1a4d1b9a41380f8bec9d1b29dc00a34",
+        "file_name": "quilt-loader-0.30.0-beta.7-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "0.30.0-beta.8",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.9/0.30.0-beta.8/profile/json",
+        "sha256": "c8078c1c9c13eff81d20b0420b217164d8b5ca58104c4f4ad54125a2fd1b9e23",
+        "file_name": "quilt-loader-0.30.0-beta.8-1.21.9.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.30.0-beta.4",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.10/0.30.0-beta.4/profile/json",
+        "sha256": "41728d5d5b8ce24e2221063357564b03115dcb4957305ce3c2facdb950b46220",
+        "file_name": "quilt-loader-0.30.0-beta.4-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.30.0-beta.5",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.10/0.30.0-beta.5/profile/json",
+        "sha256": "d76346c7db8adbbed2d23c0d5c6c9f9b2d85f8eb218e6f30ea5fdb6e7f70e1b6",
+        "file_name": "quilt-loader-0.30.0-beta.5-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.30.0-beta.6",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.10/0.30.0-beta.6/profile/json",
+        "sha256": "9760cc8281b16ca3e4a1ce11ff8f45446a9de8c82a7cb4fcda866307310b6711",
+        "file_name": "quilt-loader-0.30.0-beta.6-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.30.0-beta.7",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.10/0.30.0-beta.7/profile/json",
+        "sha256": "d3dbbce094c60113c34dcdb15b10ca88f1f8f27a91a7b35a11d16519c5f8f29a",
+        "file_name": "quilt-loader-0.30.0-beta.7-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "0.30.0-beta.8",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.10/0.30.0-beta.8/profile/json",
+        "sha256": "88b1e9477ac2efc836313f4ff5bc1bb961b17efd7fd4274699c5a9fea9e3161e",
+        "file_name": "quilt-loader-0.30.0-beta.8-1.21.10.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.30.0-beta.4",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.11/0.30.0-beta.4/profile/json",
+        "sha256": "db779ad0c8af84350e2d8dbb49701ddb2493cc080dfbb1a875995df3294c620e",
+        "file_name": "quilt-loader-0.30.0-beta.4-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.30.0-beta.5",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.11/0.30.0-beta.5/profile/json",
+        "sha256": "0761fbc3a64a35c9c8d92e57fe54be197d80d330a857acf4434ff270405dec63",
+        "file_name": "quilt-loader-0.30.0-beta.5-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.30.0-beta.6",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.11/0.30.0-beta.6/profile/json",
+        "sha256": "3ddc08d2ac71685a852f49fb3031a8d90ed2a3f4a5762ad00e6acc314ccb5065",
+        "file_name": "quilt-loader-0.30.0-beta.6-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.30.0-beta.7",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.11/0.30.0-beta.7/profile/json",
+        "sha256": "9bc6d434a0b9d04d6ebc229f708e59762f8f7e78c66b031c7f9ebc8cdeec9df4",
+        "file_name": "quilt-loader-0.30.0-beta.7-1.21.11.json",
+        "file_type": "profile_json"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "0.30.0-beta.8",
+        "source_url": "https://meta.quiltmc.org/v3/versions/loader/1.21.11/0.30.0-beta.8/profile/json",
+        "sha256": "d7ae0bb0833cf85139e220fbd3ae4c12a0c6daa7c82cfcb67277f280a15fafbc",
+        "file_name": "quilt-loader-0.30.0-beta.8-1.21.11.json",
+        "file_type": "profile_json"
+      }
+    ],
+    "neoforge": [
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "21.9.12-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.9.12-beta/neoforge-21.9.12-beta-installer.jar",
+        "sha256": "0e8ec0e4c9aeabb769f8d6bf4ef74ee3b5f15b3286689def722f1da50131778f",
+        "file_name": "neoforge-21.9.12-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "1e27f94f6a3ed80981467e6a6d866b433183afd2ad745d5aa3dffce690e74acc"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "21.9.13-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.9.13-beta/neoforge-21.9.13-beta-installer.jar",
+        "sha256": "7c86248588ac055289d90468bd5da4807d3b63dd3fdff2fbfd2b6c6590346538",
+        "file_name": "neoforge-21.9.13-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "715641483010304297ddbb27df825a3103e2dac4081c060bb41342fd239c409f"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "21.9.14-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.9.14-beta/neoforge-21.9.14-beta-installer.jar",
+        "sha256": "303cd3c2bc6163a6e80e4d2f5ade05a8a22cd65a2b70c09adcc7d20369ace654",
+        "file_name": "neoforge-21.9.14-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "11af5904502e826329a79e66367f446d710bd17420050c5e0419744acaaeb9a1"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "21.9.15-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.9.15-beta/neoforge-21.9.15-beta-installer.jar",
+        "sha256": "845f8d0561f699e81ab556ffa20ab835dcf24e2595c1bcd314ffca73c0481bc6",
+        "file_name": "neoforge-21.9.15-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "aaaa5f7a0f32ea027fc18c7428655eaacb0f997306cd0adcf25fb0f2a47df213"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "21.9.16-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.9.16-beta/neoforge-21.9.16-beta-installer.jar",
+        "sha256": "fde025c65f042a39308e5313b6023db9f17f3d77c35a27c66d9065115759a78e",
+        "file_name": "neoforge-21.9.16-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "0988c31e4b2466d59998d587bb3d87308f0014579200deead688c6ec795164b4"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "21.10.60-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.10.60-beta/neoforge-21.10.60-beta-installer.jar",
+        "sha256": "ba3feb5c687cb557570192112827fc9c482fd7b8d30ffd68a6023282fe334b34",
+        "file_name": "neoforge-21.10.60-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "19eb3d0b2e4556bc77c640b566eff100dd669f392822560aaee0db46f48e8da5"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "21.10.61-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.10.61-beta/neoforge-21.10.61-beta-installer.jar",
+        "sha256": "71937ec6aa067a3ac5f2854773ca6180d339d333972e1a3bf5af1bf41a7b9d79",
+        "file_name": "neoforge-21.10.61-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "667db4ebce838a830270e3899c15f9c5ebec478fd70b7eb100ce73c8b067a5ff"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "21.10.62-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.10.62-beta/neoforge-21.10.62-beta-installer.jar",
+        "sha256": "a265a942a33552acf46d20710c8d76d1788c32e44aa590b2c2c1733f9acbf4ad",
+        "file_name": "neoforge-21.10.62-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "74e88c9f69c64a88728a6822b8b402de2674f0e8ba348ba9bc7231eefd7f4e9b"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "21.10.63",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.10.63/neoforge-21.10.63-installer.jar",
+        "sha256": "f935d0bba4a3f34cbacc0a36f638c0422a1750855af2b7a2362a9bedadec6bd6",
+        "file_name": "neoforge-21.10.63-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "50e2361bb3453519b6e4c1a4db7a2ed6f8f1d6ff55286a4b47cd1df07fb0770d"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "21.10.64",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.10.64/neoforge-21.10.64-installer.jar",
+        "sha256": "6adb1f063358b22b050834323a4f68df47c93d082bc49a8a0a97aec22b789427",
+        "file_name": "neoforge-21.10.64-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "da6b84f5b61209a9e0a60767b8c1f047d53b745f5a60b50d25a41ab6c9ede197"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "21.11.38-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.11.38-beta/neoforge-21.11.38-beta-installer.jar",
+        "sha256": "305eb5c8185dd1ace6484b97db4e79011cc1529aeb4b0d2e2cb3903623b84e72",
+        "file_name": "neoforge-21.11.38-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "5a81327a96b1ac68a826d707ea4ecce90ab12e697584423c50024e5f31e89454"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "21.11.39-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.11.39-beta/neoforge-21.11.39-beta-installer.jar",
+        "sha256": "8f812d42e12690fa36d240f1fb423c9549007974e3dd2a75c18e695647905c75",
+        "file_name": "neoforge-21.11.39-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "ebc0da4b063c03f3d0b8d00e0729416bcb018d987c286e6f332a046995cdcb66"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "21.11.40-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.11.40-beta/neoforge-21.11.40-beta-installer.jar",
+        "sha256": "68aed4ad839b0ca5976fddb2bd8d6d61ebf8e69af027aa067330e41834344a07",
+        "file_name": "neoforge-21.11.40-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "e109afc89e591d9542071ad16c4f45796206d5d11a3dddb69407a42b2cbf72f1"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "21.11.41-beta",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.11.41-beta/neoforge-21.11.41-beta-installer.jar",
+        "sha256": "a326934f0c821afd7e54196746a599d823a8edbde4850195665f80f3d5006a22",
+        "file_name": "neoforge-21.11.41-beta-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "4bcaed1afe99ff4882bc1efb0ebcf51babfb1bddc076684ad3644901a7b11eaa"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "21.11.42",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.11.42/neoforge-21.11.42-installer.jar",
+        "sha256": "6917a43438905b6c000fc03d5b0148f67f6b303ce517b2dba1ea962f13050c87",
+        "file_name": "neoforge-21.11.42-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "1d8318e352239f7e8fadd6973612404bd2f865510af4b7af87651bc31009445f"
+      }
+    ],
+    "forge": [
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "59.0.1",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.9-59.0.1/forge-1.21.9-59.0.1-installer.jar",
+        "sha256": "8318d35ed62178d523bc7f96f18a20e0a78a167e7dac3340defaa306414e687c",
+        "file_name": "forge-1.21.9-59.0.1-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "aba3907314234c9d563af02079041fb738322deedda85981be354bb4a9355351"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "59.0.2",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.9-59.0.2/forge-1.21.9-59.0.2-installer.jar",
+        "sha256": "a6d626ef4ed168f3fa06e22112abc5c328c57b841ddedeaecdeccd8e71fd6376",
+        "file_name": "forge-1.21.9-59.0.2-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "57ca904addffab0260c7001daf8e241d008cc4d38f6d7dab3855602801c6e751"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "59.0.3",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.9-59.0.3/forge-1.21.9-59.0.3-installer.jar",
+        "sha256": "8bc59cda5bea783e2d87ede888211ca55e54b58362771402aa80166fa2889181",
+        "file_name": "forge-1.21.9-59.0.3-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "b83caa706abb51cf7887294d302c8a386e81ae28bfdbb486d72ea2d8f287597e"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "59.0.4",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.9-59.0.4/forge-1.21.9-59.0.4-installer.jar",
+        "sha256": "cdab5d150d1c354b8ca1748f11f73dd92255eef6f7fe6d89fc367d0c6ea268a6",
+        "file_name": "forge-1.21.9-59.0.4-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "e5047c4466f2907bdd403cb76ae585bd580dfc664a7f8052adc0ff2803c30ea3"
+      },
+      {
+        "mc_version": "1.21.9",
+        "loader_version": "59.0.5",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.9-59.0.5/forge-1.21.9-59.0.5-installer.jar",
+        "sha256": "ba5d667c645d6de1f6b53a6d9cc9d2c07de6a84e2bc25110828fe50440cd2899",
+        "file_name": "forge-1.21.9-59.0.5-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "8682aae0e82ef03c3c7e514db5842e27782d9c0e2edc95e395feb571303b3a88"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "60.1.4",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.10-60.1.4/forge-1.21.10-60.1.4-installer.jar",
+        "sha256": "481982db378abfbaab202bb1be40d3d90d57df95d2b99f038fbb181edf2732c2",
+        "file_name": "forge-1.21.10-60.1.4-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "9a432404cf67e205f6687c67a6bc0e4a31469efeddb102eabed18e9e1f19e7fd"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "60.1.5",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.10-60.1.5/forge-1.21.10-60.1.5-installer.jar",
+        "sha256": "dd12d92087529af44f99db97d955bc63515335b4042cc3bf1aa753f65a85f9fa",
+        "file_name": "forge-1.21.10-60.1.5-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "9e24f4e68d2ec4f9db838a63365066ad7d07603af76ff8b28bcaf83395c7b1e0"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "60.1.7",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.10-60.1.7/forge-1.21.10-60.1.7-installer.jar",
+        "sha256": "8fd785ae17fd47fa5172792d59bf2931ace1c8ff7d8871f652dd9205fc6fb094",
+        "file_name": "forge-1.21.10-60.1.7-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "a89b6837b57e170b4aa4285f57ac12d0caa25089a492248e2620c6b3264880cd"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "60.1.8",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.10-60.1.8/forge-1.21.10-60.1.8-installer.jar",
+        "sha256": "07caa0a561ff0109a27ea97a50662be0a6ae2b2234358e34129c8aa91c92cf08",
+        "file_name": "forge-1.21.10-60.1.8-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "5f54ff71179c6e3a80c3bcbe1eeee9c8141ed4902d4d90dd4c0fe26a96077c9e"
+      },
+      {
+        "mc_version": "1.21.10",
+        "loader_version": "60.1.9",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.10-60.1.9/forge-1.21.10-60.1.9-installer.jar",
+        "sha256": "cda75c8812a9ba1214d832716961ea2e8b5aa53daa83dc50b9b42fb8f0a6ac7d",
+        "file_name": "forge-1.21.10-60.1.9-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "e306935c90f26cacf93aa85f69e0f70e4f6c13a33e45919cf4c7e125c3ca9b01"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "61.1.3",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.11-61.1.3/forge-1.21.11-61.1.3-installer.jar",
+        "sha256": "8f291074d17774093f516a6bfe5f584d10aab531c3114a71fa57ca2d5c34d9a1",
+        "file_name": "forge-1.21.11-61.1.3-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "299e9d90e8bc279b945871deaca148c426ab8c628e7561aa4581b4e83003cb9b"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "61.1.4",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.11-61.1.4/forge-1.21.11-61.1.4-installer.jar",
+        "sha256": "ea24ad020d60532bc7b0cd1da78e36dcf6b782203c4081653ecb41ccfb877709",
+        "file_name": "forge-1.21.11-61.1.4-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "5594e9a3c2dad5054d922efb834b03091fcefb828c5e913201130bdd993bf550"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "61.1.5",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.11-61.1.5/forge-1.21.11-61.1.5-installer.jar",
+        "sha256": "98b545b71d40308be0585da12f8d16c54dec0a001d7f889f4e93178606198d07",
+        "file_name": "forge-1.21.11-61.1.5-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "b7c98f77e3587d2d959c584fc5cfc054f38e9a0abb456b3d0bdfd160f80fab64"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "61.1.7",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.11-61.1.7/forge-1.21.11-61.1.7-installer.jar",
+        "sha256": "0666f25bc077d1df212ed21bf1ff0c8b23146079cbf80d2ef84dff04ecafa0bf",
+        "file_name": "forge-1.21.11-61.1.7-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "45a057220610c867aab7839d4b08094b47217401bd6ee3164418a12fa882897f"
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "61.1.8",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.11-61.1.8/forge-1.21.11-61.1.8-installer.jar",
+        "sha256": "6afb8ab977c666d619538780b8574610a38cf59dea30508eaf9d3a99e3548af1",
+        "file_name": "forge-1.21.11-61.1.8-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "2d9017f455c9c2ffb2b9dc5717a8eef7d5da75dd282b9edf6a17207327c56e95"
+      }
+    ]
+  }
+}

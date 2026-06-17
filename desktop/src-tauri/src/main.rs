@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    curated_launcher_lib::run();
+    agora_lib::run();
 }

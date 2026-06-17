@@ -1,6 +1,6 @@
 ---
 name: registry-curation
-description: Rules for curating the Fine Wine flat-file registry.
+description: Rules for curating the Agora flat-file registry.
 ---
 # Registry Curation
 

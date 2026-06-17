@@ -1,4 +1,4 @@
-# Fine Wine — Premium Curated Minecraft Mod Launcher
+# Agora Minecraft Mod Launcher
 
 > This is not a warehouse. This is a boutique.
 
@@ -6,7 +6,7 @@ A decentralized, ad-free, open-source Minecraft mod launcher and discovery platf
 
 ## Mission
 
-The **"Fine Wine"** mission is simple: bypass centralized commercial infrastructure and serve a high-quality, community-governed catalog directly from developer-controlled sources. If traditional mod platforms are a beer, this is fine wine.
+The **"Agora"** mission is simple: bypass centralized commercial infrastructure and serve a high-quality, community-governed catalog directly from developer-controlled sources. If traditional mod platforms are a beer, this is Agora.
 
 Core principles:
 
@@ -122,6 +122,6 @@ This repository includes Kilo agent configuration under `.kilo/`:
 - `.kilo/kilo.json` — project-level model, permissions, MCP, and skill settings.
 - `.kilo/agent/*.md` — agent profiles (`code`, `security`, `registry-curator`, `reviewer`).
 - `.kilo/command/*.md` — slash commands: `/registry`, `/desktop`, `/web`, `/review`.
-- `.kilo/skills/*/` — project-specific skills: `fine-wine-architecture`, `tauri-security`, `registry-curation`.
+- `.kilo/skills/*/` — project-specific skills: `agora-architecture`, `tauri-security`, `registry-curation`.
 
 See [`AGENTS.md`](./AGENTS.md) for the canonical guide to agent interactions and standards.

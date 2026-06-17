@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 """
-Nightly compiler skeleton for the Fine Wine curated mod registry.
+Nightly compiler skeleton for the Agora curated mod registry.
 
 Reads JSON manifests from registry/ and crash-signatures/, builds an in-memory
 SQLite database matching the client-side schema, and emits registry.db plus an
@@ -32,6 +32,31 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_DIR = REPO_ROOT / "registry"
 CRASH_SIGNATURES_DIR = REPO_ROOT / "crash-signatures"
 LOADER_MANIFESTS_DIR = REPO_ROOT / "loader-manifests"
+
+
+def _load_dotenv(path: Path) -> None:
+    """Load KEY=VALUE pairs from a .env file into os.environ without overriding."""
+    if not path.exists():
+        return
+    with path.open("r", encoding="utf-8") as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key.startswith("export "):
+                key = key[7:].strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_dotenv(REPO_ROOT / ".env")
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -372,19 +397,28 @@ def insert_crash_signature(conn: sqlite3.Connection, sig: dict[str, Any]) -> Non
 
 
 def load_loader_manifests(conn: sqlite3.Connection) -> None:
-    """Ingest known_good_hashes.json into system_config."""
-    manifest_path = LOADER_MANIFESTS_DIR / "known_good_hashes.json"
-    if not manifest_path.exists():
+    """Ingest loader manifests into system_config.
+
+    Prefers the richer loader_manifests.json schema when available and falls
+    back to the legacy known_good_hashes.json for compatibility.
+    """
+    manifest_path = LOADER_MANIFESTS_DIR / "loader_manifests.json"
+    fallback_path = LOADER_MANIFESTS_DIR / "known_good_hashes.json"
+    if manifest_path.exists():
+        selected_path = manifest_path
+    elif fallback_path.exists():
+        selected_path = fallback_path
+    else:
         logger.warning("Loader manifest not found: %s", manifest_path)
         return
 
-    with manifest_path.open("r", encoding="utf-8") as fh:
+    with selected_path.open("r", encoding="utf-8") as fh:
         data = json.load(fh)
 
     cursor = conn.cursor()
     cursor.execute(
         "INSERT OR REPLACE INTO system_config (key, value_json) VALUES (?, ?)",
-        ("known_good_hashes", json.dumps(data, separators=(",", ":"))),
+        ("loader_manifests", json.dumps(data, separators=(",", ":"))),
     )
 
 

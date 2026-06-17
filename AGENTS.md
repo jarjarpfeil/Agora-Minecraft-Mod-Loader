@@ -1,10 +1,10 @@
-# Agent Guide: Fine Wine
+# Agent Guide: Agora
 
 ## Mission & Ethos
 
-Fine Wine is a decentralized, ad-free, open-source Minecraft mod launcher and discovery platform. It returns platform control to the community by treating the GitHub repository itself as the database: flat-file manifests are compiled into a signed SQLite registry, and the app delegates authentication and game execution to the official Mojang launcher.
+Agora is a decentralized, ad-free, open-source Minecraft mod launcher and discovery platform. It returns platform control to the community by treating the GitHub repository itself as the database: flat-file manifests are compiled into a signed SQLite registry, and the app delegates authentication and game execution to the official Mojang launcher.
 
-> "If CurseForge were a beer, this would be fine wine."
+> "If CurseForge were a beer, this would be Agora."
 
 Core values:
 - **$0.00/month server footprint.** No backend services; data ships via GitHub Release Assets and static sites.
@@ -54,10 +54,10 @@ Core values:
 
 ## MCP Server
 
-When the optional Fine Wine launcher MCP server is running locally, agents can interact with it through Kilo's MCP panel. It is bound to `127.0.0.1:39741`, is disabled by default in this project's configuration, and requires a Bearer token via the `LAUNCHER_MCP_TOKEN` environment variable. Keep MCP calls stateless and avoid privileged operations without explicit user approval.
+When the optional Agora launcher MCP server is running locally, agents can interact with it through Kilo's MCP panel. It is bound to `127.0.0.1:39741`, is disabled by default in this project's configuration, and requires a Bearer token via the `LAUNCHER_MCP_TOKEN` environment variable. Keep MCP calls stateless and avoid privileged operations without explicit user approval.
 
 ## Environment Variables
 
 - `ED25519_PRIVATE_KEY` — CI-only Ed25519 key used to sign `registry.db`. Never expose or bundle it.
-- `LAUNCHER_MCP_TOKEN` — Optional Bearer token for the local Fine Wine launcher MCP server.
+- `LAUNCHER_MCP_TOKEN` — Optional Bearer token for the local Agora launcher MCP server.
 - `GITHUB_TOKEN` — Standard GitHub token for compiler and CI operations.

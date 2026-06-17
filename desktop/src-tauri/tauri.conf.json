@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Curated Launcher",
+  "productName": "Agora",
   "version": "0.1.0",
-  "identifier": "io.curated-launcher.app",
+  "identifier": "io.agora-mc.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Curated Launcher",
+        "title": "Agora",
         "width": 1280,
         "height": 800,
         "minWidth": 900,

@@ -33,12 +33,12 @@
 
 ## 0. PROJECT ETHOS & PHILOSOPHY
 
-### The "Fine Wine" Mission
+### The "Agora" Mission
 This is not a warehouse. This is a boutique.
 
 The project is a decentralized, ad-free, open-source Minecraft mod launcher and discovery platform designed to capitalize on community pushback against corporate consolidation (e.g., Spark Universe acquiring Modrinth). The explicit goal is to return platform control to the community while bypassing all centralized commercial infrastructure entirely.
 
-If CurseForge were a beer, this would be fine wine.
+If CurseForge were a beer, this would be Agora.
 
 ### Core Constraints (Non-Negotiable)
 - **$0.00/Month Server Footprint.** No backend servers. No proprietary databases. No hosted APIs. All infrastructure is offloaded to GitHub, GitHub Release Assets, and the official Mojang launcher.
@@ -286,7 +286,7 @@ Community-submitted regex patterns create a ReDoS (Regular Expression Denial of 
 
 4. **Trust Score Filtering** (applied to every reacting user):
     - **Account age:** Must be older than 30 days (`createdAt` check). *Note: public repository check was explicitly excluded to avoid disenfranchising non-developer users.*
-    - **Activity threshold:** Must have at least 3 interactions (issues opened, comments, PRs, or reactions) across repositories owned by the curated-launcher organization. This is queryable via the GitHub GraphQL API using `user.contributionsCollection` scoped to the org.
+    - **Activity threshold:** Must have at least 3 interactions (issues opened, comments, PRs, or reactions) across repositories owned by the agora-mc organization. This is queryable via the GitHub GraphQL API using `user.contributionsCollection` scoped to the org.
     - If account fails either check: reaction is left on GitHub but assigned a **weight of 0** in compilation. Bad actors waste time clicking buttons that have zero structural impact. No notification is sent.
 
    **Sybil Attack Resistance:** The base thresholds (30-day age + 3 comments) are cheap for bot farms to overcome at scale (create 1000 accounts, wait 30 days, leave 3 comments each). To mitigate this without disenfranchising legitimate users:
@@ -349,7 +349,7 @@ The launcher maintains **two separate SQLite databases**:
 
 1. **`registry.db`** — Read-only global state downloaded from GitHub Release Assets. This database is treated as immutable by the launcher. It contains curated mod metadata, social metrics, categories, crash signatures, and curated reviews. The launcher never writes to this file.
 
-2. **`local_state.db`** — Read-write local state stored in the user's app data directory (`%APPDATA%/curated-launcher/local_state.db`, etc.). This contains user settings, instance metadata, launch history, crash telemetry, MCP approval grants, cached registry release tag, and any other mutable application state.
+2. **`local_state.db`** — Read-write local state stored in the user's app data directory (`%APPDATA%/agora-mc/local_state.db`, etc.). This contains user settings, instance metadata, launch history, crash telemetry, MCP approval grants, cached registry release tag, and any other mutable application state.
 
 **Why the Split:**
 - Prevents file-system locking bugs where a downloaded read-only database competes with runtime writes.
@@ -876,7 +876,7 @@ The launcher's UI includes a "🚩 Flag Review" button on every comment. This mu
         │
         ▼
 [Tauri app creates a GitHub Issue directly via the GitHub REST API]
-  Target: Private admin repo (e.g., `curated-launcher/admin-alerts`)
+  Target: Private admin repo (e.g., `agora-mc/admin-alerts`)
   Using: The user's OAuth token with `public_repo` scope
   Title: "[REPORT] Low-effort/Toxic comment on Mod: <mod_name>"
   Body: Direct link to the comment ID + quoted text + reporter's username
@@ -919,7 +919,7 @@ Main Content Area: Dynamic based on sidebar selection
 
 On the app's first launch (or if `registry.db` has never been downloaded):
 
-1. **Welcome Screen:** Displays the "Fine Wine" mission statement and project ethos. A "Get Started" button proceeds.
+1. **Welcome Screen:** Displays the "Agora" mission statement and project ethos. A "Get Started" button proceeds.
 
 2. **Integration Configuration (Optional — Default Disabled):**
    Before any other setup, the user is presented with a clean, minimal screen titled **"Connect External Services"** with the subtitle *"These are completely optional. You can change your mind at any time in Settings."*
@@ -1376,11 +1376,11 @@ The OAuth token is **never stored in plaintext** on the filesystem. Instead, it 
 | macOS | Keychain (via `keyring` crate) |
 | Linux | Secret Service (via `keyring` crate) |
 
-The `keyring` Rust crate provides a cross-platform abstraction over these stores. The token is stored as a single entry (e.g., `io.curated-launcher.github-token`) and is never written to configuration files, environment variables, or local SQLite databases.
+The `keyring` Rust crate provides a cross-platform abstraction over these stores. The token is stored as a single entry (e.g., `io.agora-mc.github-token`) and is never written to configuration files, environment variables, or local SQLite databases.
 
 **Degraded Security Fallback:** If the keyring is unavailable (common on headless Linux, WSL, or minimal distributions without D-Bus/Secret Service), the launcher falls back to local encryption:
 - Derive a key from the OS username + machine ID (e.g., Windows SID, Linux machine-id, macOS hardware UUID) using PBKDF2.
-- Encrypt the token with AES-256-GCM and store the ciphertext in the app's local data directory (`%APPDATA%/curated-launcher/tokens.enc` on Windows, `~/.config/curated-launcher/tokens.enc` on Linux, `~/Library/Application Support/curated-launcher/tokens.enc` on macOS).
+- Encrypt the token with AES-256-GCM and store the ciphertext in the app's local data directory (`%APPDATA%/agora-mc/tokens.enc` on Windows, `~/.config/agora-mc/tokens.enc` on Linux, `~/Library/Application Support/agora-mc/tokens.enc` on macOS).
 - Display a persistent warning in Settings: *"Credential store unavailable. Token encrypted with a machine-bound key. This is less secure than OS keychain storage."*
 - If the machine ID changes (e.g., OS reinstall, VM migration), the encrypted token becomes unreadable and the user must re-authenticate.
 
@@ -1444,7 +1444,7 @@ Rust reads the official `~/.minecraft/launcher_profiles.json`, then injects a ne
 
 ```json
 "curated-optimized-survival": {
-  "name": "Optimized Survival (Curated Launcher)",
+  "name": "Optimized Survival (Agora)",
   "type": "custom",
   "created": "<ISO timestamp>",
   "lastVersionId": "fabric-loader-0.15.11-1.21",
@@ -1982,7 +1982,7 @@ This section gives a concrete build order so a coding agent (or human developer)
 2. **Seed registry with 5–10 example mods** (Sodium, Iris, Lithium, Fabric API, etc.) using `github_release` strategy.
 3. **Create `loader-manifests/known_good_hashes.json`** with pinned hashes for Fabric, NeoForge, Quilt, Forge for the current Minecraft version.
 4. **Create the separate `launcher-media` repository** for custom banners.
-5. **Create the private `curated-launcher/admin-alerts` repository** for flag reports and triage alerts.
+5. **Create the private `agora-mc/admin-alerts` repository** for flag reports and triage alerts.
 
 ### Phase 1: Compiler (Python GitHub Action) — Module 1
 

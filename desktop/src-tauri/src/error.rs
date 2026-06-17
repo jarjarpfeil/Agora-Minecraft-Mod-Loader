@@ -35,6 +35,14 @@ pub enum LauncherError {
     MojangNotFound,
     /// ERR_LAUNCH_FAILED — Could not start Minecraft.
     LaunchFailed,
+    /// ERR_LOCAL_STATE_FAILED — Local state database error.
+    LocalStateFailed,
+    /// ERR_INSTANCE_CREATE_FAILED — Could not create instance.
+    InstanceCreateFailed,
+    /// ERR_PROFILE_WRITE_FAILED — Could not update Mojang launcher profiles.
+    ProfileWriteFailed,
+    /// ERR_REGISTRY_MISSING — Cached registry database is missing.
+    RegistryMissing,
     /// ERR_UNSUPPORTED_LOADER — This modloader version is not yet verified.
     UnsupportedLoader,
     /// ERR_VERSION_NOT_FOUND — Requested mod version not found.
@@ -70,6 +78,10 @@ impl LauncherError {
             LauncherError::SandboxUnavailable => "ERR_SANDBOX_UNAVAILABLE".to_string(),
             LauncherError::MojangNotFound => "ERR_MOJANG_NOT_FOUND".to_string(),
             LauncherError::LaunchFailed => "ERR_LAUNCH_FAILED".to_string(),
+            LauncherError::LocalStateFailed => "ERR_LOCAL_STATE_FAILED".to_string(),
+            LauncherError::InstanceCreateFailed => "ERR_INSTANCE_CREATE_FAILED".to_string(),
+            LauncherError::ProfileWriteFailed => "ERR_PROFILE_WRITE_FAILED".to_string(),
+            LauncherError::RegistryMissing => "ERR_REGISTRY_MISSING".to_string(),
             LauncherError::UnsupportedLoader => "ERR_UNSUPPORTED_LOADER".to_string(),
             LauncherError::VersionNotFound => "ERR_VERSION_NOT_FOUND".to_string(),
             LauncherError::DependencyMissing => "ERR_DEPENDENCY_MISSING".to_string(),
@@ -129,6 +141,18 @@ impl std::fmt::Display for LauncherError {
             }
             LauncherError::LaunchFailed => {
                 write!(f, "Could not start Minecraft. Check the logs for details.")
+            }
+            LauncherError::LocalStateFailed => {
+                write!(f, "Local state database error. The app may be misconfigured or out of disk space.")
+            }
+            LauncherError::InstanceCreateFailed => {
+                write!(f, "Could not create the instance.")
+            }
+            LauncherError::ProfileWriteFailed => {
+                write!(f, "Could not update the Mojang launcher profiles. The file may be locked or corrupt.")
+            }
+            LauncherError::RegistryMissing => {
+                write!(f, "The cached registry database is missing. Please connect to the internet and restart.")
             }
             LauncherError::UnsupportedLoader => {
                 write!(f, "This modloader version is not yet verified by the curation team.")

@@ -1,4 +1,4 @@
-# Curated Launcher (Desktop)
+# Agora (Desktop)
 
 Tauri + React + Tailwind CSS desktop shell for the curated Minecraft mod launcher.
 

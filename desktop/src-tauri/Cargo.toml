@@ -1,12 +1,12 @@
 [package]
-name = "curated-launcher"
+name = "agora"
 version = "0.1.0"
-description = "Curated Minecraft mod launcher and discovery platform"
-authors = ["Curated Launcher Contributors"]
+description = "Agora Minecraft Mod Launcher"
+authors = ["Agora Contributors"]
 edition = "2021"
 
 [lib]
-name = "curated_launcher_lib"
+name = "agora_lib"
 path = "src/lib.rs"
 
 [build-dependencies]
@@ -21,6 +21,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+sha2 = "0.10"
+hex = "0.4"
+trash = "3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-cli = "2"

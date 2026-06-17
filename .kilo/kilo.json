@@ -26,7 +26,7 @@
     "paths": ["./.kilo/skills"]
   },
   "mcp": {
-    "fine-wine-launcher": {
+    "agora-mc": {
       "type": "remote",
       "url": "http://127.0.0.1:39741/sse",
       "headers": {

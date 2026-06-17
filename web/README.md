@@ -1,4 +1,4 @@
-# Curated Launcher (Web)
+# Agora (Web)
 
 Static Next.js website for the public curated mod directory.
 

@@ -10,7 +10,7 @@ export function Sidebar({ tabs, activeTab, onSelectTab }: SidebarProps) {
   return (
     <aside className="w-64 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-[rgb(var(--surface))]">
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <h1 className="text-lg font-bold tracking-tight">Curated Launcher</h1>
+        <h1 className="text-lg font-bold tracking-tight">Agora</h1>
         <p className="text-xs text-[rgb(var(--muted))] mt-1">Boutique mod discovery</p>
       </div>
       <nav className="flex-1 p-3 space-y-1">

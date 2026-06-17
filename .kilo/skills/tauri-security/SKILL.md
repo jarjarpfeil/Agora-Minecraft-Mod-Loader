@@ -4,7 +4,7 @@ description: Security hardening rules for the Tauri desktop application.
 ---
 # Tauri Security
 
-Security rules for the Fine Wine desktop app. Apply these whenever modifying `desktop/` configuration or code.
+Security rules for the Agora desktop app. Apply these whenever modifying `desktop/` configuration or code.
 
 ## Capability Scoping
 
