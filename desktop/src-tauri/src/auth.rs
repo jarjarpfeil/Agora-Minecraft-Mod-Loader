@@ -1,13 +1,36 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::time::Duration;
 
 use crate::error::{LauncherError, LauncherResult};
+
+/// Append a diagnostic line to `agora-device-flow.log` in the OS temp dir.
+///
+/// On Windows the Tauri exe detaches from the launching terminal, so stderr
+/// vanishes. File logging lets the user inspect what GitHub is actually
+/// returning during the OAuth Device Flow poll. Lines are timestamped and
+/// flushed synchronously. Public so other modules (e.g. `commands.rs`) can
+/// share the same log sink.
+pub fn log_line(line: &str) {
+    let stamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let entry = format!("[{stamp}] {line}\n");
+    // std::env::temp_dir() = %TEMP% on Windows, /tmp on Unix. Always writable.
+    let path = std::env::temp_dir().join("agora-device-flow.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = f.write_all(entry.as_bytes());
+        let _ = f.flush();
+    }
+}
 
 /// GitHub OAuth Device Flow client id. Empty string means OAuth is not configured
 /// for this build; callers that need a value should check for emptiness first.
 pub const AGORA_OAUTH_CLIENT_ID: &str = match option_env!("AGORA_OAUTH_CLIENT_ID") {
     Some(v) => v,
-    None => "",
+    None => "Iv23ctVA40Yy1ZUkvemh",
 };
 
 const KEYRING_SERVICE: &str = "io.agora-mc";
@@ -76,21 +99,33 @@ pub async fn start_device_flow() -> LauncherResult<DeviceFlowResponse> {
         .form(&params)
         .send()
         .await
-        .map_err(|_| LauncherError::NetworkOffline)?;
+        .map_err(|e| {
+            log_line(&format!(
+                "device-code request network error: {e}"
+            ));
+            LauncherError::NetworkOffline
+        })?;
 
-    if !resp.status().is_success() {
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    log_line(&format!(
+        "device-code response status={status} body={body}"
+    ));
+
+    if !status.is_success() {
         return Err(LauncherError::Generic {
             code: "ERR_AUTH_DEVICE_CODE".to_string(),
-            message: "GitHub rejected the device code request.".to_string(),
+            message: format!("GitHub rejected the device code request (status {status})."),
         });
     }
 
-    resp.json::<DeviceFlowResponse>()
-        .await
-        .map_err(|_| LauncherError::Generic {
+    serde_json::from_str::<DeviceFlowResponse>(&body).map_err(|e| {
+        log_line(&format!("device-code parse error: {e}"));
+        LauncherError::Generic {
             code: "ERR_AUTH_DEVICE_CODE".to_string(),
             message: "Failed to parse GitHub device code response.".to_string(),
-        })
+        }
+    })
 }
 
 /// Poll the token endpoint until the user authorizes the device or it expires.
@@ -98,12 +133,20 @@ pub async fn start_device_flow() -> LauncherResult<DeviceFlowResponse> {
 /// Returns `Some(token)` on success, or `None` if the device code expired /
 /// the user declined before a token was issued.
 pub async fn poll_device_flow(device_code: String, mut interval: u64) -> LauncherResult<Option<String>> {
+    log_line(&format!(
+        "poll_device_flow ENTERED device_code_len={} interval={}s",
+        device_code.len(),
+        interval
+    ));
     let client = reqwest::Client::builder()
         .user_agent("agora-launcher")
         .build()
-        .map_err(|_| LauncherError::Generic {
-            code: "ERR_AUTH_HTTP_CLIENT".to_string(),
-            message: "Failed to build HTTP client for token polling.".to_string(),
+        .map_err(|e| {
+            log_line(&format!("poll HTTP client build error: {e}"));
+            LauncherError::Generic {
+                code: "ERR_AUTH_HTTP_CLIENT".to_string(),
+                message: "Failed to build HTTP client for token polling.".to_string(),
+            }
         })?;
 
     // Hard ceiling so a stalled poll cannot run forever. GitHub `expires_in`
@@ -130,31 +173,62 @@ pub async fn poll_device_flow(device_code: String, mut interval: u64) -> Launche
 
         match resp {
             Ok(r) => {
-                if let Ok(parsed) = r.json::<DeviceFlowPollResponse>().await {
+                let status = r.status();
+                // Capture the raw body for diagnostics — the response is small
+                // (access_token or error+interval), and logging it lets the user
+                // see exactly what GitHub is returning each iteration.
+                let body = r.text().await.unwrap_or_default();
+                log_line(&format!("poll status={status} body={body}"));
+
+                let parsed: Option<DeviceFlowPollResponse> =
+                    serde_json::from_str(&body).ok();
+
+                if let Some(parsed) = parsed {
                     if let Some(token) = parsed.access_token {
+                        log_line("token obtained");
                         return Ok(Some(token));
                     }
                     if let Some(err) = parsed.error.as_deref() {
                         match err {
                             "authorization_pending" => {
+                                log_line(&format!(
+                                    "awaiting user authorization (interval={})",
+                                    parsed.interval.unwrap_or(interval)
+                                ));
                                 if let Some(next) = parsed.interval {
                                     interval = next;
                                 }
                             }
                             "slow_down" => {
                                 interval = interval.saturating_add(5);
+                                log_line(&format!(
+                                    "slow_down; interval now {interval}s"
+                                ));
                             }
-                            "expired_token" => return Ok(None),
-                            "access_denied" => return Ok(None),
-                            _ => {}
+                            "expired_token" => {
+                                log_line("device code expired");
+                                return Ok(None);
+                            }
+                            "access_denied" => {
+                                log_line("user denied authorization");
+                                return Ok(None);
+                            }
+                            other => {
+                                log_line(&format!(
+                                    "unknown error from GitHub: {other}"
+                                ));
+                            }
                         }
                     } else if let Some(next) = parsed.interval {
                         interval = next;
                     }
+                } else {
+                    log_line("could not parse poll response as JSON");
                 }
             }
-            Err(_) => {
+            Err(e) => {
                 // Network blip; back off and retry.
+                log_line(&format!("network error during poll: {e}"));
             }
         }
 

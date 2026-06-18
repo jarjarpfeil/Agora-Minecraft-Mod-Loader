@@ -20,6 +20,17 @@ use state::LauncherState;
 
 /// Run the Tauri application.
 pub fn run() {
+    // Log startup so the user can verify from the log file that they are
+    // actually running the freshly-compiled binary (not a stale one). When
+    // diagnosing OAuth issues, the absence of this line means the running
+    // app predates the latest cargo build.
+    crate::auth::log_line(&format!(
+        "AGORA BIN STARTED build_nonce={}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    ));
     tauri::Builder::default()
         .manage(LauncherState::default())
         .plugin(tauri_plugin_shell::init())

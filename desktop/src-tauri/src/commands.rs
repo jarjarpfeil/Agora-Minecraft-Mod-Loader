@@ -235,6 +235,11 @@ pub async fn github_login_poll(
     device_code: String,
     interval: u64,
 ) -> LauncherResult<bool> {
+    crate::auth::log_line(&format!(
+        "github_login_poll command ENTERED device_code_len={} interval={}",
+        device_code.len(),
+        interval
+    ));
     let token = crate::auth::poll_device_flow(device_code, interval).await?;
     if let Some(t) = token {
         crate::auth::store_token(&app, &t)?;

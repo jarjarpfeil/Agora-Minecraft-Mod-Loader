@@ -225,45 +225,71 @@ function GithubStep({
   const [polling, setPolling] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
-
-  useEffect(() => {
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
+  // Per-sign-in-attempt guard. Each call to `signIn` captures the current
+  // value; if a later `signIn` call starts (or the user navigates away and
+  // back), the earlier attempt sees the changed value and aborts.
+  //
+  // NOTE: do NOT use an unmount-ref pattern here. React <StrictMode> (active
+  // in dev) re-runs effect cleanups on every render in development, which
+  // flips an unmount ref to true mid-await and aborts the OAuth flow even
+  // though the component is still mounted. Using a changing counter avoids
+  // that false positive — only a *new* sign-in attempt invalidates the
+  // in-flight one.
+  const sessionIdRef = useRef(0);
 
   const signIn = async () => {
     setError(null);
     setResult(null);
     setPolling(true);
+    const mySession = ++sessionIdRef.current;
+    const isStale = () => sessionIdRef.current !== mySession;
     try {
+      console.log('[onboarding] signIn starting, calling githubLogin()');
       const flow = await githubLogin();
-      if (cancelledRef.current) return;
-      setDevice(flow);
-      // Auto-launch the user's default browser at the verification URL. The
-      // shell capability `shell:allow-open` for `github.com` is already granted
-      // in src-tauri/capabilities/default.json. If the open call fails (e.g.
-      // no default browser configured), the URL+code remain displayed below.
-      try {
-        await openUrl(flow.verification_uri);
-      } catch {
-        // best-effort: user can still click/type the URL shown in the panel
+      console.log('[onboarding] githubLogin returned flow:', flow);
+      if (isStale()) {
+        console.log('[onboarding] session superseded after githubLogin; aborting');
+        return;
       }
+      setDevice(flow);
+      console.log('[onboarding] setDevice done, user_code=', flow.user_code);
+
+      // Auto-launch the user's default browser at the verification URL.
+      // Wrapped in its own try/catch AND fire-and-forget. If the shell plugin
+      // throws synchronously, the inner catch absorbs it so the outer flow
+      // continues to githubLoginPoll. URL+code remain displayed for manual
+      // fallback.
+      try {
+        const p = openUrl(flow.verification_uri);
+        Promise.resolve(p).catch(() => {
+          /* best-effort: URL shown in panel below */
+        });
+      } catch (syncErr) {
+        console.warn('[onboarding] openUrl synchronous throw:', syncErr);
+      }
+
+      console.log('[onboarding] calling githubLoginPoll, device_code length =', flow.device_code.length);
       const token = await githubLoginPoll(flow.device_code, flow.interval);
-      if (cancelledRef.current) return;
+      console.log('[onboarding] githubLoginPoll returned:', token);
+      if (isStale()) {
+        console.log('[onboarding] session superseded after poll; aborting');
+        return;
+      }
       if (token) {
         setResult('Signed in successfully.');
         setTimeout(() => {
-          if (!cancelledRef.current) onContinue();
+          if (!isStale()) onContinue();
         }, 800);
       } else {
         setResult('Authentication did not complete.');
       }
     } catch (e) {
-      if (!cancelledRef.current) setError(String(e));
+      console.error('[onboarding] signIn failed:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!isStale()) setError(`Sign-in failed: ${msg}`);
     } finally {
-      if (!cancelledRef.current) setPolling(false);
+      console.log('[onboarding] signIn finally: clearing polling state');
+      if (!isStale()) setPolling(false);
     }
   };
 
