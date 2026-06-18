@@ -1,4 +1,6 @@
 pub mod commands;
+pub mod auth;
+pub mod crash_diagnostics;
 pub mod db;
 pub mod download;
 pub mod error;
@@ -37,7 +39,16 @@ pub fn run() {
             commands::launch_instance,
             commands::list_loader_versions,
             commands::get_setting,
-            commands::set_setting
+            commands::set_setting,
+            commands::github_login,
+            commands::github_login_poll,
+            commands::github_logout,
+            commands::get_auth_status,
+            commands::get_github_profile,
+            commands::check_instance_crash,
+            commands::triage_crash_report,
+            commands::list_crash_reports_cmd,
+            commands::read_crash_log_cmd
         ])
         .setup(|app| {
             let handle = app.handle().clone();

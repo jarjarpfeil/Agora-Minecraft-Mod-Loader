@@ -1,3 +1,5 @@
+use crate::auth::{DeviceFlowResponse, GithubProfile};
+use crate::crash_diagnostics::{self, CrashReportInfo, CrashTriageResult};
 use crate::db;
 use crate::error::{LauncherError, LauncherResult};
 use crate::instances::{self, CreateInstanceRequest, InstanceDetail, LoaderVersionSummary};
@@ -216,4 +218,102 @@ pub async fn extract_overrides(
         code: "ERR_OVERRIDE_FAILED".to_string(),
         message: "Extraction task failed.".to_string(),
     })?
+}
+
+/// Begin the GitHub OAuth Device Flow and return the code the user must enter.
+#[tauri::command]
+pub async fn github_login() -> LauncherResult<DeviceFlowResponse> {
+    crate::auth::start_device_flow().await
+}
+
+/// Poll the GitHub token endpoint until the user authorizes the device.
+/// Returns true if the token was obtained and stored; false if still pending.
+#[tauri::command]
+pub async fn github_login_poll(
+    app: tauri::AppHandle,
+    device_code: String,
+    interval: u64,
+) -> LauncherResult<bool> {
+    let token = crate::auth::poll_device_flow(device_code, interval).await?;
+    if let Some(t) = token {
+        crate::auth::store_token(&app, &t)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Sign out by deleting any stored GitHub token.
+#[tauri::command]
+pub async fn github_logout(app: tauri::AppHandle) -> Result<(), String> {
+    crate::auth::clear_token(&app)
+}
+
+/// Whether a GitHub token is currently stored.
+#[tauri::command]
+pub async fn get_auth_status(app: tauri::AppHandle) -> bool {
+    crate::auth::is_authenticated(&app)
+}
+
+/// Fetch the authenticated user's GitHub profile, if signed in.
+#[tauri::command]
+pub async fn get_github_profile(app: tauri::AppHandle) -> LauncherResult<Option<GithubProfile>> {
+    match crate::auth::get_token(&app) {
+        Some(token) => Ok(Some(crate::auth::get_github_user(token).await?)),
+        None => Ok(None),
+    }
+}
+
+/// Check whether a fresh crash report appeared after the instance's last launch.
+#[tauri::command]
+pub async fn check_instance_crash(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+) -> LauncherResult<Option<CrashReportInfo>> {
+    tokio::task::spawn_blocking(move || crash_diagnostics::check_for_crash(&app, &instance_id))
+        .await
+        .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Triage a crash log against curated signatures from the registry.
+#[tauri::command]
+pub async fn triage_crash_report(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<CrashTriageResult> {
+    tokio::task::spawn_blocking(move || {
+        crash_diagnostics::triage_crash(&app, &instance_id, &filename)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// List all crash report files for an instance.
+#[tauri::command]
+pub async fn list_crash_reports_cmd(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+) -> LauncherResult<Vec<CrashReportInfo>> {
+    tokio::task::spawn_blocking(move || crash_diagnostics::list_crash_reports(&app, &instance_id))
+        .await
+        .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Read the content of a specific crash report file.
+#[tauri::command]
+pub async fn read_crash_log_cmd(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<String> {
+    tokio::task::spawn_blocking(move || {
+        crash_diagnostics::read_crash_log(&app, &instance_id, &filename)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
 }

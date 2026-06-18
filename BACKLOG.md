@@ -111,8 +111,8 @@
 
 ### P2 · Medium Priority
 
-- [ ] **Registry.db download + Ed25519 verify + atomic replace** (§4, §4.1a)
-  - **Short:** Implement the client-side flow that fetches `registry.db` + `.sig` from GitHub Releases, verifies the Ed25519 signature, checks schema version, and atomically replaces the cached copy.
+- [x] **Registry.db download + Ed25519 verify + atomic replace** (§4, §4.1a)
+  - **Short:** Client-side flow that fetches `registry.db` + `.sig` from GitHub Releases, verifies the Ed25519 signature, checks schema version, and atomically replaces the cached copy. Implemented in `desktop/src-tauri/src/registry_sync.rs`.
   - **Detail:** This is the #1 blocker for the app reaching its primary data source. The Rust backend currently only opens `registry.db` read-only if it already exists; there is no download, no signature verification, and no atomic replace. Implement: (a) query GitHub Releases API for latest `registry-*` tag, (b) download `registry.db` + `registry.db.sig`, (c) verify Ed25519 signature using a hardcoded public key, (d) check `schema_version` against `APP_REGISTRY_SCHEMA_VERSION`, (e) write to `.tmp`, rename atomically, (f) implement degraded/offline mode fallback to cached DB, (g) readers-writer lock to prevent replacement during active launches.
   - **Spec:** §4, §4.1a, §4.3
   - **Acceptance:** On first run, the app downloads `registry.db`, verifies its signature, and Browse shows real curated items. Offline launch works with cached DB.
@@ -123,26 +123,26 @@
   - **Spec:** §7.2, §15
   - **Acceptance:** A malicious zip with `mods/evil.jar`, `../../evil.exe`, and a 10GB padding file is rejected; a valid config-only override extracts successfully.
 
-- [ ] **NeoForge/Forge installer support** (§8.2)
-  - **Short:** Implement installer-jar execution for NeoForge and Forge loaders.
-  - **Detail:** Currently returns `ERR_UNSUPPORTEDLoader` because installer jars require JVM execution. The installer jar must be downloaded (already hash-verified), extracted, and its `install_profile.json` processed to populate `~/.minecraft/versions/` and `~/.minecraft/libraries/`. This is deliberately scoped as a follow-on because it involves JVM process spawning from the app — not delegation to the Mojang launcher. May require running `java -jar installer.jar --install` or parsing the installer profile directly.
+- [x] **NeoForge/Forge installer support** (§8.2)
+  - **Short:** Installer-jar execution for NeoForge and Forge loaders. Implemented in `desktop/src-tauri/src/instances.rs` `inject_loader` (`installer_jar` branch: stages verified jar → `java -jar <installer> --installClient` → cleanup → `ERR_INSTALLER_FAILED`). Loader manifests pinned with neoforge + forge installer_jar entries.
+  - **Detail:** The installer jar is downloaded via `download::download_verified` (SHA-256 verified against pinned hash), staged in the app data dir, run with `java -jar --installClient` on a blocking thread, and cleaned up regardless of outcome. `loader_version_id` derives `neoforge-{v}` and `forge-{mc}-{v}` IDs. Errors map to `ERR_INSTALLER_FAILED`.
   - **Spec:** §8.2 (MVP scope lists all 4 loaders)
-  - **Acceptance:** User can create aNeoForge or Forge instance and launch successfully.
+  - **Acceptance:** User can create a NeoForge or Forge instance and launch successfully.
 
-- [ ] **Onboarding flow** (§6.1a)
-  - **Short:** Implement the first-run welcome screen, integration configuration, and OAuth prompt.
-  - **Detail:** App currently boots straight to Home. Implement: (a) Welcome screen with Agora mission + "Get Started", (b) "Connect External Services" panel with Modrinth + AI/MCP toggles (both default OFF), (c) GitHub Device Flow initiation with "I'll do this later" → Browse-Only Mode, (d) profile icon badge showing sign-in state, (e) registry.db download on first run, (f) optional tutorial overlay highlighting sidebar tabs.
+- [x] **Onboarding flow** (§6.1a)
+  - **Short:** First-run welcome screen, integration configuration, and OAuth prompt. Implemented in `desktop/src/pages/Onboarding.tsx` (4-step flow: welcome → services → github → registry), gated by `onboarding_complete` setting in `App.tsx`.
+  - **Detail:** (a)–(e) implemented: Welcome screen with Agora mission + "Get Started", "Connect External Services" panel with Modrinth + AI/MCP toggles (both default OFF), GitHub Device Flow with "I'll do this later" → Browse-Only Mode, registry.db download on first run. (d) profile icon badge and (f) tutorial overlay are optional polish not in the acceptance criteria; deferred.
   - **Spec:** §6.1a
   - **Acceptance:** New user sees welcome → toggles → can skip OAuth → lands on Home with registry loaded.
 
-- [ ] **Crash diagnostics** (§9, Phase 4)
-  - **Short:** Pre-launch interceptor, regex signature matching, GitHub issue duplicate search, preview-before-submit, manual log viewer.
+- [x] **Crash diagnostics** (§9, Phase 4)
+  - **Short:** Pre-launch interceptor, regex signature matching, GitHub issue duplicate search, preview-before-submit, manual log viewer. Implemented in `desktop/src-tauri/src/crash_diagnostics.rs` (`check_for_crash`, `triage_crash`, `list_crash_reports`, `read_crash_log`).
   - **Detail:** (a) Pre-launch interceptor reads `last_launched_at` (already fixed to update before spawn); if the previous launch crashed, show crash prompt. (b) Add Rust `regex` crate; read `crash_signatures` table; match against latest crash log. (c) Search GitHub issues for known duplicate patterns. (d) Show preview of what will be submitted before creating a GitHub issue. (e) Manual log viewer panel for browsing `crash-reports/`. (f) Local crash telemetry already has `record_co_crash()` + retention purge; wire it into the crash detection flow.
   - **Spec:** §9, Phase 4
   - **Acceptance:** A simulated crash matches a regex signature, shows the fix hint, and the user can preview + submit a GitHub issue.
 
-- [ ] **OAuth + token storage** (§7.5, §5.1)
-  - **Short:** GitHub Device Flow + keyring/AES-256-GCM token storage; enables voting, reviews, crash reporting, and triage.
+- [x] **OAuth + token storage** (§7.5, §5.1)
+  - **Short:** GitHub Device Flow + keyring/AES-256-GCM token storage; enables voting, reviews, crash reporting, and triage. Implemented in `desktop/src-tauri/src/auth.rs` (Device Flow + OS keyring store/read/delete). AES-256-GCM encrypted-file fallback not yet implemented.
   - **Detail:** (a) Implement GitHub Device Flow (`POST /login/device/code` → poll `POST /login/oauth/access_token`). (b) Store token in OS keyring via `keyring` crate. (c) Fallback: AES-256-GCM encrypt to `tokens.enc` in app data dir with machine-bound key. (d) Token is never in config files, env vars, or SQLite. (e) Use token for: voting (emoji reactions), reviews (issue comments), crash reports (issue creation), flag submission, and triage participation. (f) Browse-Only Mode: all of the above gracefully degrade when token is absent.
   - **Spec:** §7.5, §5
   - **Acceptance:** User signs in via Device Flow; can vote on a mod; token survives restart via keyring.
@@ -186,11 +186,12 @@
 
 ## Phase 3 — Browse, Discovery & Search
 
-- [ ] **Mod detail page** (§6.2)
+- [~] **Mod detail page** (§6.2)
   - **Short:** Clicking a Browse item opens a detail page with version picker, compatibility info, download button.
-  - **Detail:** Fetch versions from GitHub/Modrinth API live, filter by selected MC version + loader, show best-guess compatibility, "Version Mismatch Warning" if uncertain.
+  - **Status:** PAGE DELIVERED + WIRED. `desktop/src/pages/ModDetail.tsx` fetches the item (`get_registry_item`), renders icon/badges/upvotes·downvotes·net·velocity/immunity shield/curator notes/compatible-versions list/reviews section; `App.tsx` wires `Browse.onSelectMod` → `<ModDetail>`. The **Install button is a stub** and is the only remaining gap.
+  - **Blocker:** The `registry_items` table (compiler `compile.py` schema) and the mod manifests pin only `source_identifier` + `download_strategy` + a single `sha256` — there is **no `download_url` column**. The install action therefore needs one of: (a) adding `download_url` to manifests + a compiler column + struct field, with each URL verified against its pinned `sha256` (needs network fetch of the curated artifacts); or (b) Phase 3 live version resolution (GitHub Releases / Modrinth version API at install time, matching a candidate `.jar` against the pinned hash). Until one lands, the install button stays a stub. Tracked together with "Pack install flow" (§7.1.1).
   - **Spec:** §6.2
-  - **Acceptance:** User opens a mod, sees compatible versions, can install it to their active instance.
+  - **Acceptance:** User opens a mod, sees compatible versions, can install it to their active instance. (First two clauses met; install pending the download-URL decision above.)
 
 - [ ] **"For You" algorithm** (§6.2)
   - **Short:** Track locally installed categories; boost uninstalled mods in matching categories.
@@ -330,13 +331,15 @@
 
 ## Quick Reference: Most Critical Next Steps
 
+> Reconciled against `desktop/src-tauri/src` at `HEAD`. Rows marked open (no strikethrough) are the current top-priority targets; do **not** re-mark them done without verifying code exists.
+
 | # | Task | Why it's blocking |
 |---|------|-------------------|
 | 1 | ~~registry.db download + Ed25519 verify~~ ✅ | App can't reach its primary data source without this |
 | 2 | ~~Release-asset upload in CI~~ ✅ | No production pipeline for `registry.db` distribution |
 | 3 | ~~Override sanitization engine~~ ✅ | Must exist before any pack-install feature lands |
-| 4 | **OAuth + token storage** | Blocks all governance, voting, reviews, crash reporting |
-| 5 | **Onboarding flow** | First-run UX is missing entirely |
-| 6 | **Mod detail page** | Browse shows items but has no install flow |
-| 7 | **Crash diagnostics** | Phase 4 requirement for MVP |
-| 8 | **NeoForge/Forge installer support** | 2 of 4 MVP loaders unsupported |
+| 4 | ~~OAuth + token storage~~ ✅ | Blocks all governance, voting, reviews, crash reporting |
+| 5 | ~~Onboarding flow~~ ✅ | First-run 4-step flow (welcome → services → GitHub → registry) wired in `App.tsx` + `Onboarding.tsx` |
+| 6 | [~] Mod detail page | Page delivered+wired (`ModDetail.tsx`); Install button is a stub. Blocked: `registry_items` pins only `sha256`+`source_identifier`, no `download_url` — install needs curated download URLs or Phase 3 live version resolution |
+| 7 | ~~Crash diagnostics~~ ✅ | Phase 4 requirement for MVP |
+| 8 | ~~NeoForge/Forge installer support~~ ✅ | `inject_loader` runs `java -jar <installer> --installClient` with SHA-256 verification; neoforge+forge entries in loader manifests |

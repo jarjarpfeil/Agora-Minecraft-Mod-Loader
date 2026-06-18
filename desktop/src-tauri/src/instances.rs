@@ -58,7 +58,7 @@ pub async fn create_instance<R: tauri::Runtime>(
     .map_err(|_| LauncherError::InstanceCreateFailed)??;
 
     // Step 2: async loader injection (network + hash verification).
-    if let Err(e) = inject_loader(&req.loader, &req.minecraft_version, &req.loader_version).await {
+    if let Err(e) = inject_loader(&app, &req.loader, &req.minecraft_version, &req.loader_version).await {
         cleanup_instance_dir(&app, &instance_id);
         return Err(e);
     }
@@ -282,16 +282,16 @@ pub fn list_loader_versions(loader: &str, mc_version: &str) -> Vec<LoaderVersion
 /// Inject the modloader version JSON into the official Minecraft directory.
 ///
 /// For Fabric/Quilt profile JSONs, this writes the verified JSON to
-/// `~/.minecraft/versions/<version_id>/<version_id>.json`. NeoForge/Forge require
-/// running the installer jar; that flow is intentionally scaffolded as a TODO
-/// because it involves JVM execution beyond MVP delegation scope.
-/// Inject the modloader version JSON into the official Minecraft directory.
-///
-/// For Fabric/Quilt profile JSONs, this writes the verified JSON to
-/// `~/.minecraft/versions/<version_id>/<version_id>.json`. NeoForge/Forge require
-/// running the installer jar; that flow is intentionally scaffolded as a TODO
-/// because it involves JVM execution beyond MVP delegation scope.
-async fn inject_loader(loader: &str, mc_version: &str, loader_version: &str) -> LauncherResult<()> {
+/// `~/.minecraft/versions/<version_id>/<version_id>.json`. NeoForge/Forge ship an
+/// installer jar, so the verified jar is staged in the app data dir and the
+/// installer is run with `java -jar <installer> --installClient`. The installer
+/// itself writes into `~/.minecraft/versions/` and `~/.minecraft/libraries/`.
+async fn inject_loader<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    loader: &str,
+    mc_version: &str,
+    loader_version: &str,
+) -> LauncherResult<()> {
     let entry = loader_manifests::find_entry(loader, mc_version, loader_version)
         .ok_or(LauncherError::UnsupportedLoader)?;
 
@@ -312,11 +312,72 @@ async fn inject_loader(loader: &str, mc_version: &str, loader_version: &str) -> 
         std::fs::write(version_dir.join(format!("{version_id}.json")), data)
             .map_err(|_| LauncherError::InstanceCreateFailed)?;
         Ok(())
+    } else if entry.file_type == "installer_jar" {
+        let app_data =
+            paths::app_data_dir(app).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let installer_path = app_data.join(format!("{loader}-installer.jar"));
+
+        // Stage the verified installer jar in the app data dir.
+        std::fs::write(&installer_path, &data).map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+        let java_path = get_java_path(app);
+        let installer_path_for_task = installer_path.clone();
+        let loader_label = loader.to_string();
+
+        // Run the installer on a blocking thread; `java -jar` invocations can take a while.
+        let result = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(&java_path)
+                .arg("-jar")
+                .arg(&installer_path_for_task)
+                .arg("--installClient")
+                .output()
+        })
+        .await;
+
+        // Always clean up the staged installer jar, regardless of outcome.
+        let _ = std::fs::remove_file(&installer_path);
+
+        match result {
+            Ok(Ok(output)) if output.status.success() => Ok(()),
+            Ok(Ok(output)) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(LauncherError::Generic {
+                    code: "ERR_INSTALLER_FAILED".to_string(),
+                    message: format!(
+                        "Installer for {loader_label} exited with {}: {stderr}",
+                        output.status
+                    ),
+                })
+            }
+            Ok(Err(e)) => Err(LauncherError::Generic {
+                code: "ERR_INSTALLER_FAILED".to_string(),
+                message: format!("Failed to run installer for {loader_label}: {e}"),
+            }),
+            Err(e) => Err(LauncherError::Generic {
+                code: "ERR_INSTALLER_FAILED".to_string(),
+                message: format!("Installer task panicked for {loader_label}: {e}"),
+            }),
+        }
     } else {
-        // Installer-jar loaders (NeoForge/Forge) require running the installer
-        // JVM, which is out of MVP delegation scope.
         Err(LauncherError::UnsupportedLoader)
     }
+}
+
+/// Resolve the Java binary path used to run installer jars.
+///
+/// Reads the `java_path` user setting from `local_state.db`. If it is unset or
+/// unreadable, falls back to `"java"` so the system PATH is searched.
+fn get_java_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> String {
+    let conn = match db::local_state_connection(app) {
+        Ok(c) => c,
+        Err(_) => return "java".to_string(),
+    };
+    db::get_setting(&conn, "java_path")
+        .ok()
+        .flatten()
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "java".to_string())
 }
 
 fn build_profile_entry<R: tauri::Runtime>(

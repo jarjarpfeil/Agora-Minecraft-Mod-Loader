@@ -17,7 +17,7 @@ const SORTS: { label: string; value: SortOption }[] = [
 
 const CONTENT_TYPES = ['mod', 'pack', 'shader', 'resourcepack', 'server', 'datapack', 'world'];
 
-export function Browse() {
+export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) {
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [sort, setSort] = useState<SortOption>('net_score');
@@ -179,6 +179,14 @@ export function Browse() {
                     ↑ {item.upvotes} · ↓ {item.downvotes} · net {item.net_score}
                   </p>
                 </div>
+              </div>
+              <div className="mt-3">
+                <button
+                  onClick={() => onSelectMod?.(item.id)}
+                  className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+                >
+                  View Details
+                </button>
               </div>
             </li>
           ))}
