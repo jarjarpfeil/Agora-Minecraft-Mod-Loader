@@ -4,10 +4,10 @@ use crate::paths;
 use ed25519_dalek::{Signature, VerifyingKey, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
 use serde::{Deserialize, Serialize};
 /// The GitHub repository hosting registry release assets (`owner/repo`).
-const REGISTRY_REPO: &str = match option_env!("AGORA_REGISTRY_REPO") { Some(v) => v, None => "your-org/agora-mc" };
+const REGISTRY_REPO: &str = match option_env!("AGORA_REGISTRY_REPO") { Some(v) => v, None => "jarjarpfeil/Agora-Minecraft-Mod-Loader" };
 
 /// Ed25519 public key (hex) for verifying registry.db signatures.
-const REGISTRY_PUBKEY_HEX: &str = match option_env!("AGORA_REGISTRY_PUBKEY") { Some(v) => v, None => "" };
+const REGISTRY_PUBKEY_HEX: &str = match option_env!("AGORA_REGISTRY_PUBKEY") { Some(v) => v, None => "47adee76cf587ee618f79eb2fa5bde003824d3bfc2dbb5080d33073c5a8f8c18" };
 
 /// App-side expected schema version for registry.db.
 pub const APP_REGISTRY_SCHEMA_VERSION: i64 = 1;
@@ -236,8 +236,13 @@ fn verify_signature(db_bytes: &[u8], sig_bytes: &[u8]) -> LauncherResult<()> {
     {
         if REGISTRY_PUBKEY_HEX.is_empty() {
             return Err(LauncherError::Generic {
-                code: "ERR_REGISTRY_PUBKEY".to_string(),
-                message: "Registry public key not compiled in; refusing to verify. Set AGORA_REGISTRY_PUBKEY at build time.".to_string(),
+                code: "ERR_REGISTRY_PUBKEY_NOT_CONFIGURED".to_string(),
+                message: "Registry public key not compiled in; refusing to verify. \
+                          Set AGORA_REGISTRY_PUBKEY (Ed25519 public key, hex) as an \
+                          environment variable before building the desktop app: \
+                          `$env:AGORA_REGISTRY_PUBKEY='...'; npm run tauri:dev`. \
+                          See README.md > \"Environment variables for the Tauri build\"."
+                    .to_string(),
             });
         }
     }
@@ -246,7 +251,9 @@ fn verify_signature(db_bytes: &[u8], sig_bytes: &[u8]) -> LauncherResult<()> {
     {
         if REGISTRY_PUBKEY_HEX.is_empty() {
             eprintln!(
-                "WARNING: AGORA_REGISTRY_PUBKEY not set; skipping signature verification (debug build)."
+                "WARNING: AGORA_REGISTRY_PUBKEY not set; skipping signature verification (debug build only).\n\
+                 Set `$env:AGORA_REGISTRY_PUBKEY` (Ed25519 public key, hex) before `npm run tauri:dev` to enable verification.\n\
+                 See README.md > \"Environment variables for the Tauri build\"."
             );
             if sig_bytes.is_empty() {
                 return Err(LauncherError::RegistrySignatureInvalid);

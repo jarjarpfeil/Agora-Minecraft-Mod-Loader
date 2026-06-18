@@ -117,7 +117,29 @@ See `.env.example` for the list of supported variables. Note: `.env` is loaded
 at runtime by the Python compiler only; the Tauri desktop app does **not** read
 `.env`.
 
-### GitHub OAuth (in-app sign-in)
+### Environment variables for the Tauri build
+
+The Tauri desktop app reads two values **at compile time** via Rust's
+`option_env!` macro — they are embedded directly into the compiled binary.
+This means they must be set as **real shell environment variables** in the
+session that runs `npm run tauri:dev` (or the production build step). They
+are **not** read from `.env` (which is loaded at runtime by the Python
+compiler only, not by the Rust build).
+
+For production GitHub Actions builds, set both as repository **Variables**
+(not Secrets — neither value is sensitive) in
+repo Settings → Secrets and variables → Actions → **Variables** tab:
+
+| Variable | Purpose | Sensitive? | Example |
+|---|---|---|---|
+| `AGORA_OAUTH_CLIENT_ID` | GitHub OAuth App client ID for in-app sign-in (Device Flow) | ❌ Public | `Iv1.xxxxxxxxxxxxxxxx` |
+| `AGORA_REGISTRY_PUBKEY` | Ed25519 public key (hex) for verifying downloaded `registry.db` signatures | ❌ Public | `a7f07f88d56cb93c84010ed82c253a305b8528810113e51fc6920fd70a42e6e0` |
+
+Without these, the desktop app fails fast with clear errors at the affected
+feature (`ERR_AUTH_NOT_CONFIGURED` for OAuth, `ERR_REGISTRY_PUBKEY_NOT_CONFIGURED`
+for signature verification) rather than silently misbehaving.
+
+#### `AGORA_OAUTH_CLIENT_ID` — GitHub OAuth (in-app sign-in)
 
 The desktop app's "Sign in with GitHub" button uses the OAuth Device Flow.
 Register a GitHub App at <https://github.com/settings/developers> (Authorization
@@ -141,9 +163,8 @@ the app's **Permissions** tab:
 > settings in the GitHub UI. The Rust build does **not** send an OAuth-App
 > scope string; configure everything via the app's Permissions tab above.
 
-Then expose the app's client ID as an **environment variable in the shell**
-before starting the dev server — the Rust build reads it at compile time via
-`option_env!`:
+Then expose the app's Client ID (shown on the GitHub App's General tab —
+the `Iv1.xxxxx` string; **this is public, not a secret**) in your shell:
 
 ```powershell
 # PowerShell (one session)
@@ -157,8 +178,44 @@ export AGORA_OAUTH_CLIENT_ID="Iv1.xxxxxxxxxxxxxxxx"
 npm run tauri:dev
 ```
 
-Without this variable the Sign-in step fails fast with `ERR_AUTH_NOT_CONFIGURED`
-rather than silently contacting GitHub with an empty client ID.
+A Client Secret is **not** needed — Device Flow is specifically designed for
+native apps that can't safely store a secret. If GitHub prompts for one,
+generate-and-discard; never place it in this codebase.
+
+#### `AGORA_REGISTRY_PUBKEY` — registry.db signature verification
+
+Before trusting a downloaded `registry.db`, the desktop app verifies its
+Ed25519 signature against a public key compiled into the binary. The matching
+private key (`ED25519_PRIVATE_KEY`, a real secret) is held by the CI compiler
+workflow only; the public key is needed on the desktop side.
+
+If you don't yet have a keypair, generate one once (e.g. via `openssl` or the
+`cryptography` Python package), store the private key in GitHub Actions
+Secrets as `ED25519_PRIVATE_KEY`, and derive the public key:
+
+```bash
+# Derive the 32-byte Ed25519 public key (hex) from a 32-byte seed:
+python -c "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; \
+  from cryptography.hazmat.primitives import serialization; \
+  seed = bytes.fromhex('YOUR_32_BYTE_PRIVATE_SEED_HEX'); \
+  pub = Ed25519PrivateKey.from_private_bytes(seed).public_key(); \
+  print('AGORA_REGISTRY_PUBKEY=' + pub.public_bytes(\
+    encoding=serialization.Encoding.Raw, \
+    format=serialization.PublicFormat.Raw).hex())"
+```
+
+Then set the resulting public key (without the `AGORA_REGISTRY_PUBKEY=`
+prefix) in your shell before building:
+
+```powershell
+$env:AGORA_REGISTRY_PUBKEY = "a7f07f88d56cb93c84010ed82c253a305b8528810113e51fc6920fd70a42e6e0"
+npm run tauri:dev
+```
+
+In debug builds (`npm run tauri:dev`), an unset `AGORA_REGISTRY_PUBKEY` is
+non-fatal: signature verification is skipped with a console warning, to
+keep the local-dev loop smooth. In release builds (`npm run tauri:build`),
+the app refuses to verify any registry without the key compiled in.
 
 ## Agent Tooling
 
