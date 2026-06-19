@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   getRegistryItem,
   listInstances,
@@ -231,6 +232,25 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                 Added {item.date_added}
               </p>
             )}
+            {item.description && (
+              <p className="text-sm text-[rgb(var(--foreground))] mt-3">{item.description}</p>
+            )}
+            {(item.license_id || item.source_updated_at || item.page_url) && (
+              <p className="text-xs text-[rgb(var(--muted))] mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                {item.license_id && <span>License: {item.license_id}</span>}
+                {item.source_updated_at && <span>Source updated {item.source_updated_at.slice(0, 10)}</span>}
+                {item.page_url && (
+                  <a
+                    href={item.page_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-600 hover:underline dark:text-brand-400"
+                  >
+                    View on Modrinth ↗
+                  </a>
+                )}
+              </p>
+            )}
           </div>
         </div>
 
@@ -397,6 +417,39 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
         <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
           <h3 className="font-semibold text-sm mb-2">Curator Notes</h3>
           <p className="text-sm whitespace-pre-wrap text-[rgb(var(--muted))]">{curatorNotes}</p>
+        </section>
+      )}
+
+      {item.body_markdown && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-sm">About</h3>
+            <span className="text-[10px] uppercase tracking-wide text-[rgb(var(--muted))]">
+              Source: upstream
+            </span>
+          </div>
+          {/*
+            body_markdown is community-authored content baked into the signed
+            registry.db by the nightly compiler. It is rendered with
+            react-markdown, which escapes raw HTML by default (no rehype-raw)
+            so no upstream-injected HTML/scripts can execute — satisfying the
+            AGENTS.md prohibition on dangerouslySetInnerHTML for community
+            content. Links open in a new tab with safe rel attributes.
+          */}
+          <div className="prose prose-sm dark:prose-invert max-w-none text-[rgb(var(--foreground))]">
+            <ReactMarkdown
+              components={{
+                a: ({ node, ...props }) => (
+                  <a {...props} target="_blank" rel="noopener noreferrer" />
+                ),
+                img: ({ node, ...props }) => (
+                  <img {...props} loading="lazy" className="max-w-full h-auto rounded-lg" />
+                ),
+              }}
+            >
+              {item.body_markdown}
+            </ReactMarkdown>
+          </div>
         </section>
       )}
 

@@ -9,6 +9,7 @@ pub mod launcher_profiles;
 pub mod loader_manifests;
 pub mod models;
 pub mod mod_install;
+pub mod modrinth_raw;
 pub mod mojang;
 pub mod override_sanitizer;
 pub mod paths;
@@ -64,7 +65,14 @@ pub fn run() {
             commands::read_crash_log_cmd,
             commands::list_mod_versions,
             commands::install_mod_version,
-            commands::remove_mod_from_instance
+            commands::remove_mod_from_instance,
+            commands::is_modrinth_enabled,
+            commands::search_modrinth,
+            commands::list_modrinth_categories,
+            commands::list_modrinth_loaders,
+            commands::list_modrinth_game_versions,
+            commands::list_raw_modrinth_versions,
+            commands::install_raw_modrinth
         ])
         .setup(|app| {
             let handle = app.handle().clone();

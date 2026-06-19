@@ -10,7 +10,13 @@ const REGISTRY_REPO: &str = match option_env!("AGORA_REGISTRY_REPO") { Some(v) =
 const REGISTRY_PUBKEY_HEX: &str = match option_env!("AGORA_REGISTRY_PUBKEY") { Some(v) => v, None => "47adee76cf587ee618f79eb2fa5bde003824d3bfc2dbb5080d33073c5a8f8c18" };
 
 /// App-side expected schema version for registry.db.
-pub const APP_REGISTRY_SCHEMA_VERSION: i64 = 1;
+///
+/// Bumped to 2 alongside the compiler adding supplementary metadata columns
+/// (description, body_markdown, page_url, license_id, source_updated_at) to
+/// `registry_items`. v1 and v2 dbs are produced/expected in lockstep from a
+/// single commit, so clients always receive a matching signed db via the
+/// update flow.
+pub const APP_REGISTRY_SCHEMA_VERSION: i64 = 2;
 
 /// Minimum interval between automatic update checks (1 hour).
 const UPDATE_CHECK_INTERVAL_SECS: i64 = 3600;

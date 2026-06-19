@@ -115,6 +115,11 @@ export interface RegistryItem {
   gallery_urls_json: string | null;
   date_added: string | null;
   compatible_versions_json: string | null;
+  description: string | null;
+  body_markdown: string | null;
+  page_url: string | null;
+  license_id: string | null;
+  source_updated_at: string | null;
 }
 
 export interface CategoryInfo {
@@ -183,6 +188,8 @@ export const browseItems = (
   category?: string,
   sort?: SortOption,
   modrinthEnabled?: boolean,
+  mcVersion?: string,
+  loader?: string,
   limit?: number,
 ) =>
   invoke<RegistryItem[]>('browse_items', {
@@ -190,6 +197,8 @@ export const browseItems = (
     category,
     sort,
     modrinthEnabled,
+    mcVersion,
+    loader,
     limit,
   });
 export const getRegistryItem = (itemId: string) =>
@@ -269,3 +278,92 @@ export const installModVersion = (
 
 export const removeModFromInstance = (instanceId: string, filename: string) =>
   invoke<void>('remove_mod_from_instance', { instanceId, filename });
+
+// --- Raw (uncurated) Modrinth integration (§6.3) ---
+
+export interface ModrinthSearchResult {
+  project_id: string;
+  slug: string;
+  title: string;
+  description: string;
+  icon_url: string | null;
+  author: string;
+  categories: string[];
+  downloads: number;
+  follows: number;
+  project_type: string;
+  date_created: string | null;
+  date_modified: string | null;
+  versions: string[];
+  license: string | null;
+}
+
+export type ModrinthSort = 'relevance' | 'downloads' | 'follows' | 'newest' | 'updated';
+
+export interface ModrinthSearchParams {
+  query?: string;
+  categories?: string[];
+  loaders?: string[];
+  game_versions?: string[];
+  sort?: ModrinthSort;
+  offset?: number;
+  limit?: number;
+}
+
+export interface ModrinthSearchPage {
+  results: ModrinthSearchResult[];
+  total_hits: number;
+  offset: number;
+  limit: number;
+}
+
+export interface ModrinthCategoryInfo {
+  name: string;
+  project_type: string;
+  header: string;
+}
+
+export interface ModrinthLoaderInfo {
+  name: string;
+  supported_project_types: string[];
+}
+
+export interface ModrinthGameVersionInfo {
+  version: string;
+  version_type: string;
+  date: string;
+  major: boolean;
+}
+
+export interface RawModrinthVersionCandidate {
+  version: string;
+  version_id: string;
+  name: string;
+  filename: string;
+  download_url: string;
+  sha1: string | null;
+  mc_versions: string[];
+  loaders: string[];
+  release_date: string | null;
+  primary: boolean;
+}
+
+export const isModrinthEnabled = () => invoke<boolean>('is_modrinth_enabled');
+export const searchModrinth = (params: ModrinthSearchParams) =>
+  invoke<ModrinthSearchPage>('search_modrinth', { params });
+export const listModrinthCategories = () =>
+  invoke<ModrinthCategoryInfo[]>('list_modrinth_categories');
+export const listModrinthLoaders = () =>
+  invoke<ModrinthLoaderInfo[]>('list_modrinth_loaders');
+export const listModrinthGameVersions = () =>
+  invoke<ModrinthGameVersionInfo[]>('list_modrinth_game_versions');
+export const listRawModrinthVersions = (instanceId: string | null, projectId: string) =>
+  invoke<RawModrinthVersionCandidate[]>('list_raw_modrinth_versions', {
+    instanceId,
+    projectId,
+  });
+export const installRawModrinth = (
+  instanceId: string,
+  projectId: string,
+  candidate: RawModrinthVersionCandidate,
+) => invoke<InstalledMod>('install_raw_modrinth', { instanceId, projectId, candidate });

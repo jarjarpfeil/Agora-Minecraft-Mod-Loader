@@ -5,6 +5,7 @@ use crate::error::{LauncherError, LauncherResult};
 use crate::instances::{self, CreateInstanceRequest, InstanceDetail, LoaderVersionSummary};
 use crate::mod_install;
 use crate::models::{InstanceRow, InstalledMod, ModVersionCandidate};
+use crate::modrinth_raw;
 use crate::registry::{self, CategoryInfo, PackModRow, RegistryItem, SortOption};
 use crate::state::LauncherState;
 
@@ -25,6 +26,8 @@ pub async fn browse_items(
     category: Option<String>,
     sort: Option<SortOption>,
     modrinth_enabled: Option<bool>,
+    mc_version: Option<String>,
+    loader: Option<String>,
     limit: Option<i64>,
 ) -> LauncherResult<Vec<RegistryItem>> {
     tokio::task::spawn_blocking(move || {
@@ -35,6 +38,8 @@ pub async fn browse_items(
             category.as_deref(),
             &sort.unwrap_or_default(),
             modrinth_enabled.unwrap_or(false),
+            mc_version.as_deref(),
+            loader.as_deref(),
             limit.unwrap_or(100),
         )
     })
@@ -375,4 +380,76 @@ pub async fn remove_mod_from_instance(
     filename: String,
 ) -> LauncherResult<()> {
     mod_install::remove_mod_from_instance(&app, &instance_id, &filename).await
+}
+
+/// Whether the Modrinth integration is currently enabled (§6.3 toggle).
+#[tauri::command]
+pub async fn is_modrinth_enabled(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+) -> LauncherResult<bool> {
+    Ok(modrinth_raw::is_modrinth_enabled(&app))
+}
+
+/// Live search of all of Modrinth (uncurated, §6.3). Gated by the
+/// `modrinth_enabled` setting; returns `Err(ModrinthDisabled)` when off.
+#[tauri::command]
+pub async fn search_modrinth(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    params: modrinth_raw::ModrinthSearchParams,
+) -> LauncherResult<modrinth_raw::ModrinthSearchPage> {
+    modrinth_raw::search_modrinth(&app, &params).await
+}
+
+/// List Modrinth category tags for the filter UI.
+#[tauri::command]
+pub async fn list_modrinth_categories(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+) -> LauncherResult<Vec<modrinth_raw::ModrinthCategoryInfo>> {
+    modrinth_raw::list_modrinth_categories(&app).await
+}
+
+/// List Modrinth loader tags for the filter UI.
+#[tauri::command]
+pub async fn list_modrinth_loaders(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+) -> LauncherResult<Vec<modrinth_raw::ModrinthLoaderInfo>> {
+    modrinth_raw::list_modrinth_loaders(&app).await
+}
+
+/// List Modrinth game version tags for the filter UI.
+#[tauri::command]
+pub async fn list_modrinth_game_versions(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+) -> LauncherResult<Vec<modrinth_raw::ModrinthGameVersionInfo>> {
+    modrinth_raw::list_modrinth_game_versions(&app).await
+}
+
+/// List raw Modrinth versions for a project, optionally scoped to an
+/// instance's Minecraft version and loader.
+#[tauri::command]
+pub async fn list_raw_modrinth_versions(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: Option<String>,
+    project_id: String,
+) -> LauncherResult<Vec<modrinth_raw::RawModrinthVersionCandidate>> {
+    modrinth_raw::list_raw_modrinth_versions(&app, instance_id.as_deref(), &project_id).await
+}
+
+/// Install an uncurated Modrinth mod file, verified against the SHA-1 hash
+/// published by Modrinth's API (§6.3).
+#[tauri::command]
+pub async fn install_raw_modrinth(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    project_id: String,
+    candidate: modrinth_raw::RawModrinthVersionCandidate,
+) -> LauncherResult<InstalledMod> {
+    modrinth_raw::install_raw_modrinth(&app, &instance_id, &project_id, &candidate).await
 }

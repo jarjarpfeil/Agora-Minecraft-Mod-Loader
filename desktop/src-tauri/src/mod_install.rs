@@ -8,14 +8,14 @@ use crate::registry;
 use serde::Deserialize;
 
 /// Minimum free disk space required before a mod download (500 MB).
-const MIN_DISK_SPACE_BYTES: u64 = 500_000_000;
+pub(crate) const MIN_DISK_SPACE_BYTES: u64 = 500_000_000;
 
 /// Return the available free disk space (in bytes) on the drive containing
 /// the given path.  Returns `None` when the information cannot be determined.
 ///
 /// Implementation: shells out to `fsutil volume diskfree` on Windows.
 #[cfg(target_os = "windows")]
-fn available_disk_space_bytes(path: &std::path::Path) -> Option<u64> {
+pub(crate) fn available_disk_space_bytes(path: &std::path::Path) -> Option<u64> {
     let root = path.ancestors().last()?;
     let output = std::process::Command::new("fsutil")
         .args(["volume", "diskfree"])
@@ -33,7 +33,7 @@ fn available_disk_space_bytes(path: &std::path::Path) -> Option<u64> {
 
 /// Stub for non-Windows platforms (not currently targeted by this crate).
 #[cfg(not(target_os = "windows"))]
-fn available_disk_space_bytes(_path: &std::path::Path) -> Option<u64> {
+pub(crate) fn available_disk_space_bytes(_path: &std::path::Path) -> Option<u64> {
     None
 }
 
@@ -56,7 +56,7 @@ fn is_mod_download_host(host: &str) -> bool {
 ///
 /// Redirects are only followed when the target host is on the mod-download
 /// allowlist, preventing SSRF via compromised/malicious URLs.
-async fn download_mod_bytes(url: &str) -> LauncherResult<Vec<u8>> {
+pub(crate) async fn download_mod_bytes(url: &str) -> LauncherResult<Vec<u8>> {
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if let Some(host) = attempt.url().host_str() {

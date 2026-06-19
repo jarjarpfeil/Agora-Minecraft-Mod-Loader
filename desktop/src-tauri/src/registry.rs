@@ -24,6 +24,17 @@ pub struct RegistryItem {
     pub gallery_urls_json: Option<String>,
     pub date_added: Option<String>,
     pub compatible_versions_json: Option<String>,
+    /// Short tagline hydrated from the upstream source (e.g. Modrinth).
+    pub description: Option<String>,
+    /// Full markdown body hydrated from the upstream source. Community-authored
+    /// markdown — must be rendered without `dangerouslySetInnerHTML`.
+    pub body_markdown: Option<String>,
+    /// Canonical upstream page URL (e.g. https://modrinth.com/mod/<slug>).
+    pub page_url: Option<String>,
+    /// SPDX-ish license id hydrated from the upstream source.
+    pub license_id: Option<String>,
+    /// ISO timestamp of the upstream project's last update (nightly snapshot).
+    pub source_updated_at: Option<String>,
 }
 
 /// Valid sort options for browsing (§6.2).
@@ -74,12 +85,16 @@ pub fn open_registry<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> LauncherRe
 /// Browse registry items with optional filters (§6.2).
 ///
 /// When `modrinth_enabled` is false, modrinth-sourced items are excluded.
+/// `mc_version` and `loader` filter against `compatible_versions_json` using
+/// SQLite's JSON1 functions (same approach as the web `browseItems`).
 pub fn browse_items(
     conn: &Connection,
     content_type: Option<&str>,
     category: Option<&str>,
     sort: &SortOption,
     modrinth_enabled: bool,
+    mc_version: Option<&str>,
+    loader: Option<&str>,
     limit: i64,
 ) -> LauncherResult<Vec<RegistryItem>> {
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -95,6 +110,27 @@ pub fn browse_items(
     }
     if !modrinth_enabled {
         where_parts.push("ri.download_strategy != 'modrinth_id'".to_string());
+    }
+    if let Some(mv) = mc_version {
+        // Only items declaring a compatible_version for this MC version match.
+        // json_each over an empty/NULL array yields no rows -> the item is
+        // excluded, which is the desired behaviour (no declared support).
+        where_parts.push(
+            "ri.id IN (SELECT r.id FROM registry_items r, json_each(r.compatible_versions_json) cv \
+             WHERE json_extract(cv.value, '$.mc_version') = ?)"
+                .to_string(),
+        );
+        params.push(Box::new(mv.to_string()));
+    }
+    if let Some(ld) = loader {
+        if ld != "all" {
+            where_parts.push(
+                "ri.id IN (SELECT r.id FROM registry_items r, json_each(r.compatible_versions_json) cv \
+                 WHERE json_extract(cv.value, '$.loader') = ?)"
+                    .to_string(),
+            );
+            params.push(Box::new(ld.to_string()));
+        }
     }
 
     let where_clause = if where_parts.is_empty() {
@@ -114,7 +150,9 @@ pub fn browse_items(
                 ri.source_identifier, ri.sha256, ri.upvotes, ri.downvotes,
                 ri.net_score, ri.velocity, ri.status, ri.is_immune,
                 ri.immunity_reason, ri.allow_comments, ri.icon_url,
-                ri.gallery_urls_json, ri.date_added, ri.compatible_versions_json
+                ri.gallery_urls_json, ri.date_added, ri.compatible_versions_json,
+                ri.description, ri.body_markdown, ri.page_url, ri.license_id,
+                ri.source_updated_at
          FROM registry_items ri{join}{where_clause} {order} LIMIT ?",
         join = join,
         where_clause = where_clause,
@@ -153,7 +191,9 @@ pub fn get_item_by_id(conn: &Connection, item_id: &str) -> LauncherResult<Option
                     source_identifier, sha256, upvotes, downvotes,
                     net_score, velocity, status, is_immune,
                     immunity_reason, allow_comments, icon_url,
-                    gallery_urls_json, date_added, compatible_versions_json
+                    gallery_urls_json, date_added, compatible_versions_json,
+                    description, body_markdown, page_url, license_id,
+                    source_updated_at
              FROM registry_items WHERE id = ?1",
         )
         .map_err(|e| LauncherError::Generic {
@@ -290,5 +330,10 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<RegistryItem> {
         gallery_urls_json: row.get(15)?,
         date_added: row.get(16)?,
         compatible_versions_json: row.get(17)?,
+        description: row.get(18)?,
+        body_markdown: row.get(19)?,
+        page_url: row.get(20)?,
+        license_id: row.get(21)?,
+        source_updated_at: row.get(22)?,
     })
 }

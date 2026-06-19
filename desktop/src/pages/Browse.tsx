@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   browseItems,
+  getSetting,
   listCategories,
   type CategoryInfo,
   type RegistryItem,
@@ -17,12 +18,17 @@ const SORTS: { label: string; value: SortOption }[] = [
 
 const CONTENT_TYPES = ['mod', 'pack', 'shader', 'resourcepack', 'server', 'datapack', 'world'];
 
-export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) {
+const LOADERS = ['fabric', 'quilt', 'neoforge', 'forge'];
+const MC_VERSIONS = ['1.21.11', '1.21.10', '1.21.9'];
+
+export function Browse({ onSelectMod, onOpenModrinth }: { onSelectMod?: (id: string) => void; onOpenModrinth?: () => void }) {
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [sort, setSort] = useState<SortOption>('net_score');
   const [category, setCategory] = useState<string | null>(null);
   const [contentType, setContentType] = useState<string | null>(null);
+  const [mcVersion, setMcVersion] = useState<string | null>(null);
+  const [loader, setLoader] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +56,25 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
     (async () => {
       try {
         if (!cancelled) setLoading(true);
-        const result = await browseItems(contentType ?? undefined, category ?? undefined, sort);
+        // Re-read the modrinth_enabled setting on every refresh so toggling
+        // it in Settings is reflected on the next browse without a remount.
+        let modrinthEnabled = false;
+        try {
+          const m = await getSetting('modrinth_enabled');
+          modrinthEnabled = m === true;
+        } catch {
+          // Setting read failure should not block browsing; default to safe
+          // (Modrinth-hidden) behaviour.
+          modrinthEnabled = false;
+        }
+        const result = await browseItems(
+          contentType ?? undefined,
+          category ?? undefined,
+          sort,
+          modrinthEnabled,
+          mcVersion ?? undefined,
+          loader ?? undefined,
+        );
         if (!cancelled) setItems(result);
       } catch (e) {
         if (!cancelled) {
@@ -64,7 +88,7 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
     return () => {
       cancelled = true;
     };
-  }, [sort, category, contentType]);
+  }, [sort, category, contentType, mcVersion, loader]);
 
   const filtered = query.trim()
     ? items.filter((item) =>
@@ -101,6 +125,28 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
           ))}
         </select>
         <select
+          value={mcVersion ?? ''}
+          onChange={(e) => setMcVersion(e.target.value || null)}
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+          title="Filter by Minecraft version"
+        >
+          <option value="">Any MC version</option>
+          {MC_VERSIONS.map((v) => (
+            <option key={v} value={v}>MC {v}</option>
+          ))}
+        </select>
+        <select
+          value={loader ?? ''}
+          onChange={(e) => setLoader(e.target.value || null)}
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+          title="Filter by modloader"
+        >
+          <option value="">Any loader</option>
+          {LOADERS.map((l) => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+        </select>
+        <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortOption)}
           className="rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
@@ -110,6 +156,28 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
           ))}
         </select>
       </div>
+
+      {(mcVersion || loader) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-[rgb(var(--muted))]">
+          <span>Active filters:</span>
+          {mcVersion && (
+            <button
+              onClick={() => setMcVersion(null)}
+              className="rounded-full border border-gray-300 dark:border-gray-600 px-2 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              MC {mcVersion} ✕
+            </button>
+          )}
+          {loader && (
+            <button
+              onClick={() => setLoader(null)}
+              className="rounded-full border border-gray-300 dark:border-gray-600 px-2 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              {loader} ✕
+            </button>
+          )}
+        </div>
+      )}
 
       {categories.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -154,6 +222,14 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
       ) : filtered.length === 0 ? (
         <div className="rounded-xl p-6 border border-dashed border-gray-300 dark:border-gray-600 text-center">
           <p className="text-[rgb(var(--muted))]">No curated items to display.</p>
+          {onOpenModrinth && (
+            <button
+              onClick={onOpenModrinth}
+              className="mt-3 text-sm font-medium text-brand-600 hover:underline dark:text-brand-400"
+            >
+              Not finding what you need? Search all of Modrinth →
+            </button>
+          )}
         </div>
       ) : (
         <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

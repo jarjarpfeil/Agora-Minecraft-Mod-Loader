@@ -126,7 +126,7 @@ logger = logging.getLogger("compiler")
 # Schema setup
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 CREATE_INDEXES = [
@@ -169,7 +169,18 @@ def create_tables(conn: sqlite3.Connection) -> None:
             icon_url TEXT,
             gallery_urls_json TEXT,
             date_added TEXT,
-            compatible_versions_json TEXT
+            compatible_versions_json TEXT,
+            -- Supplementary metadata hydrated by the nightly compiler from the
+            -- upstream source (e.g. Modrinth bulk project API). Stored as TEXT
+            -- only — image *URLs* are kept, never binary image data — so the
+            -- signed registry.db stays compact (§6.3 / §4.2 "media strategy").
+            -- Manifest/curator-provided values always take precedence over
+            -- API-fetched values for these fields.
+            description TEXT,
+            body_markdown TEXT,
+            page_url TEXT,
+            license_id TEXT,
+            source_updated_at TEXT
         )
     """)
 
@@ -375,14 +386,19 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
     gallery = item.get("gallery_urls", [])
     compatible_versions = item.get("compatible_versions") or default_compatible_versions(item)
 
+    # Supplementary metadata (description, body, etc.) is resolved by the
+    # Modrinth hydrator with manifest/override precedence; read the final
+    # values here. These are TEXT-only and may be None for items that were
+    # not hydratable (e.g. non-modrinth strategies lacking manual fields).
     cursor.execute(
         """
         INSERT INTO registry_items (
             id, name, content_type, download_strategy, source_identifier, sha256,
             upvotes, downvotes, net_score, velocity, status,
             is_immune, immunity_reason, allow_comments, immunity_cooldown_until,
-            icon_url, gallery_urls_json, date_added, compatible_versions_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            icon_url, gallery_urls_json, date_added, compatible_versions_json,
+            description, body_markdown, page_url, license_id, source_updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             item_id,
@@ -404,6 +420,11 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
             json.dumps(gallery, separators=(",", ":")),
             manifest_date_added(path),
             json.dumps(compatible_versions, separators=(",", ":")),
+            item.get("description"),
+            item.get("body_markdown"),
+            item.get("page_url"),
+            item.get("license_id"),
+            item.get("source_updated_at"),
         ),
     )
 
@@ -417,49 +438,132 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
     )
 
     # Categories.
-    for category_id in item.get("base_categories", []):
+    # Curator-provided taxonomy always wins. Only when the manifest sets
+    # NEITHER base_categories NOR community_categories do we fall back to the
+    # Modrinth-derived `_hydrated_categories` (captured by the metadata
+    # hydrator). These upstream tags are registered as community (unvetted)
+    # categories so they're visually distinct and trivially overridable later
+    # by adding a real base_categories/community_categories list to the manifest.
+    base_cats: list[str] = list(item.get("base_categories", []))
+    community_cats: list[str] = list(item.get("community_categories", []))
+    fell_back_to_upstream = False
+    if not base_cats and not community_cats:
+        upstream = item.get("_hydrated_categories")
+        if upstream:
+            community_cats = upstream
+            fell_back_to_upstream = True
+
+    for category_id in base_cats:
         register_category(conn, category_id, is_community=False)
         link_item_category(conn, item_id, category_id)
-    for category_id in item.get("community_categories", []):
+    for category_id in community_cats:
         register_category(conn, category_id, is_community=True)
         link_item_category(conn, item_id, category_id)
 
+    if fell_back_to_upstream:
+        logger.info(
+            "Item '%s' has no manual categories; linked %d community categories from upstream.",
+            item_id,
+            len(community_cats),
+        )
+
 
 # ---------------------------------------------------------------------------
-# Modrinth batch image hydration
+# Modrinth batch metadata hydration
 # ---------------------------------------------------------------------------
 
 _MODRINTH_API_URL = "https://api.modrinth.com/v2/projects"
 _MODRINTH_USER_AGENT = "AgoraCompiler/1.0"
 _MODRINTH_BATCH_SIZE = 100
+_MODRINTH_PAGE_BASE = "https://modrinth.com"
+
+# Modrinth `project_type` → canonical site URL path segment.
+_PROJECT_TYPE_URL_PATH = {
+    "mod": "mod",
+    "modpack": "modpack",
+    "shader": "shader",
+    "resourcepack": "resourcepack",
+    "plugin": "plugin",
+}
+
+# Loader names Modrinth lumps into the `categories` array. These are already
+# represented in `compatible_versions_json` loaders, so we exclude them from
+# the category taxonomy fallback to avoid polluting category facets.
+_MODRINTH_LOADER_CATEGORY_NAMES = frozenset(
+    {
+        "fabric",
+        "quilt",
+        "forge",
+        "neoforge",
+        "liteloader",
+        "modloader",
+        "rift",
+        "canvas",
+        "iris",
+        "optifine",
+        "vanilla",
+    }
+)
 
 
-def _hydrate_modrinth_images(items: list[dict[str, Any]]) -> None:
-    """Batch-query the Modrinth API to fill icon_url / gallery_urls for modrinth_id items.
+def _build_modrinth_page_url(proj: dict[str, Any]) -> str | None:
+    """Construct the canonical Modrinth page URL from a bulk project payload."""
+    slug = proj.get("slug")
+    if not slug:
+        return None
+    path = _PROJECT_TYPE_URL_PATH.get(proj.get("project_type", "mod"), "mod")
+    return f"{_MODRINTH_PAGE_BASE}/{path}/{slug}"
 
-    Only items whose ``download_strategy`` is ``modrinth_id`` are queried.
-    Manifest-provided values are preserved (not overwritten) — the API fills
-    in only missing fields.  Network failures degrade gracefully with a warning.
+
+def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
+    """Batch-query the Modrinth API to hydrate rich metadata for ``modrinth_id`` items.
+
+    Pulls the short description, full markdown body, canonical page URL,
+    license id, and last-updated timestamp from the bulk ``/v2/projects``
+    endpoint (up to 100 projects per request), in addition to the icon and
+    gallery URLs. This bakes rich, instant-on metadata into the signed
+    ``registry.db`` so the client never has to hit Modrinth's API at browse
+    time (§6.3 / §4.2 "media strategy": text + image *URLs* only, no binary).
+
+    Precedence (per Gemini's "curator override" principle): a manifest- or
+    curator-provided value always wins over the API value.
+
+      - ``icon_url`` / ``gallery_urls``        : manifest value kept if present
+      - ``description``                          : ``description_override`` > manifest ``description`` > API
+      - ``body_markdown``                       : ``body_override`` > manifest ``body_markdown`` > API ``body``
+      - ``page_url``                            : manifest ``page_url`` > API (constructed from slug)
+      - ``license_id``                          : manifest ``license`` > API ``license.id``
+      - ``source_updated_at``                   : manifest ``source_updated_at`` > API ``updated``
+
+    Network failures degrade gracefully with a warning; items simply keep
+    whatever manifest provided.
     """
-    # Collect modrinth_id items that need hydration.
-    to_hydrate: list[tuple[int, dict[str, Any]]] = []
+    # Collect modrinth_id items that lack at least one hydratable field.
+    hydratable_keys = (
+        "icon_url",
+        "gallery_urls",
+        "description",
+        "body_markdown",
+        "page_url",
+        "license_id",
+        "source_updated_at",
+    )
+    to_hydrate: list[tuple[int, dict[str, Any], str]] = []
     for idx, item in enumerate(items):
         if item.get("download_strategy") != "modrinth_id":
             continue
-        # Only fetch if the manifest doesn't already set icon_url or gallery_urls.
-        needs_icon = not item.get("icon_url")
-        needs_gallery = not item.get("gallery_urls")
-        if not needs_icon and not needs_gallery:
-            continue
         mid = item.get("modrinth_id", item.get("source_identifier", ""))
         if not mid:
+            continue
+        # Skip only if the manifest already supplies every hydratable field.
+        if all(item.get(k) for k in hydratable_keys):
             continue
         to_hydrate.append((idx, item, mid))
 
     if not to_hydrate:
         return
 
-    # Group by modrinth_id for batch query.
+    # Group by modrinth_id for the batch query (dedupe IDs).
     id_to_indices: dict[str, list[int]] = {}
     id_list: list[str] = []
     for idx, _item, mid in to_hydrate:
@@ -468,9 +572,7 @@ def _hydrate_modrinth_images(items: list[dict[str, Any]]) -> None:
             id_to_indices[mid] = []
         id_to_indices[mid].append(idx)
 
-    # Batch-query in chunks via GET with query params.
-    # Modrinth's /v2/projects endpoint expects `ids` as a JSON-array-encoded string
-    # (e.g. ids=["abc","def"]). Pass the JSON string and let requests URL-encode it.
+    # Batch-query in chunks via GET with the JSON-array-encoded `ids` param.
     hydrated: dict[str, dict[str, Any]] = {}
     for i in range(0, len(id_list), _MODRINTH_BATCH_SIZE):
         chunk = id_list[i : i + _MODRINTH_BATCH_SIZE]
@@ -486,23 +588,77 @@ def _hydrate_modrinth_images(items: list[dict[str, Any]]) -> None:
             projects = resp.json()
             for proj in projects:
                 proj_id = proj.get("id", "")
-                hydrated[proj_id] = proj
+                if proj_id:
+                    hydrated[proj_id] = proj
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Modrinth batch hydration failed for chunk %d-%d: %s", i, i + len(chunk), exc)
+            logger.warning("Modrinth batch metadata hydration failed for chunk %d-%d: %s", i, i + len(chunk), exc)
 
-    # Apply hydrated data back.
-    for idx, _item, mid in to_hydrate:
+    # Apply hydrated data back with manifest/override precedence.
+    for idx, item, mid in to_hydrate:
         proj = hydrated.get(mid)
         if proj is None:
             continue
-        if not items[idx].get("icon_url"):
+
+        # Icon + gallery: manifest value kept if present.
+        if not item.get("icon_url"):
             icon = proj.get("icon_url")
             if icon:
-                items[idx]["icon_url"] = icon
-        if not items[idx].get("gallery_urls"):
+                item["icon_url"] = icon
+        if not item.get("gallery_urls"):
             gallery = proj.get("gallery", [])
             if gallery:
-                items[idx]["gallery_urls"] = gallery
+                item["gallery_urls"] = gallery
+
+        # Description: override > manifest > API.
+        if item.get("description_override"):
+            item["description"] = item["description_override"]
+        elif not item.get("description"):
+            desc = proj.get("description")
+            if desc:
+                item["description"] = desc
+
+        # Body markdown: override > manifest > API.
+        if item.get("body_override"):
+            item["body_markdown"] = item["body_override"]
+        elif not item.get("body_markdown"):
+            body = proj.get("body")
+            if body:
+                item["body_markdown"] = body
+
+        # Canonical page URL: manifest > constructed-from-slug.
+        if not item.get("page_url"):
+            page_url = _build_modrinth_page_url(proj)
+            if page_url:
+                item["page_url"] = page_url
+
+        # License id: manifest `license` wins; else API license.id.
+        if not item.get("license_id"):
+            if item.get("license"):
+                item["license_id"] = item["license"]
+            else:
+                lic = proj.get("license") or {}
+                lic_id = lic.get("id") if isinstance(lic, dict) else None
+                if lic_id:
+                    item["license_id"] = lic_id
+
+        # Source-updated timestamp: manifest > API `updated`.
+        if not item.get("source_updated_at"):
+            updated = proj.get("updated")
+            if updated:
+                item["source_updated_at"] = updated
+
+        # Upstream categories — captured as a *fallback only*. Linked later
+        # (in insert_registry_item) exclusively when the manifest sets neither
+        # base_categories nor community_categories. Loader-ish category names
+        # are filtered out since loaders live in compatible_versions_json.
+        if not item.get("_hydrated_categories"):
+            raw_cats = proj.get("categories", []) or []
+            cats = [
+                c for c in raw_cats
+                if isinstance(c, str) and c and c not in _MODRINTH_LOADER_CATEGORY_NAMES
+            ]
+            if cats:
+                item["_hydrated_categories"] = cats
 
 
 def insert_pack_mods(conn: sqlite3.Connection, pack_id: str, mods: list[dict[str, Any]]) -> None:
@@ -703,8 +859,9 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
     for dir_name in CONTENT_DIRS:
         all_items.extend(load_json_files(REGISTRY_DIR / dir_name))
 
-    # Hydrate Modrinth image URLs for modrinth_id items (in-place).
-    _hydrate_modrinth_images([item for _, item in all_items])
+    # Hydrate Modrinth metadata (description, body, icon, gallery, page URL,
+    # license, updated) for modrinth_id items (in-place, with override precedence).
+    _hydrate_modrinth_metadata([item for _, item in all_items])
 
     # Insert items, handling pack-specific fields.
     mod_count = 0
