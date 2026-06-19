@@ -120,6 +120,7 @@ export interface RegistryItem {
   page_url: string | null;
   license_id: string | null;
   source_updated_at: string | null;
+  modrinth_id: string | null;
 }
 
 export interface CategoryInfo {

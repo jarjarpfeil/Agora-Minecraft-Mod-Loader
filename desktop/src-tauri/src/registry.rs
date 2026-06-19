@@ -35,6 +35,10 @@ pub struct RegistryItem {
     pub license_id: Option<String>,
     /// ISO timestamp of the upstream project's last update (nightly snapshot).
     pub source_updated_at: Option<String>,
+    /// Optional Modrinth project id (github_release/direct_hash mods may carry
+    /// one when the project also exists on Modrinth). Used as the
+    /// version-resolution fallback when the primary source fails.
+    pub modrinth_id: Option<String>,
 }
 
 /// Valid sort options for browsing (§6.2).
@@ -152,7 +156,7 @@ pub fn browse_items(
                 ri.immunity_reason, ri.allow_comments, ri.icon_url,
                 ri.gallery_urls_json, ri.date_added, ri.compatible_versions_json,
                 ri.description, ri.body_markdown, ri.page_url, ri.license_id,
-                ri.source_updated_at
+                ri.source_updated_at, ri.modrinth_id
          FROM registry_items ri{join}{where_clause} {order} LIMIT ?",
         join = join,
         where_clause = where_clause,
@@ -193,7 +197,7 @@ pub fn get_item_by_id(conn: &Connection, item_id: &str) -> LauncherResult<Option
                     immunity_reason, allow_comments, icon_url,
                     gallery_urls_json, date_added, compatible_versions_json,
                     description, body_markdown, page_url, license_id,
-                    source_updated_at
+                    source_updated_at, modrinth_id
              FROM registry_items WHERE id = ?1",
         )
         .map_err(|e| LauncherError::Generic {
@@ -335,5 +339,6 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<RegistryItem> {
         page_url: row.get(20)?,
         license_id: row.get(21)?,
         source_updated_at: row.get(22)?,
+        modrinth_id: row.get(23)?,
     })
 }

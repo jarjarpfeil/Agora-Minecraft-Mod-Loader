@@ -165,6 +165,19 @@ struct ModrinthVersionFile {
 
 /// List available mod versions for a registry item, resolving live data from
 /// the upstream source (GitHub Releases or Modrinth).
+///
+/// Auto-fallback (§6.3 resilience): for `github_release` mods that also carry
+/// a `modrinth_id`, if the primary GitHub resolver fails (network error,
+/// rate-limit, or returns no candidates), the resolver transparently retries
+/// against Modrinth. The installed file is still SHA-256-verified against the
+/// pinned registry hash in `install_mod_version`, so a different build from
+/// the alternate source is rejected rather than silently installed.
+///
+/// Modrinth toggle (§6.3): the `modrinth_id` strategy path and the
+/// `github_release`→Modrinth fallback are both gated by the `modrinth_enabled`
+/// setting. When the user has disabled Modrinth integration, NO Modrinth API
+/// calls are made — GitHub remains the sole source for `github_release` mods,
+/// and `modrinth_id`-strategy items surface `ModrinthDisabled`.
 pub async fn list_mod_versions(
     app: &tauri::AppHandle,
     instance_id: &str,
@@ -176,10 +189,44 @@ pub async fn list_mod_versions(
     let mc_version = &instance.minecraft_version;
     let loader = &instance.loader;
     let strategy = item.download_strategy.as_str();
+    let modrinth_on = crate::modrinth_raw::is_modrinth_enabled(app);
 
     match strategy {
-        "github_release" => resolve_github_releases(app, &item, mc_version, loader).await,
-        "modrinth_id" => resolve_modrinth_versions(&item, mc_version, loader).await,
+        "github_release" => {
+            let primary = resolve_github_releases(app, &item, mc_version, loader).await;
+            // Fallback to Modrinth only when (a) GitHub yielded nothing useful,
+            // (b) a modrinth_id is declared, AND (c) the Modrinth toggle is on.
+            // When the toggle is off, no Modrinth API call is attempted and the
+            // (possibly empty) GitHub result is returned as-is.
+            let candidates = match primary {
+                Ok(c) if !c.is_empty() => return Ok(c),
+                Ok(_) => Vec::new(),
+                Err(e) => {
+                    crate::auth::log_line(&format!(
+                        "list_mod_versions: github_release primary failed for '{}' ({}); {}",
+                        item_id,
+                        e,
+                        if modrinth_on { "trying Modrinth fallback" } else { "Modrinth disabled, no fallback" }
+                    ));
+                    Vec::new()
+                }
+            };
+            if modrinth_on {
+                if let Some(mid) = item.modrinth_id.as_deref().filter(|s| !s.is_empty()) {
+                    let alt = resolve_modrinth_versions_by_id(mid, mc_version, loader).await?;
+                    if !alt.is_empty() {
+                        return Ok(alt);
+                    }
+                }
+            }
+            Ok(candidates)
+        }
+        "modrinth_id" => {
+            if !modrinth_on {
+                return Err(LauncherError::ModrinthDisabled);
+            }
+            resolve_modrinth_versions(&item, mc_version, loader).await
+        }
         _ => Err(LauncherError::Generic {
             code: "ERR_UNSUPPORTED_STRATEGY".to_string(),
             message: format!(
@@ -263,9 +310,23 @@ async fn resolve_modrinth_versions(
     mc_version: &str,
     loader: &str,
 ) -> LauncherResult<Vec<ModVersionCandidate>> {
-    let source = &item.source_identifier;
+    // For the `modrinth_id` strategy, source_identifier IS the Modrinth
+    // project id (it doubles, allowing the minimal 5-line manifest).
+    resolve_modrinth_versions_by_id(&item.source_identifier, mc_version, loader).await
+}
+
+/// Resolve Modrinth versions for an explicit project id/slug.
+///
+/// Shared by the `modrinth_id` strategy path and the `github_release`
+/// auto-fallback path (which passes the optional `modrinth_id` field so a
+/// GitHub-hosted mod can fall back to Modrinth when GitHub fails).
+async fn resolve_modrinth_versions_by_id(
+    project_id: &str,
+    mc_version: &str,
+    loader: &str,
+) -> LauncherResult<Vec<ModVersionCandidate>> {
     let url = format!(
-        "https://api.modrinth.com/v2/project/{source}/version?game_versions=[\"{mc_version}\"]&loaders=[\"{loader}\"]"
+        "https://api.modrinth.com/v2/project/{project_id}/version?game_versions=[\"{mc_version}\"]&loaders=[\"{loader}\"]"
     );
 
     let client = reqwest::Client::builder()

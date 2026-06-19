@@ -11,12 +11,12 @@ const REGISTRY_PUBKEY_HEX: &str = match option_env!("AGORA_REGISTRY_PUBKEY") { S
 
 /// App-side expected schema version for registry.db.
 ///
-/// Bumped to 2 alongside the compiler adding supplementary metadata columns
-/// (description, body_markdown, page_url, license_id, source_updated_at) to
-/// `registry_items`. v1 and v2 dbs are produced/expected in lockstep from a
-/// single commit, so clients always receive a matching signed db via the
-/// update flow.
-pub const APP_REGISTRY_SCHEMA_VERSION: i64 = 2;
+/// Bumped to 3 alongside the compiler adding a `modrinth_id` column to
+/// `registry_items` (used for metadata hydration and as the version-resolution
+/// fallback when a github_release mod's primary source fails). Compiler and
+/// app ship in lockstep from a single commit, so clients always receive a
+/// matching signed db via the update flow.
+pub const APP_REGISTRY_SCHEMA_VERSION: i64 = 3;
 
 /// Minimum interval between automatic update checks (1 hour).
 const UPDATE_CHECK_INTERVAL_SECS: i64 = 3600;

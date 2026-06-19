@@ -126,7 +126,7 @@ logger = logging.getLogger("compiler")
 # Schema setup
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 CREATE_INDEXES = [
@@ -180,7 +180,14 @@ def create_tables(conn: sqlite3.Connection) -> None:
             body_markdown TEXT,
             page_url TEXT,
             license_id TEXT,
-            source_updated_at TEXT
+            source_updated_at TEXT,
+            -- Optional Modrinth project id (carried from the manifest) used both
+            -- for metadata hydration and, at install time, as the version
+            -- resolution fallback for github_release/direct_hash mods whose
+            -- primary source fails (e.g. GitHub 60 req/hr rate limit). The
+            -- installed file is still SHA-256-verified against the pinned hash
+            -- regardless of which source delivered it.
+            modrinth_id TEXT
         )
     """)
 
@@ -397,8 +404,9 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
             upvotes, downvotes, net_score, velocity, status,
             is_immune, immunity_reason, allow_comments, immunity_cooldown_until,
             icon_url, gallery_urls_json, date_added, compatible_versions_json,
-            description, body_markdown, page_url, license_id, source_updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            description, body_markdown, page_url, license_id, source_updated_at,
+            modrinth_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             item_id,
@@ -425,6 +433,7 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
             item.get("page_url"),
             item.get("license_id"),
             item.get("source_updated_at"),
+            item.get("modrinth_id"),
         ),
     )
 
@@ -516,7 +525,7 @@ def _build_modrinth_page_url(proj: dict[str, Any]) -> str | None:
 
 
 def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
-    """Batch-query the Modrinth API to hydrate rich metadata for ``modrinth_id`` items.
+    """Batch-query the Modrinth API to hydrate rich metadata for items with a Modrinth ID.
 
     Pulls the short description, full markdown body, canonical page URL,
     license id, and last-updated timestamp from the bulk ``/v2/projects``
@@ -524,6 +533,13 @@ def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
     gallery URLs. This bakes rich, instant-on metadata into the signed
     ``registry.db`` so the client never has to hit Modrinth's API at browse
     time (§6.3 / §4.2 "media strategy": text + image *URLs* only, no binary).
+
+    Hydration is decoupled from the download strategy: ``github_release`` /
+    ``direct_hash`` mods may also hydrate display metadata from Modrinth by
+    setting an explicit ``modrinth_id`` in their manifest (for when the same
+    project also exists on Modrinth). For ``modrinth_id``-strategy items,
+    ``source_identifier`` doubles as the Modrinth ID so the minimal 5-line
+    manifest still works without a redundant field.
 
     Precedence (per Gemini's "curator override" principle): a manifest- or
     curator-provided value always wins over the API value.
@@ -550,9 +566,23 @@ def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
     )
     to_hydrate: list[tuple[int, dict[str, Any], str]] = []
     for idx, item in enumerate(items):
-        if item.get("download_strategy") != "modrinth_id":
-            continue
-        mid = item.get("modrinth_id", item.get("source_identifier", ""))
+        # Metadata hydration is decoupled from the download strategy: a
+        # ``github_release`` / ``direct_hash`` mod can still pull display
+        # metadata (description, body, gallery, categories) from Modrinth if
+        # the same project exists there, by setting an explicit ``modrinth_id``.
+        #
+        # ID resolution:
+        #   - ``modrinth_id`` strategy: ``modrinth_id`` field, falling back to
+        #     ``source_identifier`` (which IS the Modrinth ID — keeps the
+        #     minimal 5-line manifest working where source_identifier doubles).
+        #   - any other strategy: ONLY an explicit ``modrinth_id`` field is
+        #     used. ``source_identifier`` is a GitHub repo / direct URL here,
+        #     not a Modrinth ID, so it must not be sent to the Modrinth API.
+        strategy = item.get("download_strategy", "")
+        if strategy == "modrinth_id":
+            mid = item.get("modrinth_id") or item.get("source_identifier", "")
+        else:
+            mid = item.get("modrinth_id", "")
         if not mid:
             continue
         # Skip only if the manifest already supplies every hydratable field.
