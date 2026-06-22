@@ -32,7 +32,7 @@ pub fn launcher_profiles_path() -> Option<PathBuf> {
     minecraft_dir().map(|d| d.join("launcher_profiles.json"))
 }
 
-/// The app data directory (`%APPDATA%/agora-mc` on Windows, etc.).
+/// The app data directory (`%APPDATA%/com.agoramc.app` on Windows, etc.).
 pub fn app_data_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<PathBuf> {
     let dir = app
         .path()

@@ -33,7 +33,7 @@ pub const AGORA_OAUTH_CLIENT_ID: &str = match option_env!("AGORA_OAUTH_CLIENT_ID
     None => "Iv23ctVA40Yy1ZUkvemh",
 };
 
-const KEYRING_SERVICE: &str = "io.agora-mc";
+const KEYRING_SERVICE: &str = "com.agoramc";
 const KEYRING_ACCOUNT: &str = "github-token";
 
 /// Response from `POST https://github.com/login/device/code`.
