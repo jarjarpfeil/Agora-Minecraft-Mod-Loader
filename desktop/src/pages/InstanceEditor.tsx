@@ -4,6 +4,8 @@ import {
   removeModFromInstance,
   addManualMod,
   exportInstancePack,
+  pickOpenFile,
+  importInstancePack,
   browseItems,
   listCategories,
   listModVersions,
@@ -28,7 +30,7 @@ const SORTS: { label: string; value: SortOption }[] = [
 
 const CONTENT_TYPES = ['mod', 'pack', 'shader', 'resourcepack', 'server', 'datapack', 'world'];
 
-export function InstanceEditor({ instanceId, onBack }: { instanceId: string; onBack: () => void }) {
+export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { instanceId: string; onBack: () => void; onOpenInstanceEditor?: (instanceId: string) => void }) {
   const [detail, setDetail] = useState<InstanceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +222,40 @@ export function InstanceEditor({ instanceId, onBack }: { instanceId: string; onB
     getInstanceDetail(instanceId).then((result) => setDetail(result));
   };
 
+  const handleImportPack = async () => {
+    setError(null);
+    setStatus(null);
+    const path = await pickOpenFile('Import Pack', ['mrpack', 'agora-pack.json', 'json']);
+    if (path === null) return;
+    try {
+      const newInstance = await importInstancePack(path);
+      if (onOpenInstanceEditor) {
+        setError(null);
+        setStatus(null);
+        onOpenInstanceEditor(newInstance);
+      } else {
+        setStatus(`Imported pack: new instance created.`);
+      }
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
+  const handleImportMod = async () => {
+    setError(null);
+    setStatus(null);
+    const path = await pickOpenFile('Import Mod', ['jar']);
+    if (path === null) return;
+    try {
+      await addManualMod(instanceId, path);
+      const result = await getInstanceDetail(instanceId);
+      setDetail(result);
+      setStatus(`Added mod: ${path.split(/[\\/]/).pop()}`);
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -234,10 +270,26 @@ export function InstanceEditor({ instanceId, onBack }: { instanceId: string; onB
       return;
     }
     try {
-      await addManualMod(instanceId, filePath);
-      const result = await getInstanceDetail(instanceId);
-      setDetail(result);
-      setStatus(`Added "${file.name}" to instance.`);
+      const ext = file.name.toLowerCase();
+      // .jar → manual mod install
+      if (ext.endsWith('.jar')) {
+        await addManualMod(instanceId, filePath);
+        const result = await getInstanceDetail(instanceId);
+        setDetail(result);
+        setStatus(`Added "${file.name}" to instance.`);
+      }
+      // .mrpack, .agora-pack.json, or .json → pack import
+      else if (ext.endsWith('.mrpack') || ext.endsWith('.agora-pack.json') || (ext.endsWith('.json') && file.name.toLowerCase().endsWith('.json'))) {
+        const newInstance = await importInstancePack(filePath);
+        if (onOpenInstanceEditor) {
+          onOpenInstanceEditor(newInstance);
+        } else {
+          setStatus('Imported pack: new instance created.');
+        }
+      }
+      else {
+        setError('Unsupported file type. Drop a .jar mod or a .mrpack/.agora-pack.json pack.');
+      }
     } catch (e) {
       setError(formatError(e));
     }
@@ -327,6 +379,12 @@ export function InstanceEditor({ instanceId, onBack }: { instanceId: string; onB
               title="JVM settings edit — backend command not yet implemented"
             >
               ⚙️ Edit Settings (TODO)
+            </button>
+            <button
+              onClick={handleImportPack}
+              className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-[rgb(var(--muted))] hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              📥 Import Pack
             </button>
             <button
               onClick={() => handleExportPack('json')}
@@ -479,9 +537,19 @@ export function InstanceEditor({ instanceId, onBack }: { instanceId: string; onB
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
         onDrop={handleDrop}
       >
-        <h3 className="font-semibold text-sm mb-3">Installed Mods ({mods.length})</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-sm">Installed Mods ({mods.length})</h3>
+          <div className="flex gap-2">
+            <button
+              onClick={handleImportMod}
+              className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-[rgb(var(--muted))] hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              📥 Import Mod
+            </button>
+          </div>
+        </div>
         <p className="text-xs text-[rgb(var(--muted))] mb-3">
-          Drag and drop a .jar file here to add it manually.
+          Drag and drop a .jar mod, or a .mrpack / .agora-pack.json pack file, here to install it.
         </p>
         {mods.length === 0 ? (
           <p className="text-sm text-[rgb(var(--muted))]">No mods installed.</p>

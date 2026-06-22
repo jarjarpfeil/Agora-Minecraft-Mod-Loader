@@ -8,6 +8,7 @@ You can still pass an explicit list with --mc-versions.
 Usage examples:
     python scripts/refresh_loader_manifests.py --skip-sign
     python scripts/refresh_loader_manifests.py --auto-versions --latest 5 --skip-sign
+    python scripts/refresh_loader_manifests.py --auto-versions --skip-sign      # all stable MC versions (default)
     python scripts/refresh_loader_manifests.py --mc-versions 1.21 1.20.6 --skip-sign
     python scripts/refresh_loader_manifests.py --auto-versions --since 1.20 --skip-sign
 """
@@ -43,8 +44,13 @@ logger = logging.getLogger("refresh_loader_manifests")
 
 
 def _is_standard_release(version: str) -> bool:
-    """Return True for versions like 1.21 or 1.21.4, ignoring snapshots/combat builds."""
-    return bool(re.fullmatch(r"1\.\d+(?:\.\d+)?", version))
+    """Return True for clean numeric versions like 1.21, 1.21.4, 26.1, 26.1.1.
+
+    Ignores snapshots (snapshot/alpha/beta/combat tags, dated versions like
+    26w13a, suffixed rc/pre builds). This is a secondary safety net on top of
+    Fabric's ``stable`` flag — both must pass for a version to be included.
+    """
+    return bool(re.fullmatch(r"\d+\.\d+(?:\.\d+)?", version))
 
 
 def discover_stable_mc_versions(
@@ -255,7 +261,7 @@ def main() -> int:
     parser.add_argument(
         "--latest",
         type=int,
-        help="With --auto-versions, keep only the N latest stable versions",
+        help="With --auto-versions, keep only the N latest stable versions (default: all)",
     )
     parser.add_argument(
         "--since",
@@ -290,7 +296,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.auto_versions:
-        latest = args.latest if args.latest is not None else 5
+        # Default to ALL stable versions; user can pass --latest N to slice
+        # or --since X to keep only versions newer than X.
+        latest = args.latest
         mc_versions = discover_stable_mc_versions(since=args.since, latest=latest)
     elif args.mc_versions:
         mc_versions = args.mc_versions

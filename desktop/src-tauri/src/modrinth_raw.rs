@@ -90,6 +90,15 @@ pub struct ModrinthSearchResult {
     pub license: Option<String>,
 }
 
+/// Per-file metadata resolved from Modrinth's API for a single project file.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModrinthFileMetadata {
+    pub url: String,
+    pub sha1: String,
+    pub sha512: String,
+    pub size: u64,
+}
+
 /// Valid Modrinth sort indexes for the search endpoint.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -195,7 +204,7 @@ pub struct ModrinthGameVersionInfo {
     pub major: bool,
 }
 
-// --- Modrinth v2 project version response types ---
+// --- Modrinth v2 project version response types (for version-listing API) ---
 
 #[derive(Debug, Deserialize)]
 struct ModrinthVersion {
@@ -225,6 +234,29 @@ struct ModrinthFileHashes {
     /// Modrinth also publishes sha512; retained for documentation / future use.
     #[allow(dead_code)]
     sha512: Option<String>,
+}
+
+// --- Private API types for resolve_modrinth_file_metadata (self-contained) ---
+
+#[derive(Debug, Deserialize)]
+struct ModrinthVersionFileRaw {
+    url: String,
+    filename: String,
+    primary: Option<bool>,
+    size: Option<u64>,
+    hashes: Option<ModrinthFileHashesRaw>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModrinthFileHashesRaw {
+    sha1: Option<String>,
+    sha512: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModrinthVersionRaw {
+    #[serde(default)]
+    files: Vec<ModrinthVersionFileRaw>,
 }
 
 /// A candidate version returned to the frontend for the raw Modrinth picker.
@@ -466,6 +498,80 @@ async fn modrinth_get_json<T: serde::de::DeserializeOwned>(url: &str) -> Launche
             code: "ERR_NETWORK".to_string(),
             message: "Failed to parse Modrinth response.".to_string(),
         })
+}
+
+/// Resolve Modrinth-published per-file metadata (URL + sha1 + sha512 + size)
+/// for a single project by matching the given filename.
+///
+/// Iterates all versions returned by `GET /v2/project/{project_id}/version`
+/// and returns the first file whose `filename` equals `filename`. Prefers
+/// `primary` files. Returns `None` if no match is found or the API call fails
+/// (callers fall back to bundling the jar locally, mirroring mrpack 1.x spec
+/// behaviour for unresolvable files).
+pub async fn resolve_modrinth_file_metadata(
+    project_id: &str,
+    filename: &str,
+) -> Option<ModrinthFileMetadata> {
+    let client = reqwest::Client::builder()
+        .user_agent("AgoraLauncher/1.0")
+        .build()
+        .ok()?;
+
+    let url = format!(
+        "https://api.modrinth.com/v2/project/{pid}/version",
+        pid = urlencoding::encode(project_id),
+    );
+
+    let versions: Vec<ModrinthVersionRaw> = client
+        .get(&url)
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+
+    for version in &versions {
+        // Prefer the primary file matching filename.
+        if let Some(file) = version
+            .files
+            .iter()
+            .find(|f| f.filename == filename && f.primary == Some(true))
+        {
+            if let Some(ref hashes) = file.hashes {
+                let sha1 = hashes.sha1.as_deref().unwrap_or("").trim().to_lowercase();
+                let sha512 = hashes.sha512.as_deref().unwrap_or("").trim().to_lowercase();
+                if !sha1.is_empty() && !sha512.is_empty() {
+                    return Some(ModrinthFileMetadata {
+                        url: file.url.clone(),
+                        sha1,
+                        sha512,
+                        size: file.size.unwrap_or(0),
+                    });
+                }
+            }
+        }
+    }
+
+    // Fallback: first non-primary match.
+    for version in &versions {
+        if let Some(file) = version.files.iter().find(|f| f.filename == filename) {
+            if let Some(ref hashes) = file.hashes {
+                let sha1 = hashes.sha1.as_deref().unwrap_or("").trim().to_lowercase();
+                let sha512 = hashes.sha512.as_deref().unwrap_or("").trim().to_lowercase();
+                if !sha1.is_empty() && !sha512.is_empty() {
+                    return Some(ModrinthFileMetadata {
+                        url: file.url.clone(),
+                        sha1,
+                        sha512,
+                        size: file.size.unwrap_or(0),
+                    });
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// List versions for a raw Modrinth project (by project ID or slug).

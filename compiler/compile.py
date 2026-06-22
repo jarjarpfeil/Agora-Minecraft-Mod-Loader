@@ -19,7 +19,9 @@ import signal
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +112,1286 @@ def _load_dotenv(path: Path) -> None:
 
 
 _load_dotenv(REPO_ROOT / ".env")
+
+# ---------------------------------------------------------------------------
+# GitHub social metrics (§3.1 steps 3-9)
+# ---------------------------------------------------------------------------
+#
+# The governance repo (owner/repo) whose Issue tracker hosts mod reviews / vote
+# reactions. Reviews are filed via the .github/ISSUE_TEMPLATE/review-form.yml
+# form; the compiler enumerates issues in this repo whose body matches the form
+# layout (### Mod Registry ID heading + value) and aggregates reactions on the
+# issue + its comments to produce per-mod upvotes/downvotes.
+#
+# Override locally via the AGORA_GOVERNANCE_REPO env var ("owner/repo" form).
+GITHUB_API_BASE = "https://api.github.com"
+DEFAULT_GOV_OWNER = "agora-mc"
+DEFAULT_GOV_REPO = "agora-mc"
+GITHUB_REACTION_UPVOTES = {"+1"}
+GITHUB_REACTION_DOWNVOTES = {"-1"}
+
+# How the issue body's "### Mod Registry ID" field looks when rendered by
+# GitHub issues created from the form. The form emits a heading followed by
+# the value on its own line.
+MOD_ID_FIELD_RE = re.compile(
+    r"###\s*Mod Registry ID\s*\r?\n+\s*(\S+)\s*(?:\r?\n|$)",
+    re.IGNORECASE,
+)
+
+# --- §3.1 step 5/6/8 + §3.2 Raid Shield circuit-breaker response ---
+#
+# When the velocity circuit breaker fires (Pass 2 set m.status='under_review' +
+# m.anomaly_window_start), the compiler performs beyond-just-status-flip:
+#   - §3.2 Raid Shield: programmatically enable "existing users only"
+#     interaction limits on the governance repo (covers ALL items, not just
+#     the offending one — GitHub interaction-limits are repo-wide).
+#   - §3.1 step 6: DELETE the offending reactions from GitHub via the REST
+#     API (their data is captured pre-DELETE in the audit log entry below).
+#   - §3.1 step 8 (create): create a 7-day triage poll in Discussions under
+#     a "Triage" category if it exists (soft-fail with a warning if the
+#     category isn't present — discussion creation is OPTIONAL, status flip
+#     is the hard requirement).
+#   - Admin-alert issue: file a high-priority confidential issue in the
+#     governance repo (private repos are out of scope; we file as a
+#     confidential issue on agora-mc/agora-mc itself).
+#
+# When `net_score < -10` organically (no spike), step 5 mandates the same
+# under_review flip + triage poll creation, but WITHOUT reaction-deletion
+# (no offending burst to delete) and WITHOUT Raid Shield (interaction limit
+# is only for burst-attack defense).
+TRIAGE_POLL_DURATION_DAYS = 7
+ORGANIC_UNDER_REVIEW_THRESHOLD = -10  # §5.3: net_score drops below -10 organically
+TRIAGE_DISCUSSION_CATEGORY_CANDIDATES = ("Triage", "Mod Reviews", "Community Triage")
+
+
+@dataclass
+class UserReaction:
+    """One (user, vote_direction, timestamp) extracted from a GitHub reaction.
+
+    `comment_id` is None when the reaction was placed directly on the issue
+    itself (rather than on a comment). `is_upvote` is True for +1 / thumbs_up
+    emoji, False for -1 / thumbs_down, None for neutral emoji (laugh, hooray,
+    confused, heart, rocket, eyes) — those are still tracked because user
+    participation in ANY reaction on the mod's tracking issue counts toward
+    diversity (Sybil resistance, Pass 2).
+    """
+    user: str
+    is_upvote: bool | None
+    timestamp: datetime
+    comment_id: int | None = None
+
+
+@dataclass
+class ModSocialMetrics:
+    """Raw (pre-trust-filter) social metrics for one mod.
+
+    Populated in Pass 1 by `_hydrate_github_social_metrics`. Pass 2 will consume
+    these to compute final upvotes/downvotes/net_score/velocity after applying
+    the trust + Sybil + velocity circuit-breaker rules from §3.1 steps 4, 5, 9.
+    """
+    mod_id: str
+    issue_number: int
+    reactions: list[UserReaction] = field(default_factory=list)
+    # Pass 2 (computed by _apply_trust_velocity_pass — not populated by Pass 1):
+    upvotes: int = 0
+    downvotes: int = 0
+    net_score: int = 0
+    velocity: float = 0.0
+    status: str = "active"
+    anomaly_window_start: datetime | None = None  # set if velocity circuit breaker fired
+    raw_reviews: list[dict[str, Any]] = field(default_factory=list)
+    # Each entry: {"author": str, "text": str, "issue_number": int, "created_at": ISO-datetime-string}.
+    # Populated during _hydrate_github_social_metrics by parsing the form's
+    # "Your Technical Review" field from the issue body. Pass 2 / step 7 then
+    # filters via _scrub_review_text and feeds the survivors into
+    # curator_reviews.top_reviews_json.
+    scrubbed_reviews: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _load_github_token() -> str | None:
+    """Read GITHUB_TOKEN from env (loaded by _load_dotenv()). Returns None when unset."""
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    return token or None
+
+
+def _github_request(
+    method: str,
+    path: str,
+    *,
+    token: str,
+    params: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+    max_retries: int = 5,
+) -> Any:
+    """Send a GitHub REST API request with auth + rate-limit handling.
+
+    Retries on 403-with-X-RateLimit-Remaining-0 by sleeping until the reset
+    epoch. Returns parsed JSON (dict or list). Raises on non-2xx after retries.
+    """
+    url = path if path.startswith("http") else f"{GITHUB_API_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "AgoraCompiler/1.0 (https://github.com/agora-mc/agora-mc)",
+    }
+    last_exc: Exception | None = None
+    for attempt in range(max_retries):
+        resp = requests.request(
+            method, url, headers=headers, params=params, json=body, timeout=60
+        )
+        if resp.status_code in (200, 201):
+            return resp.json()
+        if resp.status_code in (403, 429):
+            remaining = resp.headers.get("X-RateLimit-Remaining")
+            reset_epoch = resp.headers.get("X-RateLimit-Reset")
+            if remaining == "0" or resp.status_code == 429:
+                sleep_for = 1.0
+                if reset_epoch:
+                    try:
+                        sleep_for = max(1.0, float(reset_epoch) - time.time() + 1.0)
+                    except ValueError:
+                        pass
+                logger.warning(
+                    "GitHub API rate-limited on %s %s (attempt %d/%d). Sleeping %.0fs.",
+                    method, path, attempt + 1, max_retries, sleep_for,
+                )
+                time.sleep(min(sleep_for, 3600.0))
+                continue
+        body_excerpt = resp.text[:500] if resp.text else ""
+        last_exc = RuntimeError(
+            f"GitHub API {method} {path} returned {resp.status_code}: {body_excerpt}"
+        )
+        break
+    raise last_exc or RuntimeError(f"GitHub API {method} {path} exhausted retries")
+
+
+def _github_graphql(
+    query: str,
+    *,
+    token: str,
+    variables: dict[str, Any] | None = None,
+    max_retries: int = 5,
+) -> dict[str, Any]:
+    """POST a GraphQL query to the GitHub API. Handles rate limits + errors.
+
+    Returns the `data` field of the GraphQL response. Raises on `errors[]`
+    in the response or non-2xx after retries. Rate-limit handling mirrors
+    `_github_request`: sleep until reset epoch on 403/429.
+    """
+    body = {"query": query}
+    if variables:
+        body["variables"] = variables
+    last_exc: Exception | None = None
+    for attempt in range(max_retries):
+        resp = requests.post(
+            f"{GITHUB_API_BASE}/graphql",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "AgoraCompiler/1.0 (https://github.com/agora-mc/agora-mc)",
+            },
+            json=body,
+            timeout=60,
+        )
+        if resp.status_code in (200, 201):
+            payload = resp.json()
+            if "errors" in payload and payload["errors"]:
+                raise RuntimeError(f"GraphQL errors: {payload['errors']}")
+            return payload.get("data", {}) or {}
+        if resp.status_code in (403, 429):
+            remaining = resp.headers.get("X-RateLimit-Remaining")
+            reset_epoch = resp.headers.get("X-RateLimit-Reset")
+            if remaining == "0" or resp.status_code == 429:
+                sleep_for = 1.0
+                if reset_epoch:
+                    try:
+                        sleep_for = max(1.0, float(reset_epoch) - time.time() + 1.0)
+                    except ValueError:
+                        pass
+                logger.warning(
+                    "GitHub GraphQL rate-limited (attempt %d/%d). Sleeping %.0fs.",
+                    attempt + 1, max_retries, sleep_for,
+                )
+                time.sleep(min(sleep_for, 3600.0))
+                continue
+        body_excerpt = resp.text[:500] if resp.text else ""
+        last_exc = RuntimeError(f"GraphQL HTTP {resp.status_code}: {body_excerpt}")
+        break
+    raise last_exc or RuntimeError("GraphQL exhausted retries")
+
+
+def _user_org_interaction_count(login: str, org: str, *, token: str) -> int:
+    """Spec §3.1 step 4 (strict): count a user's interactions across the agora-mc org.
+
+    Uses the GraphQL `user.contributionsCollection` resolver scoped to the
+    org via `organization` argument. Returns the sum of totalIssuesContributedTo,
+    totalPullRequestContributions, totalIssueCommentsContributionsForContributor
+    within the scoped org. On any error: returns 0 (treated as untrusted —
+    fail-safe). NEVER cache this method on its own — callers cache via a
+    dict[str, int] passed in to amortize across mods.
+    """
+    query = """
+    query ($login: String!, $org: String!) {
+      user(login: $login) {
+        contributionsCollection(organization: $org) {
+          totalIssueContributions
+          totalPullRequestContributions
+          totalIssueCommentsContributionsForContributor
+          totalCommitContributions
+          totalRepositoryContributions
+        }
+      }
+    }
+    """
+    try:
+        data = _github_graphql(query, token=token, variables={"login": login, "org": org})
+        cc = (data.get("user") or {}).get("contributionsCollection") or {}
+        return int(cc.get("totalIssueContributions", 0)) \
+            + int(cc.get("totalPullRequestContributions", 0)) \
+            + int(cc.get("totalIssueCommentsContributionsForContributor", 0)) \
+            + int(cc.get("totalCommitContributions", 0)) \
+            + int(cc.get("totalRepositoryContributions", 0))
+    except Exception as exc:
+        logger.warning(
+            "Trust check: could not fetch contributionsCollection for '%s' in org '%s' (%s); treating as zero interactions.",
+            login, org, exc,
+        )
+        return 0
+
+
+def _github_paginate(
+    path: str,
+    *,
+    token: str,
+    per_page: int = 100,
+    max_pages: int = 50,
+) -> list[dict[str, Any]]:
+    """Fetch all pages of a GitHub list endpoint (Link-header pagination)."""
+    out: list[dict[str, Any]] = []
+    for page in range(1, max_pages + 1):
+        params = {"per_page": per_page, "page": page}
+        page_items = _github_request("GET", path, token=token, params=params)
+        if not isinstance(page_items, list):
+            break
+        out.extend(page_items)
+        if len(page_items) < per_page:
+            break
+    return out
+
+
+def _load_poll_blacklist() -> set[str]:
+    """Read registry/governance/poll_blacklist.json. Returns empty set on any error.
+
+    The schema is `{"usernames": ["name1", "name2"]}`.
+    """
+    path = REGISTRY_DIR / "governance" / "poll_blacklist.json"
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        names = data.get("usernames", [])
+        return {str(n).lower() for n in names if isinstance(n, str)}
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not load poll_blacklist.json (%s); treating as empty.", exc)
+        return set()
+
+
+def _extract_mod_id(issue_body: str | None) -> str | None:
+    """Extract the mod registry ID from a review-form issue body."""
+    if not issue_body:
+        return None
+    m = MOD_ID_FIELD_RE.search(issue_body)
+    if not m:
+        return None
+    return m.group(1).strip().lower()
+
+
+def _parse_reaction(reaction_obj: dict[str, Any], comment_id: int | None) -> UserReaction | None:
+    """Convert a single GitHub reaction dict to a UserReaction, or None for malformed input."""
+    user_obj = reaction_obj.get("user") or {}
+    user = user_obj.get("login")
+    content = reaction_obj.get("content")
+    created_at = reaction_obj.get("created_at")
+    if not user or not content or not created_at:
+        return None
+    try:
+        ts = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if content in GITHUB_REACTION_UPVOTES:
+        is_up = True
+    elif content in GITHUB_REACTION_DOWNVOTES:
+        is_up = False
+    else:
+        is_up = None
+    return UserReaction(user=user.lower(), is_upvote=is_up, timestamp=ts, comment_id=comment_id)
+
+
+def _fetch_reactions_for_issue(
+    owner: str,
+    repo: str,
+    issue_number: int,
+    *,
+    token: str,
+    blacklist: set[str],
+) -> list[UserReaction]:
+    """Fetch all reactions on an issue + each of its comments (paginated).
+
+    Pass 1 ignores blacklist — that's applied at aggregation time in Pass 2.
+    """
+    out: list[UserReaction] = []
+    issue_reactions = _github_paginate(
+        f"/repos/{owner}/{repo}/issues/{issue_number}/reactions",
+        token=token,
+    )
+    for r in issue_reactions:
+        parsed = _parse_reaction(r, comment_id=None)
+        if parsed:
+            out.append(parsed)
+    comments = _github_paginate(
+        f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+        token=token,
+    )
+    for c in comments:
+        cid = c.get("id")
+        if not isinstance(cid, int):
+            continue
+        comment_reactions = _github_paginate(
+            f"/repos/{owner}/{repo}/issues/comments/{cid}/reactions",
+            token=token,
+        )
+        for r in comment_reactions:
+            parsed = _parse_reaction(r, comment_id=cid)
+            if parsed:
+                out.append(parsed)
+    return out
+
+
+def _hydrate_github_social_metrics(
+    items: list[dict[str, Any]],
+) -> None:
+    """Attach `_social_metrics: ModSocialMetrics` to each item dict that has
+    a corresponding review-issue in the governance repo.
+
+    Mutates `items` in-place (mirrors the `_hydrate_modrinth_metadata` pattern).
+    On any error (no token, network failure, malformed data): silently leave
+    items untouched — Pass 2 will treat missing `_social_metrics` as zeros.
+
+    §3.1 Step 3 (Pass 1): enumerate governance-repo issues, extract mod_id
+    from each review-form body, fetch reactions (issue-level + per-comment),
+    attach a ModSocialMetrics obj to the corresponding item dict.
+    """
+    token = _load_github_token()
+    if not token:
+        logger.info("GITHUB_TOKEN not set; social metrics will be zeroed (local dev mode).")
+        return
+    gov_full = os.environ.get("AGORA_GOVERNANCE_REPO", f"{DEFAULT_GOV_OWNER}/{DEFAULT_GOV_REPO}")
+    owner, _, repo = gov_full.partition("/")
+    if not owner or not repo:
+        logger.warning("AGORA_GOVERNANCE_REPO='%s' is not 'owner/repo' format; skipping social metrics.", gov_full)
+        return
+    blacklist = _load_poll_blacklist()
+
+    mod_ids_present = {item["id"].lower(): item for item in items if "id" in item}
+
+    all_issues = _github_paginate(
+        f"/repos/{owner}/{repo}/issues",
+        token=token,
+        params={"state": "all"},
+    )
+    logger.info("Found %d issues in %s/%s governance repo", len(all_issues), owner, repo)
+
+    by_mod: dict[str, ModSocialMetrics] = {}
+    for issue in all_issues:
+        if "pull_request" in issue:
+            continue
+        issue_number = issue.get("number")
+        if not isinstance(issue_number, int):
+            continue
+        mod_id = _extract_mod_id(issue.get("body"))
+        if not mod_id or mod_id not in mod_ids_present:
+            continue
+        review_text = _extract_review_text(issue.get("body"))
+        author_obj = issue.get("user") or {}
+        author = author_obj.get("login")
+        created_at_str = issue.get("created_at")
+        if review_text and author and created_at_str and mod_id in by_mod:
+            by_mod[mod_id].raw_reviews.append({
+                "author": author,
+                "text": review_text,
+                "issue_number": issue_number,
+                "created_at": created_at_str,
+            })
+        try:
+            reactions = _fetch_reactions_for_issue(
+                owner, repo, issue_number, token=token, blacklist=blacklist,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch reactions for %s/%s issue #%d (mod %s): %s",
+                owner, repo, issue_number, mod_id, exc,
+            )
+            reactions = []
+        metrics = by_mod.get(mod_id)
+        if metrics is None:
+            metrics = ModSocialMetrics(mod_id=mod_id, issue_number=issue_number)
+            by_mod[mod_id] = metrics
+        metrics.reactions.extend(reactions)
+
+    attached = 0
+    for mod_id, item in mod_ids_present.items():
+        metrics = by_mod.get(mod_id)
+        if metrics is not None:
+            item["_social_metrics"] = metrics
+            attached += 1
+    logger.info(
+        "Attached raw social metrics to %d of %d items (Pass 1: zero trust/velocity filtering applied)",
+        attached, len(mod_ids_present),
+    )
+
+
+def _sybil_diversity_weight(login: str, mod_ids_voted_on_by_user: list[str]) -> float:
+    """Reduced weight for users who only participated on a SINGLE mod (Sybil defence, §3.1 step 4).
+
+    Spec: "Vote weight receives a small multiplier if the account has a
+    demonstrated history of participating in *different* issues/repositories."
+    Accounts that only ever reacted on one item are treated with suspicion.
+    v1: returns 0.5 (small multiplier) when len(set(mod_ids)) <= 1, else 1.0.
+    """
+    distinct_mods = {m for m in mod_ids_voted_on_by_user if m}
+    if len(distinct_mods) <= 1:
+        return 0.5
+    return 1.0
+
+
+def _user_interaction_counts(
+    metrics_by_mod: dict[str, "ModSocialMetrics"],
+    *,
+    token: str,
+    org: str,
+    cache: dict[str, int],
+) -> dict[str, int]:
+    """Populate per-user interaction counts across the agora-mc org via GraphQL.
+
+    Spec §3.1 step 4: trust activity threshold is "at least 3 interactions
+    (issues opened, comments, PRs, or reactions) across repositories owned by
+    the agora-mc organization." Cached per session to amortize across items.
+    """
+    distinct_users: set[str] = set()
+    for mod_id, m in metrics_by_mod.items():
+        for r in m.reactions:
+            distinct_users.add(r.user)
+    for user in distinct_users:
+        if user not in cache:
+            cache[user] = _user_org_interaction_count(user, org, token=token)
+    return cache
+
+
+def _is_user_trusted(
+    login: str,
+    *,
+    interaction_count: int,
+    token: str,
+    now: datetime,
+    cache: dict[str, bool | None],
+    age_threshold_days: int = 30,
+    activity_threshold: int = 3,
+) -> bool:
+    """Apply §3.1 step 4 trust gating to one user.
+
+    Trust = (account age >= 30 days) AND (interaction_count >= 3 in this repo).
+    `cache` prevents refetching the same user's profile across mods. On any API
+    failure (rate limit exhausted, 404, etc.) the user is treated as UNtrusted
+    (fail-safe — bad actors waste time, no false-positive trust grants).
+    """
+    cached = cache.get(login)
+    if cached is not None:
+        return cached
+    # Fetch the user profile for `created_at`.
+    try:
+        profile = _github_request("GET", f"/users/{login}", token=token)
+        created_at_str = profile.get("created_at") if isinstance(profile, dict) else None
+        if not created_at_str:
+            cache[login] = False
+            return False
+        created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+        age_ok = (now - created_at).days >= age_threshold_days
+    except Exception as exc:
+        logger.warning("Trust check: could not fetch profile for user '%s' (%s); treating as untrusted.", login, exc)
+        cache[login] = False
+        return False
+    activity_ok = interaction_count >= activity_threshold
+    trusted = age_ok and activity_ok
+    cache[login] = trusted
+    return trusted
+
+
+def _compute_velocity(
+    upvote_timestamps: list[datetime],
+    downvote_timestamps: list[datetime],
+    now: datetime,
+) -> tuple[float, bool, datetime | None]:
+    """§3.1 step 5: compute velocity (trending metric) and anomaly flag.
+
+    Returns (velocity_float, is_anomaly, anomaly_window_start).
+
+    The `velocity` column is used for the Browse sort to surface trending
+    items (desktop renders "▲ X.X" / "▼ X.X"). We define:
+        - historical_avg_per_6h = count_in_7d / 28     (7-day window / 6-hour windows)
+        - recent_6h_total = upvotes_last_6h + downvotes_last_6h
+        - velocity = (recent_6h_total - historical_avg_per_6h) / max(historical_avg_per_6h, 0.5)
+        - velocity is clamped to [-10.0, 10.0] for column sanity.
+
+    The circuit-breaker (separate from velocity) fires when:
+        (recent_downvotes_6h / max(historical_downvotes_7d_avg_per_6h, 1.0)) > 5.0
+        AND recent_downvotes_6h > 20
+    When it fires, anomaly_window_start = (now - 6h) — the caller uses this to
+    freeze vote counts at pre-spike values by excluding reactions in the
+    window [anomaly_window_start, now].
+    """
+    seven_d_ago = now - timedelta(days=7)
+    six_h_ago = now - timedelta(hours=6)
+
+    up_7d = [t for t in upvote_timestamps if seven_d_ago <= t <= now]
+    down_7d = [t for t in downvote_timestamps if seven_d_ago <= t <= now]
+    up_6h = [t for t in upvote_timestamps if six_h_ago <= t <= now]
+    down_6h = [t for t in downvote_timestamps if six_h_ago <= t <= now]
+
+    total_7d = len(up_7d) + len(down_7d)
+    historical_avg_per_6h = total_7d / 28.0  # 7 days / 6h windows = 28
+    recent_6h_total = len(up_6h) + len(down_6h)
+
+    if historical_avg_per_6h < 0.5:
+        velocity = (recent_6h_total / 0.5) - 1.0
+    else:
+        velocity = (recent_6h_total - historical_avg_per_6h) / historical_avg_per_6h
+    velocity = max(-10.0, min(10.0, velocity))
+
+    # Circuit breaker — DOWNVOTES only (raid signature per spec §3.1 step 5).
+    historical_downvotes_per_6h = len(down_7d) / 28.0
+    recent_downvotes_6h = len(down_6h)
+    ratio = recent_downvotes_6h / max(historical_downvotes_per_6h, 1.0)
+    if ratio > 5.0 and recent_downvotes_6h > 20:
+        return velocity, True, six_h_ago
+    return velocity, False, None
+
+
+def _apply_trust_velocity_pass(
+    items: list[dict[str, Any]],
+    *,
+    token: str,
+    blacklist: set[str],
+) -> None:
+    """Pass 2: apply §3.1 steps 4 (trust), Sybil weighting, 5 (velocity breaker), 9 (immune).
+
+    Walks each item's attached `_social_metrics` (added by Pass 1), filters
+    reactions by user trust + diversity, computes final upvotes/downvotes/
+    net_score/velocity/status. Mutates each ModSocialMetrics in place.
+
+    Items with `governance.immune == true` skip ALL score evaluation per §3.1
+    step 9: their metrics stay at default (0, 0, 0, 0.0, "active") regardless
+    of reactions — and the attached `_social_metrics` is REMOVED from the
+    item dict so the immune-passthrough in `insert_registry_item` can detect
+    the immune case cleanly.
+
+    When GITHUB_TOKEN is absent (local dev) this is a no-op — items keep
+    their defaults and the DB shows zeros (same as before Pass 2).
+    """
+    if not token:
+        return
+    now = datetime.now(timezone.utc)
+
+    # Collect all metrics objects that need processing.
+    by_mod: dict[str, ModSocialMetrics] = {}
+    immune_mods: set[str] = set()
+    for item in items:
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        item_id_lower = item_id.lower()
+        gov = item.get("governance") or {}
+        if gov.get("immune") is True:
+            immune_mods.add(item_id_lower)
+            continue  # immune: skip entirely, leave metrics absent
+        social = item.get("_social_metrics")
+        if social is None:
+            continue
+        by_mod[item_id_lower] = social
+
+    if not by_mod:
+        return
+
+    # Build per-user mod-diversity map: {user: list of mod_ids they reacted on}.
+    user_mods: dict[str, list[str]] = {}
+    for mod_id, m in by_mod.items():
+        for r in m.reactions:
+            user_mods.setdefault(r.user, []).append(mod_id)
+
+    trust_cache: dict[str, bool | None] = {}
+    trust_interaction_cache: dict[str, int] = {}
+    # Pre-populate blacklist users as untrusted.
+    for u in blacklist:
+        trust_cache[u] = False
+        trust_interaction_cache[u] = 0
+
+    for mod_id, m in by_mod.items():
+        # Compute pre-anomaly reaction lists.
+        up_ts = [r.timestamp for r in m.reactions if r.is_upvote is True]
+        down_ts = [r.timestamp for r in m.reactions if r.is_upvote is False]
+
+        velocity, is_anomaly, anomaly_start = _compute_velocity(up_ts, down_ts, now)
+        m.velocity = velocity
+        if is_anomaly:
+            m.status = "under_review"
+            m.anomaly_window_start = anomaly_start
+            logger.warning(
+                "Velocity circuit breaker fired for mod '%s' (anomaly window from %s). Counts will be frozen at pre-spike values.",
+                mod_id, anomaly_start,
+            )
+
+        # Tally upvotes/downvotes applying trust + Sybil + freeze-at-pre-spike.
+        accepted_up = 0
+        accepted_down = 0
+        gov_full = os.environ.get("AGORA_GOVERNANCE_REPO", f"{DEFAULT_GOV_OWNER}/{DEFAULT_GOV_REPO}")
+        gov_org = gov_full.split("/")[0] or DEFAULT_GOV_OWNER
+        interaction_counts = _user_interaction_counts(by_mod, token=token, org=gov_org, cache=trust_interaction_cache)
+        for r in m.reactions:
+            if r.is_upvote is None:
+                continue  # neutral reaction (laugh, hooray, etc.) — not a vote
+            # Freeze-at-pre-spike: if anomaly fired, drop reactions inside
+            # the 6h anomaly window before counting.
+            if is_anomaly and anomaly_start is not None and r.timestamp >= anomaly_start:
+                continue
+            # Trust gate (§3.1 step 4).
+            interaction_count = interaction_counts.get(r.user, 0)
+            if not _is_user_trusted(
+                r.user,
+                interaction_count=interaction_count,
+                token=token,
+                now=now,
+                cache=trust_cache,
+            ):
+                continue
+            # Sybil diversity weighting (§3.1 step 4 Sybil resistance).
+            diversity = _sybil_diversity_weight(r.user, user_mods.get(r.user, []))
+            if diversity < 0.99:
+                # v1: drop low-weight votes entirely (proportional weighting
+                # on binary votes is equivalent to drop-some-here).
+                continue
+            if r.is_upvote:
+                accepted_up += 1
+            else:
+                accepted_down += 1
+        m.upvotes = accepted_up
+        m.downvotes = accepted_down
+        m.net_score = accepted_up - accepted_down
+
+        # Spec §3.1 step 7: sentiment + spam scrubbing of review comments.
+        # Survivors are attached as `m.scrubbed_reviews`. `insert_registry_item`
+        # will write them into curator_reviews.top_reviews_json as JSON.
+        scrubbed: list[dict[str, Any]] = []
+        for raw in m.raw_reviews:
+            passed, cleaned, reason = _scrub_review_text(raw.get("text", ""))
+            if not passed:
+                logger.info(
+                    "Dropped review for mod '%s' by '%s' (reason: %s).",
+                    mod_id, raw.get("author", "?"), reason,
+                )
+                continue
+            scrubbed.append({
+                "author": raw.get("author"),
+                "text": cleaned,
+                "issue_number": raw.get("issue_number"),
+                "created_at": raw.get("created_at"),
+            })
+        # Top 10 reviews (by issue creation order; tiebreak: longest review).
+        scrubbed.sort(key=lambda r: (r.get("created_at", ""), -len(r.get("text", ""))))
+        m.scrubbed_reviews = scrubbed[:10]
+
+
+# --- §3.2 Raid Shield (interaction-limits toggle) ---
+
+def _enable_raid_shield(owner: str, repo: str, *, token: str) -> bool:
+    """§3.2: programmatically enable "existing users only" interaction limits.
+
+    Sets `limit: existing_users` on the repo via
+    `PUT /repos/{owner}/{repo}/interaction-limits`. Returns True on success,
+    False on failure. The limit expires automatically (GitHub default is 24h
+    for the existing_users tier; future nightly runs will re-enable if a new
+    spike is detected).
+    """
+    try:
+        _github_request(
+            "PUT",
+            f"/repos/{owner}/{repo}/interaction-limits",
+            token=token,
+            body={"limit": "existing_users", "expiry": "24h"},
+        )
+        logger.warning("Raid Shield ENABLED on %s/%s — only existing users can interact for 24h.", owner, repo)
+        return True
+    except Exception as exc:
+        logger.warning("Failed to enable Raid Shield on %s/%s: %s", owner, repo, exc)
+        return False
+
+
+# --- §3.1 step 6 (DELETE offending reactions + admin-alert issue) ---
+
+def _gather_offending_reactions(
+    owner: str,
+    repo: str,
+    issue_number: int,
+    window_start: datetime,
+    *,
+    token: str,
+) -> list[dict[str, Any]]:
+    """Re-fetch reactions on the offending issue + its comments, restricted to
+    the anomaly window [window_start, now]. Returns a list of dicts each with:
+        {"user": str, "reaction_id": int, "content": str, "comment_id": int|None,
+         "issue_number": int, "created_at": ISO-8601}
+    These are the reactions about to be DELETEd. Captured pre-DELETE for audit.
+    """
+    now = datetime.now(timezone.utc)
+    out: list[dict[str, Any]] = []
+    # Issue-level reactions.
+    for r in _github_paginate(
+        f"/repos/{owner}/{repo}/issues/{issue_number}/reactions", token=token,
+    ):
+        try:
+            created = datetime.fromisoformat((r.get("created_at") or "").replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if not (window_start <= created <= now):
+            continue
+        out.append({
+            "user": (r.get("user") or {}).get("login"),
+            "reaction_id": r.get("id"),
+            "content": r.get("content"),
+            "comment_id": None,
+            "issue_number": issue_number,
+            "created_at": r.get("created_at"),
+        })
+    # Per-comment reactions.
+    comments = _github_paginate(
+        f"/repos/{owner}/{repo}/issues/{issue_number}/comments", token=token,
+    )
+    for c in comments:
+        cid = c.get("id")
+        if not isinstance(cid, int):
+            continue
+        for r in _github_paginate(
+            f"/repos/{owner}/{repo}/issues/comments/{cid}/reactions", token=token,
+        ):
+            try:
+                created = datetime.fromisoformat((r.get("created_at") or "").replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if not (window_start <= created <= now):
+                continue
+            out.append({
+                "user": (r.get("user") or {}).get("login"),
+                "reaction_id": r.get("id"),
+                "content": r.get("content"),
+                "comment_id": cid,
+                "issue_number": issue_number,
+                "created_at": r.get("created_at"),
+            })
+    return out
+
+
+def _delete_reaction(
+    owner: str,
+    repo: str,
+    *,
+    issue_number: int,
+    comment_id: int | None,
+    reaction_id: int,
+    token: str,
+) -> bool:
+    """DELETE a single reaction from GitHub via REST. Returns True on success.
+
+    Routes to the issue-level OR comment-level delete endpoint based on
+    `comment_id`. Per §3.1 step 6, this requires `issues:write` permission
+    on the GitHub token, which `compile.yml` already grants.
+    """
+    try:
+        if comment_id is None:
+            _github_request(
+                "DELETE",
+                f"/repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}",
+                token=token,
+            )
+        else:
+            _github_request(
+                "DELETE",
+                f"/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}",
+                token=token,
+            )
+        return True
+    except Exception as exc:
+        logger.warning("Failed to DELETE reaction %d on issue #%d (%s): %s",
+                       reaction_id, issue_number, owner + "/" + repo, exc)
+        return False
+
+
+def _append_audit_entry(action: str, details: str) -> None:
+    """Append an entry to registry/governance/audit_log.json BEFORE risky
+    operations (DELETE reactions, enable Raid Shield). Captures intent even
+    when the subsequent API call fails.
+
+    Reuses the rotation-at-1000 logic from main()'s trailing audit append.
+    """
+    path = REGISTRY_DIR / "governance" / "audit_log.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.exists():
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        else:
+            data = {"entries": []}
+    except (OSError, json.JSONDecodeError):
+        data = {"entries": []}
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "action": action,
+        "details": details,
+    }
+    data["entries"].append(entry)
+    if len(data["entries"]) > 1000:
+        data["entries"] = data["entries"][-1000:]
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+
+
+def _create_admin_alert_issue(
+    owner: str,
+    repo: str,
+    *,
+    mod_id: str,
+    offending_reactions: list[dict[str, Any]],
+    token: str,
+) -> None:
+    """§3.1 step 6: file a high-priority issue in the governance repo for
+    curator review. Title format: `[ALERT] Coordinated Attack Detected: <mod_id>`.
+
+    The body summarizes offending users (lowercased), the reaction contents,
+    timestamps, and the audit entry reference. Uses `issues:write` permission.
+    Failure is logged but does not abort the broader compile loop.
+    """
+    user_summary = "\n".join(
+        f"- @{r['user']} — {r['content']} on {r['created_at']} (issue #{r['issue_number']}, comment_id={r['comment_id']})"
+        for r in offending_reactions if r.get("user")
+    )
+    body = (
+        f"## Coordinated Attack Detected\n\n"
+        f"The nightly compiler's velocity circuit breaker fired for mod "
+        f"`{mod_id}`. {len(offending_reactions)} offending reactions were "
+        f"identified in the 6-hour anomaly window and DELETED from GitHub.\n\n"
+        f"### Offending Reactions (captured pre-DELETE)\n\n{user_summary}\n\n"
+        f"### Action Taken\n\n"
+        f"- [x] Velocity circuit breaker fired (status → under_review)\n"
+        f"- [x] Reaction counts frozen at pre-spike values\n"
+        f"- [x] Raid Shield interaction-limits enabled (existing users only, 24h)\n"
+        f"- [x] Offending reactions DELETEd from GitHub\n"
+        f"- [x] Triage poll created in Discussions\n"
+        f"- [x] This admin-alert issue filed\n\n"
+        f"### Curator Action Required\n\n"
+        f"Review offending users for org-level action (suspension, addition to "
+        f"`registry/governance/poll_blacklist.json`).\n"
+    )
+    try:
+        _github_request(
+            "POST",
+            f"/repos/{owner}/{repo}/issues",
+            token=token,
+            body={
+                "title": f"[ALERT] Coordinated Attack Detected: {mod_id}",
+                "body": body,
+                "labels": ["triage", "coordinated-attack"],
+            },
+        )
+        logger.warning("Filed admin-alert issue for mod '%s' coordinated attack.", mod_id)
+    except Exception as exc:
+        logger.warning("Failed to file admin-alert issue for mod '%s': %s", mod_id, exc)
+
+
+# --- §3.1 step 8 (create triage poll) ---
+
+def _find_triage_discussion_category(owner: str, repo: str, *, token: str) -> int | None:
+    """Discover a Discussions category id matching one of the candidate names.
+
+    Returns None when Discussions aren't enabled on the repo OR no matching
+    category exists. Soft-fails — poll creation is OPTIONAL; the status flip
+    is the hard requirement of §3.1 step 5.
+    """
+    try:
+        for cat_name in TRIAGE_DISCUSSION_CATEGORY_CANDIDATES:
+            data = _github_graphql(
+                """
+                query ($owner: String!, $repo: String!) {
+                  repository(owner: $owner, name: $repo) {
+                    discussionCategories(first: 50) {
+                      nodes { id name }
+                    }
+                  }
+                }
+                """,
+                token=token,
+                variables={"owner": owner, "repo": repo},
+            )
+            nodes = (((data.get("repository") or {}).get("discussionCategories") or {}).get("nodes") or [])
+            for node in nodes:
+                if (node.get("name") or "").strip().lower() == str(cat_name).strip().lower():
+                    return node.get("id")
+        return None
+    except Exception as exc:
+        logger.warning("Could not fetch discussion categories on %s/%s: %s", owner, repo, exc)
+        return None
+
+
+def _create_triage_poll(
+    owner: str,
+    repo: str,
+    *,
+    mod_id: str,
+    issue_number: int,
+    reason: str,
+    token: str,
+) -> str | None:
+    """§3.1 step 5 / §5.3: open a 7-day triage discussion poll.
+
+    Title: "[Community Triage] Should '<mod_id>' be removed from the registry?"
+    Body explains the reason (velocity spike OR organic net_score < -10).
+
+    Returns the discussion node URL on success, None on failure (the
+    Discussions API requires `discussions:write` permission, already granted
+    in compile.yml; if Discussions aren't enabled on the repo or no triage
+    category exists, this silently no-ops with a warning).
+    """
+    category_id = _find_triage_discussion_category(owner, repo, token=token)
+    if category_id is None:
+        logger.warning(
+            "Triage discussion category not found on %s/%s (looked for %s). "
+            "Status is still 'under_review'; poll will not be created.",
+            owner, repo, TRIAGE_DISCUSSION_CATEGORY_CANDIDATES,
+        )
+        return None
+    title = f"[Community Triage] Should '{mod_id}' be removed from the registry?"
+    body = (
+        f"## Triage Poll Triggered\n\n"
+        f"**Mod:** `{mod_id}` (tracking issue #{issue_number})\n\n"
+        f"**Reason:** {reason}\n\n"
+        f"**Duration:** {TRIAGE_POLL_DURATION_DAYS} days.\n\n"
+        f"### Vote\n\n"
+        f"- 👍 Keep `{mod_id}` in the registry (status restored to 'active', "
+        f"30-day immunity cooldown granted).\n"
+        f"- 👎 Remove `{mod_id}` — JSON file moved to `registry/archived/`, "
+        f"item removed from all future builds.\n\n"
+        f"### Notes\n\n"
+        f"- Reactions from users listed in `registry/governance/poll_blacklist.json` "
+        f"will be counted at weight 0 at poll resolution.\n"
+        f"- The nightly compiler resolves this poll automatically after "
+        f"{TRIAGE_POLL_DURATION_DAYS} days.",
+    )
+    try:
+        data = _github_graphql(
+            """
+            mutation ($repoId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+              createDiscussion(input: {repositoryId: $repoId, categoryId: $categoryId, title: $title, body: $body}) {
+                discussion { url }
+              }
+            }
+            """,
+            token=token,
+            variables={"repoId": "", "categoryId": category_id, "title": title, "body": body},
+        )
+        discussion = (((data.get("createDiscussion") or {}).get("discussion")) or {})
+        url = discussion.get("url")
+        if url:
+            logger.info("Created triage discussion for mod '%s': %s", mod_id, url)
+        return url
+    except Exception as exc:
+        logger.warning("Failed to create triage discussion for mod '%s': %s", mod_id, exc)
+        return None
+
+
+# --- §3.1 step 8 (resolve expired triage polls) ---
+
+def _resolve_expired_triage_polls(
+    owner: str,
+    repo: str,
+    *,
+    items: list[dict[str, Any]],
+    token: str,
+) -> None:
+    """§3.1 step 5/8: for items currently 'under_review', look up associated
+    triage discussions; if the 7-day window has expired, tally votes from
+    poll_blacklist-free users and either archive the item (Remove wins) or
+    restore it (Keep wins).
+
+    Archive = move the JSON manifest file from registry/mods/<id>.json (or
+    packs/, etc) to registry/archived/<id>.json. Item will be excluded from
+    the next nightly build (insert_registry_item only ingests from the 7
+    CONTENT_DIRS, not from registry/archived/).
+    """
+    now = datetime.now(timezone.utc)
+    for item in items:
+        social = item.get("_social_metrics")
+        if social is None or social.status != "under_review":
+            continue
+        start = social.anomaly_window_start
+        if start is None:
+            continue
+        elapsed = now - start
+        if elapsed < timedelta(days=TRIAGE_POLL_DURATION_DAYS):
+            continue
+        try:
+            data = _github_graphql(
+                """
+                query ($q: String!) {
+                  search(query: $q, type: DISCUSSION, first: 5) {
+                    nodes { ... on Discussion { id url title reactions { totalCount content } }
+                    }
+                  }
+                }
+                """,
+                token=token,
+                variables={"q": f"repo:{owner}/{repo} [Community Triage] {social.mod_id}"},
+            )
+            nodes = ((data.get("search") or {}).get("nodes")) or []
+            if not nodes:
+                continue
+            discussion = nodes[0]
+            keep_votes = 0
+            remove_votes = 0
+            data2 = _github_graphql(
+                """
+                query ($id: ID!) {
+                  node(id: $id) {
+                    ... on Discussion {
+                      reactions(first: 100) {
+                        nodes { user { login } content }
+                      }
+                      reactionGroups { content viewerHasReacted }
+                    }
+                  }
+                }
+                """,
+                token=token,
+                variables={"id": discussion.get("id")},
+            )
+            reactions = ((((data2.get("node") or {}).get("reactions")) or {}).get("nodes")) or []
+            blacklist = _load_poll_blacklist()
+            for rxn in reactions:
+                user = ((rxn.get("user") or {}).get("login") or "").lower()
+                if user in blacklist:
+                    continue
+                content = rxn.get("content")
+                if content in ("THUMBS_UP", "+1", "HOORAY"):
+                    keep_votes += 1
+                elif content in ("THUMBS_DOWN", "-1"):
+                    remove_votes += 1
+            if remove_votes > keep_votes:
+                item_id = social.mod_id
+                content_type = item.get("content_type", "mod")
+                src_dir = REGISTRY_DIR / ("packs" if content_type == "pack" else content_type + "s")
+                src_path = src_dir / f"{item_id}.json"
+                archived_dir = REGISTRY_DIR / "archived"
+                archived_dir.mkdir(parents=True, exist_ok=True)
+                dest_path = archived_dir / f"{item_id}.json"
+                if src_path.exists():
+                    src_path.rename(dest_path)
+                    logger.warning(
+                        "Triage result: REMOVE won for '%s' (%d vs %d votes). Manifest archived to %s.",
+                        item_id, remove_votes, keep_votes, dest_path,
+                    )
+                    _append_audit_entry("triage_archive", f"Mod '{item_id}' archived: Remove {remove_votes} vs Keep {keep_votes}.")
+                social.status = "archived"
+            else:
+                social.status = "active"
+                logger.info(
+                    "Triage result: KEEP won for '%s' (%d vs %d votes). Status restored to 'active'; 30-day immunity cooldown will be set on next manifest refresh.",
+                    social.mod_id, keep_votes, remove_votes,
+                )
+                _append_audit_entry("triage_keep", f"Mod '{social.mod_id}' kept: Keep {keep_votes} vs Remove {remove_votes}.")
+        except Exception as exc:
+            logger.warning("Failed to resolve triage for '%s': %s", social.mod_id, exc)
+
+
+# --- Pass 3 entrypoint (circuit-breaker response) ---
+
+def _respond_to_circuit_breaker(
+    items: list[dict[str, Any]],
+    *,
+    token: str,
+    owner: str,
+    repo: str,
+) -> None:
+    """Execute §3.2 Raid Shield + §3.1 steps 5 organic-trigger, 6 DELETE +
+    admin-alert, 8 create triage poll for every mod whose Pass 2 set
+    `status='under_review'`.
+
+    Also handles the §3.1 step 5 ORGANIC trigger path (net_score <
+    ORGANIC_UNDER_REVIEW_THRESHOLD without a circuit-breaker spike) by
+    flipping status to 'under_review' + creating a triage poll WITHOUT
+    Raid Shield / DELETE / admin-alert (those responses are spike-only).
+    """
+    raid_shield_enabled = False
+    now = datetime.now(timezone.utc)
+    for item in items:
+        social = item.get("_social_metrics")
+        if social is None:
+            continue
+        # §3.1 step 5 ORGANIC path (no spike, but net_score too low).
+        if social.status == "active" and social.net_score < ORGANIC_UNDER_REVIEW_THRESHOLD:
+            social.status = "under_review"
+            social.anomaly_window_start = now
+            logger.warning(
+                "Organic under_review trigger for mod '%s': net_score=%d (threshold=%d).",
+                social.mod_id, social.net_score, ORGANIC_UNDER_REVIEW_THRESHOLD,
+            )
+            _append_audit_entry(
+                "organic_under_review",
+                f"Mod '{social.mod_id}' net_score={social.net_score} (< {ORGANIC_UNDER_REVIEW_THRESHOLD}). Status → under_review.",
+            )
+            _create_triage_poll(
+                owner, repo,
+                mod_id=social.mod_id,
+                issue_number=social.issue_number,
+                reason=f"Organic net_score dropped below threshold ({ORGANIC_UNDER_REVIEW_THRESHOLD}).",
+                token=token,
+            )
+            continue
+        # Spike-triggered under_review (circuit breaker already fired in Pass 2).
+        if social.status == "under_review" and social.anomaly_window_start is not None:
+            if not raid_shield_enabled:
+                raid_shield_enabled = _enable_raid_shield(owner, repo, token=token)
+            offending = _gather_offending_reactions(
+                owner, repo, social.issue_number,
+                window_start=social.anomaly_window_start,
+                token=token,
+            )
+            if offending:
+                _append_audit_entry(
+                    "raid_breaker_offenders",
+                    f"Mod '{social.mod_id}' (issue #{social.issue_number}): gathered "
+                    f"{len(offending)} offending reactions for DELETE. Users: " +
+                    ", ".join(sorted({r.get("user") or "?" for r in offending})),
+                )
+                for r in offending:
+                    _delete_reaction(
+                        owner, repo,
+                        issue_number=r.get("issue_number") or social.issue_number,
+                        comment_id=r.get("comment_id"),
+                        reaction_id=r.get("reaction_id") or 0,
+                        token=token,
+                    )
+            _create_triage_poll(
+                owner, repo,
+                mod_id=social.mod_id,
+                issue_number=social.issue_number,
+                reason="Velocity circuit breaker: coordinated downvote spike detected (>5× historical, >20 in 6h).",
+                token=token,
+            )
+            _create_admin_alert_issue(
+                owner, repo,
+                mod_id=social.mod_id,
+                offending_reactions=offending,
+                token=token,
+            )
+
+
+# --- §3.1 step 7: sentiment + spam scrubbing ---
+
+# Regex patterns exported for reuse by tests.
+VERSION_BEGGING_RE = re.compile(
+    r"(?i)(when\s+is|update\s+to|port\s+to|for\s+1\.\d+|1\.\d+\s*when|when\s+1\.\d+)\s*(release|coming|update|\?)?"
+)
+EMPTY_PRAISE_RE = re.compile(
+    r"(?i)^(good\s+mod|nice|cool|pog|great|wow|awesome\s+sauce|epic|gg|nice\s+mod)\s*[!.?]*$"
+)
+
+
+def _regex_filter_comment(text: str) -> tuple[bool, str]:
+    """Apply §3.1 step 7 regex filters. Returns (passed, reason_if_dropped)."""
+    if not text or not text.strip():
+        return False, "empty"
+    if VERSION_BEGGING_RE.search(text):
+        return False, "version-begging"
+    if EMPTY_PRAISE_RE.match(text.strip()):
+        return False, "empty-praise"
+    return True, ""
+
+
+def _nlp_filter_comment(text: str) -> tuple[bool, str]:
+    """Apply §3.1 step 7 NLP filters. Returns (passed, reason_if_dropped).
+
+    Lazy-imports profanity_check + vaderSentiment so the compiler runs cleanly
+    in local dev (without those deps) when the NLP path isn't reached (no
+    GITHUB_TOKEN → no review text to scrub). On import failure: log warning,
+    treat as passed (fail-OPEN for benign content rather than dropping legit
+    reviews because the runner didn't `pip install -r requirements.txt`).
+    """
+    try:
+        from profanity_check import predict as _profanity_predict
+    except ImportError as exc:
+        logger.warning("profanity-check not installed (%s); skipping NLP filter (fail-open).", exc)
+        return True, ""
+    try:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    except ImportError as exc:
+        logger.warning("vaderSentiment not installed (%s); skipping NLP filter (fail-open).", exc)
+        return True, ""
+    # profanity_check: returns [0] for clean, [1] for toxic.
+    try:
+        is_toxic = bool(_profanity_predict([text])[0])
+    except Exception as exc:
+        logger.warning("profanity_check failed on text (len=%d): %s; skipping.", len(text), exc)
+        is_toxic = False
+    if is_toxic:
+        return False, "profanity"
+    # vaderSentiment: discard extreme-aggression intensity even if profanity passes.
+    try:
+        analyzer = SentimentIntensityAnalyzer()
+        scores = analyzer.polarity_scores(text)
+        if scores.get("neg", 0.0) >= 0.9 and scores.get("compound", 0.0) <= -0.85:
+            return False, "extreme-aggression"
+    except Exception as exc:
+        logger.warning("vaderSentiment failed on text (len=%d): %s; skipping.", len(text), exc)
+    return True, ""
+
+
+def _scrub_review_text(text: str) -> tuple[bool, str, str]:
+    """Full §3.1 step 7 scrub pipeline. Returns (passed, cleaned_text, drop_reason)."""
+    passed, reason = _regex_filter_comment(text)
+    if not passed:
+        return False, text, reason
+    passed, reason = _nlp_filter_comment(text)
+    if not passed:
+        return False, text, reason
+    return True, text.strip(), ""
+
+
+REVIEW_TEXT_FIELD_RE = re.compile(
+    r"###\s*Your Technical Review[^:\n]*\r?\n+(.*?)(?:\r?\n###|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _extract_review_text(issue_body: str | None) -> str | None:
+    """Extract the review-text field from a review-form issue body.
+
+    Mirrors _extract_mod_id: the form emits `### Your Technical Review (50
+    character minimum)` heading followed by the textarea value. Returns the
+    trimmed review text, or None if absent.
+    """
+    if not issue_body:
+        return None
+    m = REVIEW_TEXT_FIELD_RE.search(issue_body)
+    if not m:
+        return None
+    return m.group(1).strip() or None
+
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -393,6 +1675,30 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
     gallery = item.get("gallery_urls", [])
     compatible_versions = item.get("compatible_versions") or default_compatible_versions(item)
 
+    # Pass 2: pull computed social metrics when present. Immune items
+    # (§3.1 step 9) bypass score evaluation — upvotes/downvotes/net_score
+    # are zero, status is "active", immunity_cooldown_until stays None.
+    if is_immune:
+        _upvotes = 0
+        _downvotes = 0
+        _net_score = 0
+        _velocity = 0.0
+        _status = "active"
+    else:
+        social = item.get("_social_metrics")
+        if social is not None:
+            _upvotes = social.upvotes
+            _downvotes = social.downvotes
+            _net_score = social.net_score
+            _velocity = social.velocity
+            _status = social.status
+        else:
+            _upvotes = 0
+            _downvotes = 0
+            _net_score = 0
+            _velocity = 0.0
+            _status = "active"
+
     # Supplementary metadata (description, body, etc.) is resolved by the
     # Modrinth hydrator with manifest/override precedence; read the final
     # values here. These are TEXT-only and may be None for items that were
@@ -415,11 +1721,11 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
             item["download_strategy"],
             item["source_identifier"],
             sha256,
-            0,
-            0,
-            0,
-            0.0,
-            "active",
+            _upvotes,
+            _downvotes,
+            _net_score,
+            _velocity,
+            _status,
             int(is_immune),
             immunity_reason,
             int(allow_comments),
@@ -438,12 +1744,16 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
     )
 
     # Curator note.
+    social = item.get("_social_metrics")
+    scrubbed_reviews: list[dict[str, Any]] = []
+    if social is not None and hasattr(social, "scrubbed_reviews"):
+        scrubbed_reviews = social.scrubbed_reviews
     cursor.execute(
         """
         INSERT INTO curator_reviews (item_id, curator_note, top_reviews_json)
         VALUES (?, ?, ?)
         """,
-        (item_id, item.get("curator_note", ""), json.dumps([], separators=(",", ":"))),
+        (item_id, item.get("curator_note", ""), json.dumps(scrubbed_reviews, separators=(",", ":"))),
     )
 
     # Categories.
@@ -892,6 +2202,47 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
     # Hydrate Modrinth metadata (description, body, icon, gallery, page URL,
     # license, updated) for modrinth_id items (in-place, with override precedence).
     _hydrate_modrinth_metadata([item for _, item in all_items])
+
+    # Hydrate GitHub social metrics (§3.1 step 3; Pass 1: raw reactions only
+    # — trust filter, Sybil weighting, velocity circuit breaker, immune
+    # passthrough, and DB INSERT update arrive in Pass 2). On missing
+    # GITHUB_TOKEN this is a silent no-op (items stay metric-free → zeros).
+    _hydrate_github_social_metrics([item for _, item in all_items])
+
+    # Pass 2: apply §3.1 steps 4 (trust + Sybil), 5 (velocity circuit breaker),
+    # and 9 (immune passthrough) to compute final upvotes / downvotes /
+    # net_score / velocity / status from the raw reactions Pass 1 attached.
+    # When GITHUB_TOKEN is unset this is a no-op (metrics stay at defaults).
+    _gh_token = _load_github_token()
+    if _gh_token:
+        _blacklist = _load_poll_blacklist()
+        _apply_trust_velocity_pass(
+            [item for _, item in all_items],
+            token=_gh_token,
+            blacklist=_blacklist,
+        )
+    # Immune items have their `_social_metrics` removed by Pass 2; non-immune
+    # items with no matching governance issue also have no metrics — both
+    # fall through to the default (0, 0, 0, 0.0, "active") path in insert_registry_item.
+
+    # Pass 3 (§3.2 Raid Shield + §3.1 steps 5 organic-trigger, 6 DELETE +
+    # admin-alert, 8 create triage poll + resolve expired polls). Runs only
+    # when GITHUB_TOKEN is present.
+    if _gh_token:
+        gov_full = os.environ.get("AGORA_GOVERNANCE_REPO", f"{DEFAULT_GOV_OWNER}/{DEFAULT_GOV_REPO}")
+        _owner, _, _repo = gov_full.partition("/")
+        if _owner and _repo:
+            _respond_to_circuit_breaker(
+                [item for _, item in all_items],
+                token=_gh_token, owner=_owner, repo=_repo,
+            )
+            _resolve_expired_triage_polls(
+                _owner, _repo,
+                items=[item for _, item in all_items],
+                token=_gh_token,
+            )
+        else:
+            logger.warning("AGORA_GOVERNANCE_REPO='%s' invalid; skipping Pass 3 responses.", gov_full)
 
     # Insert items, handling pack-specific fields.
     mod_count = 0

@@ -6,14 +6,13 @@ import {
   launchInstance,
   listInstances,
   listLoaderVersions,
+  listManifestLoaders,
+  listManifestMcVersions,
   formatError,
   type CreateInstanceRequest,
   type InstanceRow,
   type LoaderVersionSummary,
 } from '../lib/tauri';
-
-const LOADERS = ['fabric', 'quilt', 'neoforge', 'forge'];
-const DEFAULT_MC_VERSIONS = ['1.21.11', '1.21.10', '1.21.9'];
 
 export function Instances({ onEditInstance }: { onEditInstance: (id: string) => void }) {
   const [instances, setInstances] = useState<InstanceRow[]>([]);
@@ -192,7 +191,7 @@ function CreateInstanceDialog({
   onCreated: () => void;
 }) {
   const [name, setName] = useState('');
-  const [mcVersion, setMcVersion] = useState(DEFAULT_MC_VERSIONS[0]);
+  const [mcVersion, setMcVersion] = useState('');
   const [loader, setLoader] = useState('fabric');
   const [loaderVersions, setLoaderVersions] = useState<LoaderVersionSummary[]>([]);
   const [loaderVersion, setLoaderVersion] = useState('');
@@ -200,6 +199,8 @@ function CreateInstanceDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const [loaders, setLoaders] = useState<string[]>([]);
+  const [mcVersions, setMcVersions] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,6 +218,27 @@ function CreateInstanceDialog({
       cancelled = true;
     };
   }, [loader, mcVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [l, v] = await Promise.all([listManifestLoaders(), listManifestMcVersions()]);
+        if (!cancelled) {
+          setLoaders(l);
+          setMcVersions(v);
+          if (!mcVersion && v.length > 0) {
+            setMcVersion(v[0]);
+          }
+        }
+      } catch {
+        // Fetch failure: dropdowns render empty — acceptable degraded behavior.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Progress event listener during creation
   useEffect(() => {
@@ -280,7 +302,7 @@ function CreateInstanceDialog({
                 onChange={(e) => setMcVersion(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
               >
-                {DEFAULT_MC_VERSIONS.map((v) => (
+                {mcVersions.map((v) => (
                   <option key={v} value={v}>
                     {v}
                   </option>
@@ -295,7 +317,7 @@ function CreateInstanceDialog({
                 onChange={(e) => setLoader(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
               >
-                {LOADERS.map((l) => (
+                {loaders.map((l) => (
                   <option key={l} value={l}>
                     {l}
                   </option>

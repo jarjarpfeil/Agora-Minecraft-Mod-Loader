@@ -29,6 +29,7 @@ jobs:
         run: python compiler/compile.py --out registry.db
         env:
           ED25519_PRIVATE_KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload registry artifacts
         uses: actions/upload-artifact@v4

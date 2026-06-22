@@ -74,6 +74,8 @@ pub struct ModVersionCandidate {
     pub loader: Option<String>,
     pub release_date: Option<String>,
     pub is_compatible: bool,
+    #[serde(default)]
+    pub sha1: Option<String>,
 }
 
 /// The lightweight JSON manifest that lives in each instance directory.

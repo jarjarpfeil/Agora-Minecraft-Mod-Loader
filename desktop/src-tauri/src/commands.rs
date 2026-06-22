@@ -3,6 +3,7 @@ use crate::crash_diagnostics::{self, CrashReportInfo, CrashTriageResult};
 use crate::db;
 use crate::error::{LauncherError, LauncherResult};
 use crate::instances::{self, CreateInstanceRequest, InstanceDetail, LoaderVersionSummary};
+use crate::loader_manifests;
 use crate::mod_install;
 use crate::models::{InstanceRow, InstalledMod, ModVersionCandidate};
 use crate::modrinth_raw;
@@ -218,6 +219,25 @@ pub async fn list_loader_versions(
     mc_version: String,
 ) -> LauncherResult<Vec<LoaderVersionSummary>> {
     Ok(instances::list_loader_versions(&loader, &mc_version))
+}
+
+/// Distinct loader names present in the embedded loader manifests.
+#[tauri::command]
+pub async fn list_manifest_loaders(
+    _app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+) -> LauncherResult<Vec<String>> {
+    Ok(loader_manifests::list_loaders().iter().map(|s| s.to_string()).collect())
+}
+
+/// Distinct Minecraft versions across all loaders (or one loader when supplied).
+#[tauri::command]
+pub async fn list_manifest_mc_versions(
+    _app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    loader: Option<String>,
+) -> LauncherResult<Vec<String>> {
+    Ok(loader_manifests::list_mc_versions(loader.as_deref()))
 }
 
 /// Read a JSON-encoded setting from `local_state.db`.
@@ -443,6 +463,23 @@ pub async fn add_manual_mod(
     mod_install::add_manual_mod(&app, &instance_id, &source_path).await
 }
 
+/// Open a native file picker and return the chosen file path, or `None` if cancelled.
+#[tauri::command]
+pub async fn pick_open_file(
+    _app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    title: String,
+    extensions: Vec<String>,
+) -> LauncherResult<Option<String>> {
+    let mut dialog = rfd::AsyncFileDialog::new().set_title(&title);
+    if !extensions.is_empty() {
+        let exts: Vec<&str> = extensions.iter().map(|s| s.as_str()).collect();
+        dialog = dialog.add_filter("Allowed", &exts);
+    }
+    let picked = dialog.pick_file().await;
+    Ok(picked.map(|h| h.path().to_string_lossy().to_string()))
+}
+
 /// Export an instance as a shareable pack file (§6.5c).
 #[tauri::command]
 pub async fn export_instance_pack(
@@ -452,6 +489,16 @@ pub async fn export_instance_pack(
     format: String,
 ) -> LauncherResult<String> {
     mod_install::export_instance_pack(&app, &instance_id, &format).await
+}
+
+/// Import an instance from a pack file (.mrpack or .agora-pack.json).
+#[tauri::command]
+pub async fn import_instance_pack(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    source_path: String,
+) -> LauncherResult<String> {
+    mod_install::import_instance_pack(&app, &source_path).await
 }
 
 /// Whether the Modrinth integration is currently enabled (§6.3 toggle).

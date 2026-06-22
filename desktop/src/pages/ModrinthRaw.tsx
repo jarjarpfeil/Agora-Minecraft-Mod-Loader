@@ -7,6 +7,10 @@ import {
   listRawModrinthVersions,
   installRawModrinth,
   listInstances,
+  createInstance,
+  listLoaderVersions,
+  listManifestLoaders,
+  listManifestMcVersions,
   formatError,
   type ModrinthSearchResult,
   type ModrinthSearchParams,
@@ -16,6 +20,8 @@ import {
   type ModrinthGameVersionInfo,
   type RawModrinthVersionCandidate,
   type InstanceRow,
+  type LoaderVersionSummary,
+  type CreateInstanceRequest,
 } from '../lib/tauri';
 
 const PAGE_SIZE = 20;
@@ -601,6 +607,18 @@ function ModrinthProjectDetail({
   const [phase, setPhase] = useState<'idle' | 'loadingVersions' | 'installing' | 'done' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
+  // Inline create-instance state
+  const [showCreateInline, setShowCreateInline] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createLoaders, setCreateLoaders] = useState<string[]>([]);
+  const [createMcVersions, setCreateMcVersions] = useState<string[]>([]);
+  const [createLoader, setCreateLoader] = useState('');
+  const [createMcVersion, setCreateMcVersion] = useState('');
+  const [createLoaderVersions, setCreateLoaderVersions] = useState<LoaderVersionSummary[]>([]);
+  const [createLoaderVersion, setCreateLoaderVersion] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -621,6 +639,52 @@ function ModrinthProjectDetail({
       cancelled = true;
     };
   }, []);
+
+  // Fetch available manifest loaders and MC versions once on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [loaders, versions] = await Promise.all([
+          listManifestLoaders(),
+          listManifestMcVersions(),
+        ]);
+        if (cancelled) return;
+        setCreateLoaders(loaders);
+        setCreateMcVersions(versions);
+        if (!createLoader && loaders.length > 0) {
+          setCreateLoader(loaders[0]);
+        }
+        if (!createMcVersion && versions.length > 0) {
+          setCreateMcVersion(versions[0]);
+        }
+      } catch {
+        // Swallow silently — degraded UX with empty dropdowns is acceptable
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Loader-version fetch when create form is shown
+  useEffect(() => {
+    if (!showCreateInline) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const versions = await listLoaderVersions(createLoader, createMcVersion);
+        if (cancelled) return;
+        setCreateLoaderVersions(versions);
+        setCreateLoaderVersion(versions[0]?.loader_version ?? '');
+      } catch (e) {
+        if (!cancelled) setCreateError(formatError(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showCreateInline, createLoader, createMcVersion]);
 
   // When an instance is selected, fetch versions scoped to that instance.
   useEffect(() => {
@@ -672,6 +736,40 @@ function ModrinthProjectDetail({
     } catch (e) {
       setPhase('error');
       setStatusMsg(formatError(e));
+    }
+  };
+
+  const handleCreateInstance = async () => {
+    setCreateBusy(true);
+    setCreateError(null);
+    try {
+      const instanceId = createName
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (!instanceId) throw new Error('Enter a valid instance name.');
+      if (!createLoaderVersion) throw new Error('No pinned loader version selected.');
+      const request: CreateInstanceRequest = {
+        name: createName || instanceId,
+        instance_id: instanceId,
+        minecraft_version: createMcVersion,
+        loader: createLoader,
+        loader_version: createLoaderVersion,
+        jvm_memory_mb: 4096,
+      };
+      const result = await createInstance(request);
+      const all = await listInstances();
+      setInstances(all);
+      setSelectedInstanceId(result.instance_id);
+      setShowCreateInline(false);
+      setCreateName('');
+      setCreateLoaderVersion('');
+      setCreateLoaderVersions([]);
+      setCreateError(null);
+    } catch (e) {
+      setCreateError(formatError(e));
+    } finally {
+      setCreateBusy(false);
     }
   };
 
@@ -750,6 +848,89 @@ function ModrinthProjectDetail({
                 ))}
               </select>
             </label>
+            <button
+              onClick={() => setShowCreateInline((v) => !v)}
+              className="mt-3 block text-xs text-brand-600 hover:underline dark:text-brand-400"
+            >
+              + Create new instance
+            </button>
+            {showCreateInline && (
+              <div className="mt-3 space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs font-medium">Create new instance</p>
+                <label className="block">
+                  <span className="text-xs">Instance name</span>
+                  <input
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    placeholder="My Instance"
+                    className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-xs">Minecraft version</span>
+                    <select
+                      value={createMcVersion}
+                      onChange={(e) => setCreateMcVersion(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                    >
+                      {createMcVersions.map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs">Loader</span>
+                    <select
+                      value={createLoader}
+                      onChange={(e) => setCreateLoader(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                    >
+                      {createLoaders.map((l) => (
+                        <option key={l} value={l}>{l}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="text-xs">Loader version</span>
+                  <select
+                    value={createLoaderVersion}
+                    onChange={(e) => setCreateLoaderVersion(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                  >
+                    {createLoaderVersions.length === 0 && <option value="">Loading…</option>}
+                    {createLoaderVersions.map((v) => (
+                      <option key={v.loader_version} value={v.loader_version}>
+                        {v.loader_version} ({v.file_type})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {createError && (
+                  <p className="text-xs text-red-600 dark:text-red-300">{createError}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowCreateInline(false);
+                      setCreateError(null);
+                    }}
+                    disabled={createBusy}
+                    className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateInstance}
+                    disabled={createBusy}
+                    className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                  >
+                    {createBusy ? 'Creating…' : 'Create'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {selectedInstanceId && (
               versionsLoading ? (

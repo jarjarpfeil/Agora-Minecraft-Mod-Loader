@@ -184,6 +184,10 @@ export const listLoaderVersions = (loader: string, mcVersion: string) =>
     loader,
     mcVersion,
   });
+export const listManifestLoaders = () =>
+  invoke<string[]>('list_manifest_loaders');
+export const listManifestMcVersions = (loader?: string) =>
+  invoke<string[]>('list_manifest_mc_versions', { loader });
 export const forYouItems = (
   modrinthEnabled?: boolean,
   mcVersion?: string,
@@ -299,6 +303,7 @@ export interface ModVersionCandidate {
   loader: string | null;
   release_date: string | null;
   is_compatible: boolean;
+  sha1?: string | null;
 }
 
 export const listModVersions = (instanceId: string, itemId: string) =>
@@ -318,6 +323,12 @@ export const addManualMod = (instanceId: string, sourcePath: string) =>
 
 export const exportInstancePack = (instanceId: string, format: 'json' | 'mrpack') =>
   invoke<string>('export_instance_pack', { instanceId, format });
+
+export const pickOpenFile = (title: string, extensions: string[]) =>
+  invoke<string | null>('pick_open_file', { title, extensions });
+
+export const importInstancePack = (sourcePath: string) =>
+  invoke<string>('import_instance_pack', { sourcePath });
 
 // --- Raw (uncurated) Modrinth integration (§6.3) ---
 

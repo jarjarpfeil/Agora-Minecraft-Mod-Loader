@@ -501,10 +501,7 @@ pub fn for_you_items<R: tauri::Runtime>(
     // Candidate items: uninstalled items sharing >=1 interest category, ranked
     // by number of interest categories matched then net_score.
     let interest_ph = interest.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let mut where_parts: Vec<String> = vec![
-        format!("ri.id NOT IN ({installed_ph})"),
-        format!("ic.category_id IN ({interest_ph})"),
-    ];
+    let mut where_parts: Vec<String> = Vec::new();
     if !modrinth_enabled {
         where_parts.push("ri.download_strategy != 'modrinth_id'".to_string());
     }
@@ -526,22 +523,23 @@ pub fn for_you_items<R: tauri::Runtime>(
             );
         }
     }
-    let where_clause = where_parts.join(" AND ");
+    let where_clause = if where_parts.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", where_parts.join(" AND "))
+    };
 
     let sql = format!(
         "SELECT {REGISTRY_ITEM_COLUMNS}
          FROM registry_items ri
-         JOIN item_categories ic ON ri.id = ic.item_id
-         WHERE {where_clause}
+         LEFT JOIN item_categories ic ON ri.id = ic.item_id AND ic.category_id IN ({interest_ph})
+         {where_clause}
          GROUP BY ri.id
          ORDER BY COUNT(ic.category_id) DESC, ri.net_score DESC
          LIMIT ?"
     );
 
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    for id in &installed {
-        params.push(Box::new(id.clone()));
-    }
     for cat in &interest {
         params.push(Box::new(cat.clone()));
     }

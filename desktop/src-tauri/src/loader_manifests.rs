@@ -91,6 +91,31 @@ pub fn list_versions(loader: &str, mc_version: &str) -> Vec<&'static LoaderEntry
         .unwrap_or_default()
 }
 
+/// Distinct loader names present in the embedded manifests (sorted A→Z).
+pub fn list_loaders() -> Vec<&'static str> {
+    manifest().loaders.keys().map(|k| k.as_str()).collect()
+}
+
+/// Distinct Minecraft versions across all loaders (or one loader when
+/// `loader` is supplied). Sorted newest-first.
+pub fn list_mc_versions(loader: Option<&str>) -> Vec<String> {
+    let manifest = manifest();
+    let entries_iter: Box<dyn Iterator<Item = &'static LoaderEntry>> = match loader {
+        Some(l) => match manifest.loaders.get(l) {
+            Some(v) => Box::new(v.iter()),
+            None => Box::new(std::iter::empty()),
+        },
+        None => Box::new(manifest.loaders.values().flatten()),
+    };
+    let mut versions: Vec<String> = entries_iter
+        .map(|e| e.mc_version.clone())
+        .collect();
+    versions.sort();
+    versions.dedup();
+    versions.reverse();
+    versions
+}
+
 /// Convert a `sha256:hex` string to raw lowercase hex.
 pub fn strip_sha_prefix(s: &str) -> &str {
     s.strip_prefix("sha256:").unwrap_or(s)

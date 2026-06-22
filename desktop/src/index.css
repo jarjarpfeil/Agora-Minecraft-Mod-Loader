@@ -24,6 +24,18 @@
   body {
     @apply bg-[rgb(var(--bg))] text-[rgb(var(--text))] antialiased;
   }
+
+  option, optgroup {
+    background-color: #ffffff;
+    color: #111827;
+  }
+  option:checked,
+  option:hover,
+  option:focus,
+  option:checked:hover {
+    background-color: #1f2937;
+    color: #f9fafb;
+  }
 }
 
 @layer utilities {

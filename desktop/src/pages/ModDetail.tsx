@@ -9,6 +9,8 @@ import {
   listModVersions,
   installModVersion,
   listLoaderVersions,
+  listManifestLoaders,
+  listManifestMcVersions,
   createInstance,
   formatError,
   type RegistryItem,
@@ -104,6 +106,18 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   const [phase, setPhase] = useState<'idle' | 'loadingVersions' | 'pickingVersion' | 'installing' | 'done' | 'error'>('idle');
   const [installMsg, setInstallMsg] = useState<string | null>(null);
 
+  // Inline create-instance state (inside install flow)
+  const [showCreateInline, setShowCreateInline] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createMcVersion, setCreateMcVersion] = useState('');
+  const [createAvailableLoaders, setCreateAvailableLoaders] = useState<string[]>([]);
+  const [createAvailableMcVersions, setCreateAvailableMcVersions] = useState<string[]>([]);
+  const [createLoader, setCreateLoader] = useState('fabric');
+  const [createLoaderVersions, setCreateLoaderVersions] = useState<import('../lib/tauri').LoaderVersionSummary[]>([]);
+  const [createLoaderVersion, setCreateLoaderVersion] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -124,6 +138,39 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       cancelled = true;
     };
   }, [itemId]);
+
+  // Inline create: reload loader versions when loader or mcVersion changes
+  useEffect(() => {
+    if (!showCreateInline) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const versions = await listLoaderVersions(createLoader, createMcVersion);
+        if (cancelled) return;
+        setCreateLoaderVersions(versions);
+        setCreateLoaderVersion(versions[0]?.loader_version ?? '');
+      } catch (e) {
+        if (!cancelled) setCreateError(formatError(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showCreateInline, createLoader, createMcVersion]);
+
+  // Fetch available manifest loaders and MC versions once on mount
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listManifestLoaders(), listManifestMcVersions()]).then(
+      ([loaders, versions]) => {
+        if (cancelled) return;
+        setCreateAvailableLoaders(loaders);
+        setCreateAvailableMcVersions(versions);
+        if (!createMcVersion && versions.length > 0) {
+          setCreateMcVersion(versions[0]);
+        }
+      },
+    );
+    return () => { cancelled = true; };
+  }, []);
 
   if (loading) {
     return (
@@ -210,6 +257,43 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     setSelectedInstanceId(null);
     setCandidates([]);
     setSelectedCandidate(null);
+  };
+
+  // Inline create: submit handler
+  const handleCreateInstance = async () => {
+    setCreateBusy(true);
+    setCreateError(null);
+    try {
+      const instanceId = createName
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (!instanceId) throw new Error('Enter a valid instance name.');
+      if (!createLoaderVersion) throw new Error('No pinned loader version selected.');
+
+      const request: CreateInstanceRequest = {
+        name: createName || instanceId,
+        instance_id: instanceId,
+        minecraft_version: createMcVersion,
+        loader: createLoader,
+        loader_version: createLoaderVersion,
+        jvm_memory_mb: 4096,
+      };
+      const result = await createInstance(request);
+      // Refresh the instances list
+      const all = await listInstances();
+      setInstances(all);
+      setSelectedInstanceId(result.instance_id);
+      setShowCreateInline(false);
+      setCreateName('');
+      setCreateLoaderVersion('');
+      setCreateLoaderVersions([]);
+      setCreateError(null);
+    } catch (e) {
+      setCreateError(formatError(e));
+    } finally {
+      setCreateBusy(false);
+    }
   };
 
   return (
@@ -326,16 +410,10 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
             )}
 
             {/* Step 1: Instance picker */}
-            {!selectedInstanceId ? (
+            {phase === 'idle' && (
               instancesLoading ? (
                 <div className="text-center py-2">
                   <p className="text-sm text-[rgb(var(--muted))]">Loading instances…</p>
-                </div>
-              ) : instances.length === 0 ? (
-                <div>
-                  <p className="text-sm text-[rgb(var(--muted))]">
-                    You need an instance first. Create one in the Instances tab, then come back here.
-                  </p>
                 </div>
               ) : (
                 <div>
@@ -359,12 +437,95 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                   >
                     Next: Choose Version
                   </button>
+                  <button
+                    onClick={() => setShowCreateInline(true)}
+                    className="mt-2 block text-xs text-brand-600 hover:underline dark:text-brand-400"
+                  >
+                    + Create new instance
+                  </button>
+                  {showCreateInline && (
+                    <div className="mt-3 space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                      <p className="text-xs font-medium">Create new instance</p>
+                      <label className="block">
+                        <span className="text-xs">Instance name</span>
+                        <input
+                          value={createName}
+                          onChange={(e) => setCreateName(e.target.value)}
+                          placeholder="My Instance"
+                          className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="text-xs">Minecraft version</span>
+                          <select
+                            value={createMcVersion}
+                            onChange={(e) => setCreateMcVersion(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                          >
+                            {createAvailableMcVersions.map((v) => (
+                              <option key={v} value={v}>{v}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="text-xs">Loader</span>
+                          <select
+                            value={createLoader}
+                            onChange={(e) => setCreateLoader(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                          >
+                            {createAvailableLoaders.map((l) => (
+                              <option key={l} value={l}>{l}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <label className="block">
+                        <span className="text-xs">Loader version</span>
+                        <select
+                          value={createLoaderVersion}
+                          onChange={(e) => setCreateLoaderVersion(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                        >
+                          {createLoaderVersions.length === 0 && <option value="">Loading…</option>}
+                          {createLoaderVersions.map((v) => (
+                            <option key={v.loader_version} value={v.loader_version}>
+                              {v.loader_version} ({v.file_type})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {createError && (
+                        <p className="text-xs text-red-600 dark:text-red-300">{createError}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setShowCreateInline(false);
+                            setCreateError(null);
+                          }}
+                          disabled={createBusy}
+                          className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleCreateInstance}
+                          disabled={createBusy}
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                        >
+                          {createBusy ? 'Creating…' : 'Create'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
-            ) : null}
+            )}
 
             {/* Step 2: Version picker */}
-            {selectedInstanceId && candidates.length > 0 && phase !== 'installing' && phase !== 'done' && (
+            {selectedInstanceId && phase !== 'idle' && phase !== 'installing' && phase !== 'done' && (
               <div>
                 <p className="text-xs font-medium mb-2">Available versions</p>
                 {phase === 'loadingVersions' ? (
@@ -541,9 +702,6 @@ function BackButton({ onBack }: { onBack: () => void }) {
   );
 }
 
-const LOADERS = ['fabric', 'quilt', 'neoforge', 'forge'];
-const DEFAULT_MC_VERSIONS = ['1.21.11', '1.21.10', '1.21.9'];
-
 function PackCreateDialog({
   packName,
   onCancel,
@@ -554,7 +712,9 @@ function PackCreateDialog({
   onCreated: (instanceId: string) => void;
 }) {
   const [name, setName] = useState(packName);
-  const [mcVersion, setMcVersion] = useState(DEFAULT_MC_VERSIONS[0]);
+  const [mcVersion, setMcVersion] = useState('');
+  const [availableLoaders, setAvailableLoaders] = useState<string[]>([]);
+  const [availableMcVersions, setAvailableMcVersions] = useState<string[]>([]);
   const [loader, setLoader] = useState('fabric');
   const [loaderVersions, setLoaderVersions] = useState<import('../lib/tauri').LoaderVersionSummary[]>([]);
   const [loaderVersion, setLoaderVersion] = useState('');
@@ -575,6 +735,22 @@ function PackCreateDialog({
     })();
     return () => { cancelled = true; };
   }, [loader, mcVersion]);
+
+  // Fetch available manifest loaders and MC versions once on mount
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listManifestLoaders(), listManifestMcVersions()]).then(
+      ([loaders, versions]) => {
+        if (cancelled) return;
+        setAvailableLoaders(loaders);
+        setAvailableMcVersions(versions);
+        if (!mcVersion && versions.length > 0) {
+          setMcVersion(versions[0]);
+        }
+      },
+    );
+    return () => { cancelled = true; };
+  }, []);
 
   const submit = async () => {
     setBusy(true);
@@ -626,7 +802,7 @@ function PackCreateDialog({
                 onChange={(e) => setMcVersion(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
               >
-                {DEFAULT_MC_VERSIONS.map((v) => (
+                {availableMcVersions.map((v) => (
                   <option key={v} value={v}>{v}</option>
                 ))}
               </select>
@@ -639,7 +815,7 @@ function PackCreateDialog({
                 onChange={(e) => setLoader(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
               >
-                {LOADERS.map((l) => (
+                {availableLoaders.map((l) => (
                   <option key={l} value={l}>{l}</option>
                 ))}
               </select>

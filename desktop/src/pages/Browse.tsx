@@ -5,6 +5,8 @@ import {
   formatError,
   getSetting,
   listCategories,
+  listManifestLoaders,
+  listManifestMcVersions,
   setSetting,
   type CategoryInfo,
   type RegistryItem,
@@ -22,9 +24,6 @@ const SORTS: { label: string; value: SortOption }[] = [
 
 const CONTENT_TYPES = ['mod', 'pack', 'shader', 'resourcepack', 'server', 'datapack', 'world'];
 
-const LOADERS = ['fabric', 'quilt', 'neoforge', 'forge'];
-const MC_VERSIONS = ['1.21.11', '1.21.10', '1.21.9'];
-
 export function Browse({ onSelectMod, onOpenModrinth }: { onSelectMod?: (id: string) => void; onOpenModrinth?: () => void }) {
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
@@ -38,6 +37,8 @@ export function Browse({ onSelectMod, onOpenModrinth }: { onSelectMod?: (id: str
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loaders, setLoaders] = useState<string[]>([]);
+  const [mcVersions, setMcVersions] = useState<string[]>([]);
 
   // Load the persisted sort preference once on mount. Defaults to 'net_score'
   // when unset so no upgrade silently shifts ordering; users opt into "For You".
@@ -79,6 +80,24 @@ export function Browse({ onSelectMod, onOpenModrinth }: { onSelectMod?: (id: str
         if (!cancelled) setError(formatError(e));
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [l, v] = await Promise.all([listManifestLoaders(), listManifestMcVersions()]);
+        if (!cancelled) {
+          setLoaders(l);
+          setMcVersions(v);
+        }
+      } catch {
+        // Fetch failure: dropdowns render empty — acceptable degraded behavior.
       }
     })();
     return () => {
@@ -169,7 +188,7 @@ export function Browse({ onSelectMod, onOpenModrinth }: { onSelectMod?: (id: str
           title="Filter by Minecraft version"
         >
           <option value="">Any MC version</option>
-          {MC_VERSIONS.map((v) => (
+          {mcVersions.map((v) => (
             <option key={v} value={v}>MC {v}</option>
           ))}
         </select>
@@ -180,7 +199,7 @@ export function Browse({ onSelectMod, onOpenModrinth }: { onSelectMod?: (id: str
           title="Filter by modloader"
         >
           <option value="">Any loader</option>
-          {LOADERS.map((l) => (
+          {loaders.map((l) => (
             <option key={l} value={l}>{l}</option>
           ))}
         </select>

@@ -2,10 +2,12 @@ use crate::auth;
 use crate::db;
 use crate::download;
 use crate::error::{LauncherError, LauncherResult};
+use crate::instances;
 use crate::models::{InstanceManifest, InstanceRow, InstalledMod, ModVersionCandidate};
 use crate::paths;
 use crate::registry;
 use serde::Deserialize;
+use std::path::Path;
 
 /// Minimum free disk space required before a mod download (500 MB).
 pub(crate) const MIN_DISK_SPACE_BYTES: u64 = 500_000_000;
@@ -157,10 +159,16 @@ struct ModrinthVersion {
 }
 
 #[derive(Debug, Deserialize)]
+struct ModrinthFileHashes {
+    sha1: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ModrinthVersionFile {
     url: String,
     filename: String,
     primary: bool,
+    hashes: Option<ModrinthFileHashes>,
 }
 
 /// List available mod versions for a registry item, resolving live data from
@@ -298,6 +306,7 @@ async fn resolve_github_releases(
                 loader: if loader_empty { None } else { Some(loader_str) },
                 release_date: release.published_at.clone(),
                 is_compatible: !mc_empty && !loader_empty,
+                sha1: None,
             });
         }
     }
@@ -383,6 +392,7 @@ async fn resolve_modrinth_versions_by_id(
             loader: if loader_empty { None } else { Some(loader_str) },
             release_date: None,
             is_compatible: !mc_empty && !loader_empty,
+            sha1: file.hashes.as_ref().and_then(|h| h.sha1.clone()),
         });
     }
 
@@ -413,11 +423,24 @@ pub async fn install_mod_version(
     // 3. Download bytes from the candidate URL.
     let bytes = download_mod_bytes(&candidate.download_url).await?;
 
-    // 3. Verify SHA-256 against the pinned hash.
-    let actual_sha = download::sha256_hex(&bytes);
-    if actual_sha != pinned_sha {
-        return Err(LauncherError::HashMismatch);
+    // 3. Verify hash against the appropriate source.
+    let candidate_sha1 = candidate.sha1.as_deref().unwrap_or("").trim().to_lowercase();
+    if !candidate_sha1.is_empty() {
+        // Modrinth-published per-file SHA-1: verify against that.
+        let actual_sha1 = download::sha1_hex(&bytes);
+        if actual_sha1 != candidate_sha1 {
+            return Err(LauncherError::HashMismatch);
+        }
+    } else {
+        // GitHub release or no per-file hash: verify against the pinned SHA-256.
+        let actual_sha = download::sha256_hex(&bytes);
+        if actual_sha != pinned_sha {
+            return Err(LauncherError::HashMismatch);
+        }
     }
+
+    // 3b. Compute the actual SHA-256 of the downloaded bytes for the manifest.
+    let installed_sha256 = download::sha256_hex(&bytes);
 
     // 4. Ensure mods/ directory exists and write the file.
     let instance_dir = paths::instance_dir(app, instance_id)
@@ -450,10 +473,10 @@ pub async fn install_mod_version(
     let installed_mod = InstalledMod {
         filename: candidate.filename.clone(),
         registry_id: Some(item_id.to_string()),
-        modrinth_id: None,
+        modrinth_id: item.modrinth_id.clone(),
         source: "registry".to_string(),
         version: Some(candidate.version.clone()),
-        sha256: pinned_sha,
+        sha256: installed_sha256,
         installed_at: chrono::Utc::now().to_rfc3339(),
     };
 
@@ -818,6 +841,21 @@ pub async fn export_instance_pack(
                 let mut files_meta: Vec<serde_json::Value> = Vec::new();
 
                 for m in &manifest.mods {
+                    // Modrinth-tracked mods: reference the upstream file by URL + published
+                    // hashes instead of bundling the jar. This is the mrpack v1 best practice
+                    // and keeps exported packs tiny + resolvable. Falls through to local
+                    // bundling when Modrinth has no metadata for this filename.
+                    if let Some(mid) = m.modrinth_id.as_deref().filter(|s| !s.trim().is_empty()) {
+                        if let Some(meta) = crate::modrinth_raw::resolve_modrinth_file_metadata(mid, &m.filename).await {
+                            files_meta.push(serde_json::json!({
+                                "path": format!("mods/{}", m.filename),
+                                "hashes": { "sha1": meta.sha1, "sha512": meta.sha512 },
+                                "downloads": [meta.url],
+                                "fileSize": meta.size,
+                            }));
+                            continue;
+                        }
+                    }
                     let entry_name = match safe_zip_entry_name(&m.filename) {
                         Some(n) => n,
                         None => {
@@ -904,3 +942,471 @@ pub async fn export_instance_pack(
         }),
     }
 }
+
+/// Import an instance from a pack file on disk.
+///
+/// Supported formats (detected by file extension):
+/// - `.mrpack` — Modrinth mrpack v1 (zip containing `modrinth.index.json`
+///   + bundled override jars under their declared `path`).
+/// - `.json` / `.agora-pack.json` — Agora's plain-JSON `agora-pack/v1`
+///   format (the export of `export_instance_pack(format="json")`).
+///
+/// Creates a NEW instance via `instances::create_instance` using the
+/// pack-declared instance metadata, then materializes mods into its
+/// `mods/` directory + manifest. Returns the sanitized instance_id of
+/// the newly created instance.
+///
+/// Security: zip entries are validated via `safe_zip_entry_name` BEFORE
+/// extraction (rejecting `..`, `/`, `\`, NUL). Downloaded Modrinth-CDN
+/// files are verified against the mrpack-declared SHA-1 (when present)
+/// via `download::sha1_hex`. The drop-directory allowlist check from
+/// `add_manual_mod` is NOT applied here — callers reach this through
+/// either an OS file picker (`pick_open_file`) or the webview drag-drop
+/// event, both of which are user-initiated. Zip-slip protection is what
+/// actually matters here; that is enforced.
+pub async fn import_instance_pack(
+    app: &tauri::AppHandle,
+    source_path: &str,
+) -> LauncherResult<String> {
+    let lower = source_path.to_ascii_lowercase();
+    if lower.ends_with(".mrpack") {
+        import_mrpack(app, source_path).await
+    } else if lower.ends_with(".json") || lower.ends_with(".agora-pack.json") {
+        import_agora_pack(app, source_path).await
+    } else {
+        Err(LauncherError::Generic {
+            code: "ERR_INVALID_FORMAT".to_string(),
+            message: "Unsupported pack file extension. Use .mrpack or .agora-pack.json.".to_string(),
+        })
+    }
+}
+
+/// --- mrpack import ---
+
+/// Import a Modrinth mrpack (.mrpack) file.
+async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherResult<String> {
+    let file = std::fs::File::open(source_path)
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_PACK_READ".to_string(),
+            message: format!("Cannot open mrpack file: {source_path}"),
+        })?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|_| LauncherError::Generic {
+        code: "ERR_PACK_READ".to_string(),
+        message: "Failed to open mrpack as a zip archive.".to_string(),
+    })?;
+
+    // Find and parse modrinth.index.json
+    let mut index_text = String::new();
+    {
+        use std::io::Read;
+        let mut entry = archive.by_name("modrinth.index.json").map_err(|_| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "modrinth.index.json not found in mrpack.".to_string(),
+        })?;
+        entry.read_to_string(&mut index_text).map_err(|_| LauncherError::Generic {
+            code: "ERR_PACK_READ".to_string(),
+            message: "Failed to read modrinth.index.json.".to_string(),
+        })?;
+    }
+    let index: serde_json::Value = serde_json::from_str(&index_text).map_err(|_| LauncherError::Generic {
+        code: "ERR_PACK_PARSE".to_string(),
+        message: "Failed to parse modrinth.index.json.".to_string(),
+    })?;
+
+    // Extract dependencies
+    let deps = index.get("dependencies").and_then(|d| d.as_object()).ok_or_else(|| LauncherError::Generic {
+        code: "ERR_PACK_PARSE".to_string(),
+        message: "mrpack has no dependencies map.".to_string(),
+    })?;
+
+    let minecraft_version = deps.get("minecraft").and_then(|v| v.as_str()).ok_or_else(|| LauncherError::Generic {
+        code: "ERR_PACK_PARSE".to_string(),
+        message: "mrpack missing required 'dependencies.minecraft'.".to_string(),
+    })?;
+    if minecraft_version.is_empty() {
+        return Err(LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "mrpack 'dependencies.minecraft' is empty.".to_string(),
+        });
+    }
+
+    // Find exactly one loader dependency
+    let loader_key = &["fabric-loader", "quilt-loader", "neoforge", "forge"]
+        .iter()
+        .find(|k| deps.keys().any(|key| key == **k));
+    let loader_key = loader_key.ok_or_else(|| LauncherError::Generic {
+        code: "ERR_PACK_PARSE".to_string(),
+        message: "mrpack has no loader dependency; cannot determine loader+version.".to_string(),
+    })?;
+
+    let loader_name = match *loader_key {
+        "fabric-loader" => "fabric",
+        "quilt-loader" => "quilt",
+        "neoforge" => "neoforge",
+        "forge" => "forge",
+        _ => unreachable!(),
+    };
+
+    let loader_version = deps
+        .get(*loader_key)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: format!("mrpack missing loader version for '{loader_key}'."),
+        })?
+        .to_string();
+
+    // Instance name: prefer index["name"], else derive from filename
+    let name = index
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            Path::new(source_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("imported-pack")
+                .to_string()
+        });
+
+    let instance_id = paths::sanitize_id(&name);
+    let instance_id = if instance_id.is_empty() { "imported-pack".to_string() } else { instance_id };
+
+    // Create the instance
+    let req = instances::CreateInstanceRequest {
+        name: name.clone(),
+        instance_id: instance_id.clone(),
+        minecraft_version: minecraft_version.to_string(),
+        loader: loader_name.to_string(),
+        loader_version: loader_version.clone(),
+        jvm_memory_mb: Some(4096),
+        jvm_gc: None,
+        jvm_custom_args: None,
+        jvm_always_pre_touch: None,
+    };
+    let _row = instances::create_instance(app.clone(), req).await?;
+
+    // Process files from the index
+    let files_arr: &serde_json::Value = index.get("files").unwrap_or(&serde_json::Value::Null);
+    let mut installed_mods: Vec<InstalledMod> = Vec::new();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let mods_dir = paths::instance_dir(app, &instance_id)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?
+        .join("mods");
+    std::fs::create_dir_all(&mods_dir).map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+    if let Some(arr) = files_arr.as_array() {
+        for file_entry in arr {
+            let path = file_entry.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if !path.starts_with("mods/") {
+                continue;
+            }
+            let basename = path.strip_prefix("mods/").unwrap();
+            if basename.is_empty() {
+                continue;
+            }
+            // Skip nested paths (only flat mods/<filename> is supported)
+            if basename.contains('/') || basename.contains('\\') {
+                auth::log_line(&format!("import_mrpack: path contains nested slashes, skipping '{basename}'"));
+                continue;
+            }
+
+            if safe_zip_entry_name(basename).is_none() {
+                auth::log_line(&format!("import_mrpack: unsafe basename '{basename}', skipping"));
+                continue;
+            }
+
+            let downloads = file_entry.get("downloads").and_then(|d| d.as_array());
+        if let Some(downloads) = downloads {
+            if let Some(url) = downloads.first().and_then(|u| u.as_str()) {
+                // Download from Modrinth CDN (host-allowlisted by download_mod_bytes)
+                let bytes = download_mod_bytes(url).await?;
+                // SHA-1 verification if declared
+                if let Some(expected_sha1) = file_entry.get("hashes")
+                    .and_then(|h| h.get("sha1"))
+                    .and_then(|h| h.as_str())
+                    .filter(|s| !s.is_empty())
+                {
+                    let actual = download::sha1_hex(&bytes);
+                    if actual != expected_sha1.trim().to_lowercase() {
+                        return Err(LauncherError::HashMismatch);
+                    }
+                }
+                let sha256 = download::sha256_hex(&bytes);
+                let mod_path = mods_dir.join(basename);
+                std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                installed_mods.push(InstalledMod {
+                    filename: basename.to_string(),
+                    registry_id: None,
+                    modrinth_id: None,
+                    source: "modrinth_pack".to_string(),
+                    version: None,
+                    sha256,
+                    installed_at: now.clone(),
+                });
+            }
+        } else {
+            // Bundled override jar: extract directly from the zip
+            if let Ok(mut entry) = archive.by_name(path) {
+                let mut bytes = Vec::new();
+                use std::io::Read;
+                entry.read_to_end(&mut bytes).ok();
+                let sha256 = download::sha256_hex(&bytes);
+                let mod_path = mods_dir.join(basename);
+                std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                installed_mods.push(InstalledMod {
+                    filename: basename.to_string(),
+                    registry_id: None,
+                    modrinth_id: None,
+                    source: "modrinth_pack_bundle".to_string(),
+                    version: None,
+                    sha256,
+                    installed_at: now.clone(),
+                });
+            } else {
+                auth::log_line(&format!("import_mrpack: bundled file not found in zip: '{path}'"));
+            }
+        }
+    }
+    }
+
+    // Update manifest atomically
+    if !installed_mods.is_empty() {
+        let manifest_path = paths::instance_manifest_path(app, &instance_id)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let text = tokio::task::spawn_blocking({
+            let manifest_path = manifest_path.clone();
+            move || {
+                let text = std::fs::read_to_string(&manifest_path)
+                    .map_err(|_| LauncherError::InstanceCreateFailed)?;
+                Ok::<_, LauncherError>(text)
+            }
+        })
+        .await
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_MANIFEST_READ".to_string(),
+            message: "Manifest read task failed.".to_string(),
+        })??;
+        let mut manifest: InstanceManifest = serde_json::from_str(&text)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        manifest.mods.extend(installed_mods);
+
+        let tmp_path = manifest_path.with_extension("json.tmp");
+        let write_text = serde_json::to_string_pretty(&manifest)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        tokio::task::spawn_blocking(move || {
+            std::fs::write(&tmp_path, write_text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+            std::fs::rename(&tmp_path, &manifest_path)
+                .map_err(|_| LauncherError::InstanceCreateFailed)?;
+            Ok::<_, LauncherError>(())
+        })
+        .await
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_MANIFEST_WRITE".to_string(),
+            message: "Manifest write task failed.".to_string(),
+        })??;
+    }
+
+    Ok(instance_id)
+}
+
+/// --- agora-pack import ---
+
+/// Import an Agora plain-JSON pack (.agora-pack.json or .json).
+async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> LauncherResult<String> {
+    let text = std::fs::read_to_string(source_path).map_err(|_| LauncherError::Generic {
+        code: "ERR_PACK_READ".to_string(),
+        message: format!("Cannot read pack file: {source_path}"),
+    })?;
+    let pack: serde_json::Value = serde_json::from_str(&text).map_err(|_| LauncherError::Generic {
+        code: "ERR_PACK_PARSE".to_string(),
+        message: "Failed to parse agora-pack JSON.".to_string(),
+    })?;
+
+    let instance_obj = pack.get("instance").ok_or_else(|| LauncherError::Generic {
+        code: "ERR_PACK_PARSE".to_string(),
+        message: "agora-pack missing 'instance' object.".to_string(),
+    })?;
+
+    let mc_version = instance_obj
+        .get("minecraft_version")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "agora-pack instance missing 'minecraft_version'.".to_string(),
+        })?;
+    if mc_version.is_empty() {
+        return Err(LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "agora-pack 'minecraft_version' is empty.".to_string(),
+        });
+    }
+
+    let loader = instance_obj
+        .get("loader")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "agora-pack instance missing 'loader'.".to_string(),
+        })?;
+    if loader.is_empty() {
+        return Err(LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "agora-pack 'loader' is empty.".to_string(),
+        });
+    }
+
+    let loader_version = instance_obj
+        .get("loader_version")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "agora-pack instance missing 'loader_version'.".to_string(),
+        })?;
+    if loader_version.is_empty() {
+        return Err(LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "agora-pack 'loader_version' is empty.".to_string(),
+        });
+    }
+
+    let name = instance_obj
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            instance_obj
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "imported-pack".to_string());
+
+    let instance_id = instance_obj
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&name)
+        .to_string();
+
+    let instance_id = paths::sanitize_id(&instance_id);
+    let instance_id = if instance_id.is_empty() { "imported-pack".to_string() } else { instance_id };
+
+    let req = instances::CreateInstanceRequest {
+        name: name.clone(),
+        instance_id: instance_id.clone(),
+        minecraft_version: mc_version.to_string(),
+        loader: loader.to_string(),
+        loader_version: loader_version.to_string(),
+        jvm_memory_mb: Some(4096),
+        jvm_gc: None,
+        jvm_custom_args: None,
+        jvm_always_pre_touch: None,
+    };
+    let _row = instances::create_instance(app.clone(), req).await?;
+
+    // Install mods from the pack
+    if let Some(mods_arr) = pack.get("mods").and_then(|m| m.as_array()) {
+        for mod_entry in mods_arr {
+            let registry_id = mod_entry
+                .get("registry_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+
+            if let Some(rid) = registry_id {
+                let filename = mod_entry
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                match list_mod_versions(app, &instance_id, rid).await {
+                    Ok(candidates) => {
+                        // Try to match by filename first, then by version
+                        let candidate = candidates.iter().find(|c| c.filename == filename)
+                            .or_else(|| {
+                                let ver = mod_entry.get("version").and_then(|v| v.as_str());
+                                ver.and_then(|v| candidates.iter().find(|c| c.version == v))
+                            });
+
+                        if let Some(c) = candidate {
+                            if let Err(e) = install_mod_version(app, &instance_id, rid, c).await {
+                                auth::log_line(&format!(
+                                    "import_agora_pack: failed to install registry mod {rid}: {e}"
+                                ));
+                            }
+                        } else {
+                            auth::log_line(&format!(
+                                "import_agora_pack: no matching candidate for mod {rid} (filename={filename})"
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        auth::log_line(&format!(
+                            "import_agora_pack: failed to list versions for registry mod {rid}: {e}"
+                        ));
+                    }
+                }
+            } else if let Some(mid) = mod_entry
+                .get("modrinth_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+            {
+                if !crate::modrinth_raw::is_modrinth_enabled(app) {
+                    auth::log_line(&format!(
+                        "import_agora_pack: skipping modrinth mod '{mid}' — Modrinth integration disabled"
+                    ));
+                    continue;
+                }
+                let filename = mod_entry
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                match crate::modrinth_raw::list_raw_modrinth_versions(app, Some(&instance_id), mid).await {
+                    Ok(candidates) => {
+                        let candidate = candidates
+                            .iter()
+                            .find(|c| c.primary && c.filename == filename)
+                            .or_else(|| candidates.iter().find(|c| c.filename == filename))
+                            .or_else(|| candidates.iter().find(|c| c.primary))
+                            .or_else(|| {
+                                let ver = mod_entry.get("version").and_then(|v| v.as_str());
+                                ver.and_then(|v| candidates.iter().find(|c| c.version == v))
+                            })
+                            .or_else(|| candidates.first());
+                        if let Some(c) = candidate {
+                            if let Err(e) = crate::modrinth_raw::install_raw_modrinth(app, &instance_id, mid, c).await {
+                                auth::log_line(&format!(
+                                    "import_agora_pack: failed to install modrinth mod {mid}: {e}"
+                                ));
+                            }
+                        } else {
+                            auth::log_line(&format!(
+                                "import_agora_pack: no candidate for modrinth mod {mid} (filename={filename})"
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        auth::log_line(&format!(
+                            "import_agora_pack: failed to list versions for modrinth mod {mid}: {e}"
+                        ));
+                    }
+                }
+            } else {
+                let filename = mod_entry
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                auth::log_line(&format!(
+                    "import_agora_pack: skipping non-registry mod '{filename}' (manual re-add required)"
+                ));
+            }
+        }
+    }
+
+    Ok(instance_id)
+}
+

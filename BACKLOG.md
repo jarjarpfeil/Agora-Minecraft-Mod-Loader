@@ -53,11 +53,11 @@
   - **Spec:** §3.1 step 13
   - **Acceptance:** A nightly run produces a visible GitHub Release with `registry.db` + `.sig` attached.
 
-- [ ] **GitHub API social metrics integration**
+- [x] **GitHub API social metrics integration**
   - **Short:** Fetch reactions, comments, trust scores, and velocity data from the GitHub API during compilation.
-  - **Detail:** Steps 3–9 of §3.1 are entirely absent. `upvotes`/`downvotes`/`net_score`/`velocity` are hardcoded to `0`/`0`/`0`/`0.0`. Implement: (a) emoji reaction counting from issue comments, (b) trust filtering via `user.contributionsCollection` scoped to the org, (c) Sybil resistance, (d) velocity circuit breaker (7-day rolling window with decay), (e) reaction scrubbing/NLP filtering (profanity-check, vaderSentiment), (f) Discussions poll resolution.
-  - **Spec:** §3.1 steps 3–9, §5
-  - **Acceptance:** `verify_db.py` shows non-zero `upvotes`/`net_score` for seeded mods.
+  - **Detail:** Spec-strict §3.1 steps 3-9 + §3.2 fully implemented in `compiler/compile.py` (diff ~600 lines added). Pass 1 (`_hydrate_github_social_metrics`) enumerates governance-repo (`agora-mc/agora-mc`) issues, extracts `mod_id` from the `### Mod Registry ID` field of `review-form.yml`-created issues, fetches reactions on the issue + each comment via paginated GitHub REST API, attaches a `ModSocialMetrics` dataclass. Pass 2 (`_apply_trust_velocity_pass`) applies (a) §3.1 step 4 trust via GraphQL `user.contributionsCollection` scoped to the agora-mc org (30-day-age + 3-interaction gate, `poll_blacklist.json` short-circuit, Sybil single-mod diversity weighting), (b) §3.1 step 5 velocity circuit breaker (6h recent / 7d historical, fires when `recent_downvotes > 5× historical AND > 20` → `status='under_review'` + counts frozen at pre-spike values), (c) §3.1 step 9 immune passthrough (`governance.immune=true` skips ALL score evaluation). Pass 3 (`_respond_to_circuit_breaker` + `_resolve_expired_triage_polls`) handles (a) §3.2 Raid Shield (PUT interaction-limits=existing_users, 24h expiry, once per compile run), (b) §3.1 step 6 DELETE offending reactions (`_gather_offending_reactions` captures pre-DELETE data; `_append_audit_entry` records intent BEFORE destructive API call), (c) §3.1 step 8 create triage discussion poll under a discovered "Triage" / "Mod Reviews" / "Community Triage" category (soft-fails if no matching category; status flip is the hard requirement); (d) organic §3.1 step 5 trigger when `net_score < -10` (no Raid Shield / DELETE, just status flip + poll); (e) resolve expired polls via GraphQL (>7d elapsed): tallies keep-vs-remove reactions, blacklisted users weighted to 0, archiving manifest file to `registry/archived/<id>.json` on REMOVE win, restoring to `active` on KEEP win. Step 7 NLP scrubbing (`_scrub_review_text`): regex filtering (version begging + empty praise) + `profanity-check` SVM + `vaderSentiment` extreme-aggression gate; survivors populate `curator_reviews.top_reviews_json` instead of always `[]`. `insert_registry_item` now writes computed `upvotes`/`downvotes`/`net_score`/`velocity`/`status` from the attached `ModSocialMetrics` instead of hardcoded zeros. `compile.yml` passes `GITHUB_TOKEN` env to the compile step (alongside the pred-existing `ED25519_PRIVATE_KEY`). 50 stdlib `unittest` tests in `compiler/_test_social_metrics.py` cover: mod_id extraction, reaction parsing, dataclasses, Sybil weighting, interaction counts, velocity computation, anomaly firing, regex scrubbing patterns, review-text extraction, NLP fail-open behaviour, audit-log rotation, triage-poll category discovery. Local dev (no GITHUB_TOKEN) is a clean no-op: metrics stay zero, audit log unmutated, no destructive API calls attempted.
+  - **Spec:** §3.1 steps 3-9 (all complete), §3.2
+  - **Acceptance:** `verify_db.py` shows non-zero `upvotes`/`net_score` for seeded mods (REQUIRES a real `GITHUB_TOKEN` in CI + at least one reaction filed on a tracking issue in the `agora-mc/agora-mc` repo — the code path is in place; data populates when real GitHub activity occurs).
 
 - [x] **Modrinth batch image hydration**
   - **Short:** Call `GET /v2/projects?ids=[...]` to populate `icon_url` and `gallery_urls` for Modrinth-sourced mods.
@@ -348,6 +348,16 @@
 
 ---
 
+## Deferred — Cross-cutting Pack Overrides
+
+- [ ] **mrpack `overrides/` extraction + non-mod file round-trip**
+  - **Short:** When importing or exporting `.mrpack` packs, honor Modrinth's `overrides/` (and `client-overrides/` / `server-overrides/`) directory convention and broaden the agora-pack JSON to round-trip non-mod files.
+  - **Detail:** Currently `import_instance_pack` (in `desktop/src-tauri/src/mod_install.rs` → `import_mrpack`) only processes `mods/<filename>` entries from `modrinth.index.json` and skips everything else. `export_instance_pack`'s mrpack path likewise only writes `mods/`. Modrinth packs routinely ship `overrides/config/`, `overrides/defaultconfigs/`, `overrides/shaderpacks/`, `overrides/resourcepacks/`, `overrides/kubejs/`, etc. — those need to be (a) extracted into the corresponding instance subdirectory on import, and (b) bundled back into `overrides/` on export, subject to the existing Override Sanitization Engine's directory whitelist + zip-slip + zip-bomb protections (§7.2). When this lands, also tighten `import_mrpack` to silently reject any path outside the whitelist. Sidelined 2026-06-21 pending a broader "rest of the systems" pass so the same directory-whitelist treatment is consistently applied wherever pack contents touch the filesystem.
+  - **Spec:** §7.2 (override sanitization), mrpack v1 (`overrides/`, `client-overrides/`, `server-overrides/`) .agora-pack/v1 (extend `mods[]` or add `files[]`).
+  - **Acceptance:** Importing a `.mrpack` that ships `overrides/config/foo.toml` extracts the file into `<instance>/config/foo.toml`; a malicious `overrides/../../evil.exe` is rejected; exporting an instance whose `config/` dir has files bundles them under `overrides/config/` in the resulting `.mrpack`.
+
+---
+
 ## Quick Reference: Most Critical Next Steps
 
 > Reconciled against `desktop/src-tauri/src` at `HEAD`. Rows marked open (no strikethrough) are the current top-priority targets; do **not** re-mark them done without verifying code exists.
@@ -362,3 +372,4 @@
 | 6 | ~~Mod detail page~~ ✅ | `ModDetail.tsx` + `mod_install.rs`: live GitHub/Modrinth version resolution → SHA-256-verified download → atomic manifest write |
 | 7 | ~~Crash diagnostics~~ ✅ | Phase 4 requirement for MVP |
 | 8 | ~~NeoForge/Forge installer support~~ ✅ | `inject_loader` runs `java -jar <installer> --installClient` with SHA-256 verification; neoforge+forge entries in loader manifests |
+| 9 | ~~GitHub API social metrics (steps 3-9 + §3.2)~~ ✅ | `compiler/compile.py` writes real upvotes/downvotes/velocity/status. Trust filter via GraphQL contributionsCollection, circuit-breaker response with Raid Shield + DELETE reactions + triage polls, NLP review scrubbing, audit-log rotation. 50 unit tests. |

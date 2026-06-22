@@ -146,7 +146,7 @@ export default function App() {
         <Sidebar tabs={tabs} activeTab={effectiveTab} onSelectTab={(t) => { setSelectedModId(null); setEditingInstanceId(null); setActiveTab(t); }} />
         <main className="flex-1 overflow-y-auto p-6 surface">
           {editingInstanceId !== null ? (
-            <InstanceEditor instanceId={editingInstanceId} onBack={() => setEditingInstanceId(null)} />
+            <InstanceEditor instanceId={editingInstanceId} onBack={() => setEditingInstanceId(null)} onOpenInstanceEditor={(id) => setEditingInstanceId(id)} />
           ) : selectedModId !== null ? (
             <ModDetail itemId={selectedModId} onBack={() => setSelectedModId(null)} onOpenInstanceEditor={(id) => { setSelectedModId(null); setEditingInstanceId(id); }} />
           ) : (
