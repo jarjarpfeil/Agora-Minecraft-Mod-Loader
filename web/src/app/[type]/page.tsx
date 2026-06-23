@@ -1,10 +1,10 @@
 import { notFound } from 'next/navigation';
-import { getAllItems, isContentType, contentTypeLabel, contentTypePath } from '@/lib/db';
+import { getAllItems, contentTypeFromPath, contentTypeLabel, contentTypePath } from '@/lib/db';
 import { Catalog } from '@/components/Catalog';
 
 export function generateStaticParams() {
   return ['mod', 'pack', 'shader', 'resourcepack', 'server', 'datapack', 'world'].map((type) => ({
-    type,
+    type: `${type}s`,
   }));
 }
 
@@ -13,17 +13,18 @@ interface TypePageProps {
 }
 
 export default async function TypePage({ params }: TypePageProps) {
-  if (!isContentType(params.type)) {
+  const contentType = contentTypeFromPath(params.type);
+  if (!contentType) {
     notFound();
   }
 
-  const items = await getAllItems(params.type);
+  const items = await getAllItems(contentType);
 
   return (
     <Catalog
       items={items}
-      typeLabel={contentTypeLabel(params.type)}
-      typePath={contentTypePath(params.type)}
+      typeLabel={contentTypeLabel(contentType)}
+      typePath={contentTypePath(contentType)}
     />
   );
 }

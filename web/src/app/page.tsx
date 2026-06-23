@@ -15,7 +15,7 @@ export default async function HomePage() {
           Agora Minecraft Mod Launcher
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-indigo-100">
-          A boutique, community-curated Minecraft mod platform. If CurseForge is a beer, this is Agora.
+          A boutique, community-curated Minecraft mod platform.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-4">
           <Link

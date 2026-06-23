@@ -200,6 +200,13 @@ export function contentTypePath(type: ContentType): string {
   return `/${type}s`;
 }
 
+export function contentTypeFromPath(pathSegment: string): ContentType | null {
+  for (const t of CONTENT_TYPES) {
+    if (pathSegment === `${t}s`) return t;
+  }
+  return null;
+}
+
 // ── Browse with filters and sort ──────────────────────────────────
 
 export async function browseItems(params: {

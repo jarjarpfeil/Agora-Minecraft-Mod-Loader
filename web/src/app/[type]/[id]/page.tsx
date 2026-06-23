@@ -5,7 +5,7 @@ import Reviews from '@/components/Reviews';
 import {
   getItemById,
   getItemIds,
-  isContentType,
+  contentTypeFromPath,
   contentTypeLabel,
   contentTypePath,
   CONTENT_TYPES,
@@ -21,13 +21,14 @@ export async function generateStaticParams() {
   const params: { type: string; id: string }[] = [];
   for (const type of CONTENT_TYPES) {
     const ids = await getItemIds(type);
-    params.push(...ids.map((id) => ({ type, id })));
+    params.push(...ids.map((id) => ({ type: `${type}s`, id })));
   }
   return params;
 }
 
 export default async function DetailPage({ params }: DetailPageProps) {
-  if (!isContentType(params.type)) {
+  const contentType = contentTypeFromPath(params.type);
+  if (!contentType) {
     notFound();
   }
 
@@ -54,14 +55,14 @@ export default async function DetailPage({ params }: DetailPageProps) {
       ) : null}
       <div>
         <Link
-          href={contentTypePath(params.type as ContentType)}
+          href={contentTypePath(contentType)}
           className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
         >
-          ← Back to {contentTypeLabel(params.type as ContentType)}
+          ← Back to {contentTypeLabel(contentType)}
         </Link>
         <h1 className="mt-2 text-3xl font-bold">{item.name}</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          {contentTypeLabel(params.type as ContentType)} · {item.download_strategy}
+          {contentTypeLabel(contentType)} · {item.download_strategy}
         </p>
       </div>
 
