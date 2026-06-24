@@ -1504,7 +1504,7 @@ logger = logging.getLogger("compiler")
 # Schema setup
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 
 CREATE_INDEXES = [
@@ -1603,6 +1603,39 @@ def create_tables(conn: sqlite3.Connection) -> None:
             regex_pattern TEXT,
             solution_markdown TEXT,
             action_button_json TEXT
+        )
+    """)
+
+    # Community-curated mod conflict feed.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS known_conflicts (
+            mod_a_id TEXT NOT NULL,
+            mod_b_id TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            mitigated_by_json TEXT,
+            notes TEXT,
+            PRIMARY KEY (mod_a_id, mod_b_id)
+        )
+    """)
+
+    # Manual mod dependencies declared by manifest authors.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mod_manual_dependencies (
+            item_id TEXT PRIMARY KEY,
+            required_json TEXT,
+            optional_json TEXT,
+            incompatible_json TEXT,
+            FOREIGN KEY (item_id) REFERENCES registry_items(id)
+        )
+    """)
+
+    # Mod jar ID aliases: cross-source ID mapping for the same mod.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mod_jar_aliases (
+            registry_id TEXT NOT NULL,
+            alias TEXT NOT NULL,
+            PRIMARY KEY (registry_id, alias),
+            FOREIGN KEY (registry_id) REFERENCES registry_items(id)
         )
     """)
 
@@ -2184,6 +2217,202 @@ def insert_crash_signature(
 
 
 # ---------------------------------------------------------------------------
+# Known conflicts (registry/governance/known_conflicts.json)
+# ---------------------------------------------------------------------------
+
+
+def load_known_conflicts(conn: sqlite3.Connection) -> int:
+    """Ingest community-curated known conflicts from known_conflicts.json.
+
+    Returns the number of rows inserted.
+    """
+    path = REGISTRY_DIR / "governance" / "known_conflicts.json"
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not load known_conflicts.json (%s); skipping.", exc)
+        return 0
+
+    if not isinstance(data, list):
+        logger.warning("known_conflicts.json is not a JSON array; skipping.")
+        return 0
+
+    cursor = conn.cursor()
+    count = 0
+    for entry in data:
+        a = str(entry.get("a", "")).strip().lower()
+        b = str(entry.get("b", "")).strip().lower()
+        severity = str(entry.get("severity", "")).strip().lower()
+        mitigated_by = entry.get("mitigated_by")
+        if not isinstance(mitigated_by, list):
+            mitigated_by = []
+        mitigated_by_json = json.dumps(mitigated_by, separators=(",", ":"))
+        notes = entry.get("notes")
+        # Normalize pair: lexicographically smaller id is mod_a_id.
+        if a <= b:
+            mod_a_id, mod_b_id = a, b
+        else:
+            mod_a_id, mod_b_id = b, a
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO known_conflicts
+                (mod_a_id, mod_b_id, severity, mitigated_by_json, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (mod_a_id, mod_b_id, severity, mitigated_by_json, notes),
+        )
+        count += 1
+
+    logger.info("Loaded %d known conflicts", count)
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Manual mod dependencies (mod_dependencies manifest field)
+# ---------------------------------------------------------------------------
+
+
+def load_manual_dependencies(conn: sqlite3.Connection) -> int:
+    """Ingest optional ``mod_dependencies`` fields from all content-type manifests.
+
+    Each manifest across the 7 CONTENT_DIRS is inspected; if it carries a
+    ``mod_dependencies`` object with any of ``required``, ``optional``,
+    ``incompatible`` (defaulting to ``[]``), the values are stored as JSON
+    strings in ``mod_manual_dependencies``.  Defensive: failures are logged
+    and never abort the compile.
+
+    Returns the number of rows inserted.
+    """
+    CONTENT_DIRS = [
+        "mods",
+        "packs",
+        "shaders",
+        "resourcepacks",
+        "servers",
+        "datapacks",
+        "worlds",
+    ]
+    cursor = conn.cursor()
+    count = 0
+    for dir_name in CONTENT_DIRS:
+        dir_path = REGISTRY_DIR / dir_name
+        if not dir_path.exists():
+            continue
+        try:
+            for path in sorted(dir_path.rglob("*.json")):
+                if "archived" in path.parts:
+                    continue
+                try:
+                    with path.open("r", encoding="utf-8") as fh:
+                        manifest = json.load(fh)
+                except (json.JSONDecodeError, OSError):
+                    continue
+                deps = manifest.get("mod_dependencies")
+                if not isinstance(deps, dict):
+                    continue
+                item_id = str(manifest.get("id", "")).strip().lower()
+                if not item_id:
+                    continue
+                required = deps.get("required", [])
+                if not isinstance(required, list):
+                    required = []
+                optional = deps.get("optional", [])
+                if not isinstance(optional, list):
+                    optional = []
+                incompatible = deps.get("incompatible", [])
+                if not isinstance(incompatible, list):
+                    incompatible = []
+                required_json = json.dumps(required, separators=(",", ":"))
+                optional_json = json.dumps(optional, separators=(",", ":"))
+                incompatible_json = json.dumps(incompatible, separators=(",", ":"))
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO mod_manual_dependencies
+                        (item_id, required_json, optional_json, incompatible_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (item_id, required_json, optional_json, incompatible_json),
+                )
+                count += 1
+        except Exception as exc:
+            logger.warning(
+                "Failed to scan %s for mod_dependencies: %s", dir_name, exc,
+            )
+
+    logger.info("Loaded %d manual dependency sets", count)
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Mod jar aliases (cross-source ID mapping)
+# ---------------------------------------------------------------------------
+
+
+def load_mod_jar_aliases(conn: sqlite3.Connection) -> int:
+    """Ingest optional ``mod_jar_aliases`` fields from all content-type manifests.
+
+    Each manifest across the 7 CONTENT_DIRS is inspected; if it carries a
+    ``mod_jar_aliases`` array of strings, each alias is inserted as a row
+    ``(registry_id, alias)`` into ``mod_jar_aliases``.  Uses ``INSERT OR
+    IGNORE`` for idempotency.  Defensive: failures are logged and never abort
+    the compile.
+
+    Returns the number of rows inserted.
+    """
+    CONTENT_DIRS = [
+        "mods",
+        "packs",
+        "shaders",
+        "resourcepacks",
+        "servers",
+        "datapacks",
+        "worlds",
+    ]
+    cursor = conn.cursor()
+    count = 0
+    for dir_name in CONTENT_DIRS:
+        dir_path = REGISTRY_DIR / dir_name
+        if not dir_path.exists():
+            continue
+        try:
+            for path in sorted(dir_path.rglob("*.json")):
+                if "archived" in path.parts:
+                    continue
+                try:
+                    with path.open("r", encoding="utf-8") as fh:
+                        manifest = json.load(fh)
+                except (json.JSONDecodeError, OSError):
+                    continue
+                aliases = manifest.get("mod_jar_aliases")
+                if not isinstance(aliases, list):
+                    continue
+                registry_id = str(manifest.get("id", "")).strip().lower()
+                if not registry_id:
+                    continue
+                for alias in aliases:
+                    alias_str = str(alias).strip()
+                    if not alias_str:
+                        continue
+                    cursor.execute(
+                        """
+                        INSERT OR IGNORE INTO mod_jar_aliases
+                            (registry_id, alias)
+                        VALUES (?, ?)
+                        """,
+                        (registry_id, alias_str),
+                    )
+                    count += 1
+        except Exception as exc:
+            logger.warning(
+                "Failed to scan %s for mod_jar_aliases: %s", dir_name, exc,
+            )
+
+    logger.info("Loaded %d mod jar alias rows", count)
+    return count
+
+
+# ---------------------------------------------------------------------------
 # Loader manifest (system config)
 # ---------------------------------------------------------------------------
 
@@ -2376,6 +2605,24 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
         insert_crash_signature(conn, data, rejected)
         sig_count += 1
     logger.info("Inserted %d crash signature(s), rejected %d", sig_count, rejected[0])
+
+    # Known conflicts (mod pairs that conflict).
+    try:
+        load_known_conflicts(conn)
+    except Exception as exc:
+        logger.warning("Failed to load known conflicts: %s", exc)
+
+    # Manual mod dependencies (from manifest ``mod_dependencies`` field).
+    try:
+        load_manual_dependencies(conn)
+    except Exception as exc:
+        logger.warning("Failed to load manual dependencies: %s", exc)
+
+    # Mod jar alias mapping (from manifest ``mod_jar_aliases`` field).
+    try:
+        load_mod_jar_aliases(conn)
+    except Exception as exc:
+        logger.warning("Failed to load mod jar aliases: %s", exc)
 
     # Loader manifests domain/hash allowlist.
     load_loader_manifests(conn)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import {
+  checkInstanceCrash,
   createInstance,
   deleteInstance,
   launchInstance,
@@ -13,12 +14,18 @@ import {
   type InstanceRow,
   type LoaderVersionSummary,
 } from '../lib/tauri';
+import { CrashInvestigator } from '../components/CrashInvestigator';
 
 export function Instances({ onEditInstance }: { onEditInstance: (id: string) => void }) {
   const [instances, setInstances] = useState<InstanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [crashInvestigation, setCrashInvestigation] = useState<{
+    instanceId: string;
+    crashFilename: string | null;
+    manualLogText: string | null;
+  } | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -35,6 +42,48 @@ export function Instances({ onEditInstance }: { onEditInstance: (id: string) => 
   useEffect(() => {
     refresh();
   }, []);
+
+  // Reactive crash detection when the tab becomes visible.
+  // Check the most recently launched instance for a crash report.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const lastLaunch = instances.find((i) => i.last_launched_at);
+        if (!lastLaunch) return;
+        const report = await checkInstanceCrash(lastLaunch.instance_id);
+        if (!cancelled && report) {
+          setCrashInvestigation({
+            instanceId: lastLaunch.instance_id,
+            crashFilename: report.filename,
+            manualLogText: null,
+          });
+        }
+      } catch {
+        // Silently ignore — the user can still use manual troubleshooting.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [instances]);
+
+  // State for the manual crash-log paste modal.
+  const [pasteLog, setPasteLog] = useState<{ open: boolean; instanceId: string } | null>(null);
+
+  const openCrashInvestigator = (instanceId: string) => {
+    setPasteLog({ open: true, instanceId });
+  };
+
+  const submitPasteLog = (text: string) => {
+    if (!pasteLog) return;
+    setPasteLog(null);
+    setCrashInvestigation({
+      instanceId: pasteLog.instanceId,
+      crashFilename: null,
+      manualLogText: text || null,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -78,6 +127,7 @@ export function Instances({ onEditInstance }: { onEditInstance: (id: string) => 
               instance={instance}
               onChanged={refresh}
               onEdit={() => onEditInstance(instance.instance_id)}
+              onOpenCrashInvestigator={openCrashInvestigator}
             />
           ))}
         </ul>
@@ -92,6 +142,22 @@ export function Instances({ onEditInstance }: { onEditInstance: (id: string) => 
           }}
         />
       )}
+
+      {crashInvestigation && (
+        <CrashInvestigator
+          instanceId={crashInvestigation.instanceId}
+          crashFilename={crashInvestigation.crashFilename}
+          manualLogText={crashInvestigation.manualLogText}
+          onClose={() => setCrashInvestigation(null)}
+        />
+      )}
+
+      {pasteLog && (
+        <PasteLogModal
+          onClose={() => setPasteLog(null)}
+          onSubmit={(text) => submitPasteLog(text)}
+        />
+      )}
     </div>
   );
 }
@@ -100,10 +166,12 @@ function InstanceCard({
   instance,
   onChanged,
   onEdit,
+  onOpenCrashInvestigator,
 }: {
   instance: InstanceRow;
   onChanged: () => void;
   onEdit: () => void;
+  onOpenCrashInvestigator: (id: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +231,13 @@ function InstanceCard({
           className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
         >
           ▶ Launch
+        </button>
+        <button
+          onClick={() => onOpenCrashInvestigator(instance.instance_id)}
+          disabled={busy}
+          className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+        >
+          Troubleshoot Crash
         </button>
         <button
           onClick={onEdit}
@@ -378,6 +453,44 @@ function CreateInstanceDialog({
             className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
           >
             {busy ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasteLogModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-700 surface p-6 shadow-xl">
+        <h3 className="text-lg font-bold mb-4">Paste Crash Log</h3>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Paste your crash log or latest.log contents here…"
+          className="w-full h-48 rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm font-mono resize-y"
+        />
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSubmit(text)}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+          >
+            Investigate
           </button>
         </div>
       </div>

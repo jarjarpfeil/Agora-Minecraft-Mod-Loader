@@ -1,4 +1,5 @@
 use crate::auth;
+use crate::crash_investigator;
 use crate::db;
 use crate::download;
 use crate::error::{LauncherError, LauncherResult};
@@ -470,6 +471,7 @@ pub async fn install_mod_version(
         });
     };
 
+    let metadata = crash_investigator::parse_jar_metadata(&mod_path);
     let installed_mod = InstalledMod {
         filename: candidate.filename.clone(),
         registry_id: Some(item_id.to_string()),
@@ -478,6 +480,11 @@ pub async fn install_mod_version(
         version: Some(candidate.version.clone()),
         sha256: installed_sha256,
         installed_at: chrono::Utc::now().to_rfc3339(),
+        java_packages: metadata.java_packages,
+        mod_jar_id: metadata.mod_jar_id,
+        depends_on: metadata.depends_on,
+        optional_deps: metadata.optional_deps,
+        incompatible_deps: metadata.incompatible_deps,
     };
 
     manifest.mods.push(installed_mod.clone());
@@ -678,6 +685,7 @@ pub async fn add_manual_mod(
         let mut manifest: InstanceManifest =
             serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
+        let metadata = crash_investigator::parse_jar_metadata(&dest);
         let installed_mod = InstalledMod {
             filename: file_name_owned.clone(),
             registry_id: None,
@@ -686,6 +694,11 @@ pub async fn add_manual_mod(
             version: None,
             sha256,
             installed_at: chrono::Utc::now().to_rfc3339(),
+            java_packages: metadata.java_packages,
+            mod_jar_id: metadata.mod_jar_id,
+            depends_on: metadata.depends_on,
+            optional_deps: metadata.optional_deps,
+            incompatible_deps: metadata.incompatible_deps,
         };
         manifest.mods.push(installed_mod.clone());
 
@@ -1137,6 +1150,7 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
                 let sha256 = download::sha256_hex(&bytes);
                 let mod_path = mods_dir.join(basename);
                 std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                let metadata = crash_investigator::parse_jar_metadata(&mod_path);
                 installed_mods.push(InstalledMod {
                     filename: basename.to_string(),
                     registry_id: None,
@@ -1145,6 +1159,11 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
                     version: None,
                     sha256,
                     installed_at: now.clone(),
+                    java_packages: metadata.java_packages,
+                    mod_jar_id: metadata.mod_jar_id,
+                    depends_on: metadata.depends_on,
+                    optional_deps: metadata.optional_deps,
+                    incompatible_deps: metadata.incompatible_deps,
                 });
             }
         } else {
@@ -1156,6 +1175,7 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
                 let sha256 = download::sha256_hex(&bytes);
                 let mod_path = mods_dir.join(basename);
                 std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                let metadata = crash_investigator::parse_jar_metadata(&mod_path);
                 installed_mods.push(InstalledMod {
                     filename: basename.to_string(),
                     registry_id: None,
@@ -1164,6 +1184,11 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
                     version: None,
                     sha256,
                     installed_at: now.clone(),
+                    java_packages: metadata.java_packages,
+                    mod_jar_id: metadata.mod_jar_id,
+                    depends_on: metadata.depends_on,
+                    optional_deps: metadata.optional_deps,
+                    incompatible_deps: metadata.incompatible_deps,
                 });
             } else {
                 auth::log_line(&format!("import_mrpack: bundled file not found in zip: '{path}'"));

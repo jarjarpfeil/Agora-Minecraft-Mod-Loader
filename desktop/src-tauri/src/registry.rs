@@ -3,6 +3,7 @@ use crate::models::InstanceManifest;
 use crate::paths;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::HashSet;
 
 /// Canonical column list for `registry_items` selects that feed `row_to_item`.
@@ -563,6 +564,412 @@ pub fn for_you_items<R: tauri::Runtime>(
             code: "ERR_INVALID_QUERY".to_string(),
             message: e.to_string(),
         })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?);
+    }
+    Ok(out)
+}
+
+/// An under-review registry item for the Triage Center.
+#[derive(Debug, Clone, Serialize)]
+pub struct UnderReviewItem {
+    pub id: String,
+    pub name: String,
+    pub content_type: String,
+    pub icon_url: Option<String>,
+    pub net_score: i64,
+}
+
+/// List registry items whose status is `under_review`, ordered by net_score
+/// ascending (lowest scores first for triage).
+pub fn list_under_review_items(conn: &Connection) -> LauncherResult<Vec<UnderReviewItem>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, content_type, icon_url, net_score \
+             FROM registry_items WHERE status = 'under_review' \
+             ORDER BY net_score ASC",
+        )
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(UnderReviewItem {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                content_type: row.get(2)?,
+                icon_url: row.get(3)?,
+                net_score: row.get(4)?,
+            })
+        })
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?);
+    }
+    Ok(out)
+}
+
+/// List recent triage resolutions from the audit log.
+///
+/// Defensively returns an empty vec if the `audit_log` table does not exist.
+pub fn list_recent_resolutions(
+    conn: &Connection,
+    limit: u32,
+) -> LauncherResult<Vec<AuditLogEntry>> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_log'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_table {
+        return Ok(Vec::new());
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, timestamp, action, details FROM audit_log \
+             WHERE action IN ('triage_archive','triage_keep',
+                              'organic_under_review','raid_breaker_offenders') \
+             ORDER BY id DESC LIMIT ?",
+        )
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+    let rows = stmt
+        .query_map([limit as i64], |row| {
+            Ok(AuditLogEntry {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                action: row.get(2)?,
+                details: row.get(3)?,
+            })
+        })
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?);
+    }
+    Ok(out)
+}
+
+/// A parsed curator review from a `curator_reviews.top_reviews_json` cell.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModReview {
+    pub author: Option<String>,
+    pub text: String,
+    pub issue_number: i64,
+    pub created_at: Option<String>,
+}
+
+/// Load parsed curator reviews for a single item.
+///
+/// Reads the JSON array from `curator_reviews.top_reviews_json`, parses it,
+/// and returns the resulting `ModReview` list. On NULL/empty/missing row or
+/// parse error, returns `Ok(vec![])`.
+pub fn list_mod_reviews(conn: &Connection, item_id: String) -> LauncherResult<Vec<ModReview>> {
+    let mut stmt = conn
+        .prepare("SELECT top_reviews_json FROM curator_reviews WHERE item_id = ?1")
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let raw: Option<String> = stmt
+        .query_row([item_id], |row| row.get(0))
+        .ok();
+
+    let json_str = match raw {
+        Some(s) if !s.is_empty() => s,
+        _ => return Ok(Vec::new()),
+    };
+
+    let parsed: Vec<serde_json::Value> = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut out = Vec::new();
+    for val in parsed {
+        out.push(ModReview {
+            author: val.get("author").and_then(|a| a.as_str()).map(String::from),
+            text: val
+                .get("text")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string(),
+            issue_number: val
+                .get("issue_number")
+                .and_then(|i| i.as_i64())
+                .unwrap_or(0),
+            created_at: val
+                .get("created_at")
+                .and_then(|c| c.as_str())
+                .map(String::from),
+        });
+    }
+    Ok(out)
+}
+
+/// A known conflict between two mods (§4.6).
+#[derive(Debug, Clone, Serialize)]
+pub struct KnownConflict {
+    pub mod_a_id: String,
+    pub mod_b_id: String,
+    pub severity: String,
+    pub mitigated_by: Vec<String>,
+    pub notes: Option<String>,
+}
+
+/// A parsed mod dependency set from `mod_manual_dependencies`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ManifestDeps {
+    pub required: Vec<String>,
+    pub optional: Vec<String>,
+    pub incompatible: Vec<String>,
+}
+
+/// Return manual dependency information for a single item from the
+/// `mod_manual_dependencies` table.
+///
+/// Defensively returns `Ok(None)` if the `mod_manual_dependencies` table does
+/// not exist (older registry.db builds predate this table) so the UI degrades
+/// gracefully. Parses each JSON column string into `Vec<String>`; NULL/empty/
+/// parse errors yield an empty vec.
+pub fn get_manifest_dependencies(conn: &Connection, item_id: String) -> LauncherResult<Option<ManifestDeps>> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='mod_manual_dependencies'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_table {
+        return Ok(None);
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT required_json, optional_json, incompatible_json \
+             FROM mod_manual_dependencies WHERE item_id = ?",
+        )
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let mut row = stmt
+        .query_map([item_id], |row| {
+            let required_json: Option<String> = row.get(0)?;
+            let optional_json: Option<String> = row.get(1)?;
+            let incompatible_json: Option<String> = row.get(2)?;
+
+            let required: Vec<String> = match required_json {
+                Some(s) if !s.is_empty() => match serde_json::from_str(&s) {
+                    Ok(v) => v,
+                    Err(_) => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+
+            let optional: Vec<String> = match optional_json {
+                Some(s) if !s.is_empty() => match serde_json::from_str(&s) {
+                    Ok(v) => v,
+                    Err(_) => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+
+            let incompatible: Vec<String> = match incompatible_json {
+                Some(s) if !s.is_empty() => match serde_json::from_str(&s) {
+                    Ok(v) => v,
+                    Err(_) => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+
+            Ok(ManifestDeps {
+                required,
+                optional,
+                incompatible,
+            })
+        })
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    match row.next() {
+        Some(Ok(deps)) => Ok(Some(deps)),
+        Some(Err(e)) => Err(LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        }),
+        None => Ok(None),
+    }
+}
+
+/// List all mod JAR aliases from the `mod_jar_aliases` table.
+///
+/// Returns `(registry_id, alias)` tuples. Defensively returns an empty vec
+/// if the `mod_jar_aliases` table does not exist (older registry.db builds
+/// predate this table) so the UI degrades gracefully.
+pub fn get_all_mod_aliases(conn: &Connection) -> LauncherResult<Vec<(String, String)>> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='mod_jar_aliases'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_table {
+        return Ok(Vec::new());
+    }
+
+    let mut stmt = conn
+        .prepare("SELECT registry_id, alias FROM mod_jar_aliases")
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let registry_id: String = row.get(0)?;
+            let alias: String = row.get(1)?;
+            Ok((registry_id, alias))
+        })
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?);
+    }
+    Ok(out)
+}
+
+/// Resolve a mod JAR alias to its registry item ID.
+///
+/// Returns `Ok(Some(registry_id))` when the alias is found, `Ok(None)` when
+/// it is not. Defensively returns `Ok(None)` if the `mod_jar_aliases` table
+/// does not exist (older registry.db builds predate this table).
+pub fn resolve_alias(conn: &Connection, alias: &str) -> LauncherResult<Option<String>> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='mod_jar_aliases'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_table {
+        return Ok(None);
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT registry_id FROM mod_jar_aliases WHERE alias = ?",
+        )
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let mut rows = stmt
+        .query_map([alias], |row| row.get(0))
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    if let Some(r) = rows.next() {
+        Ok(Some(r.map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?))
+    } else {
+        Ok(None)
+    }
+}
+
+/// List known conflicts from the `known_conflicts` table.
+///
+/// Defensively returns an empty vec if the `known_conflicts` table does not
+/// exist (older registry.db builds predate this table) so the UI degrades
+/// gracefully. Parses `mitigated_by_json` (a JSON array string, may be
+/// NULL/empty) into `Vec<String>`; parse errors yield an empty vec.
+pub fn get_known_conflicts(conn: &Connection) -> LauncherResult<Vec<KnownConflict>> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='known_conflicts'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_table {
+        return Ok(Vec::new());
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT mod_a_id, mod_b_id, severity, mitigated_by_json, notes \
+             FROM known_conflicts",
+        )
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let mitigated_by_json: Option<String> = row.get(3)?;
+            let mitigated_by: Vec<String> = match mitigated_by_json {
+                Some(s) if !s.is_empty() => match serde_json::from_str(&s) {
+                    Ok(v) => v,
+                    Err(_) => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+            Ok(KnownConflict {
+                mod_a_id: row.get(0)?,
+                mod_b_id: row.get(1)?,
+                severity: row.get(2)?,
+                mitigated_by,
+                notes: row.get(4)?,
+            })
+        })
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
     let mut out = Vec::new();
     for r in rows {
         out.push(r.map_err(|e| LauncherError::Generic {

@@ -1,30 +1,145 @@
 import { useState, useEffect } from 'react';
-import { listAuditLog, formatError, AuditLogEntry } from '../lib/tauri';
+import {
+  listAuditLog,
+  formatError,
+  AuditLogEntry,
+  listUnderReviewItems,
+  UnderReviewItem,
+  fetchTriagePoll,
+  TriagePoll,
+  listRecentResolutions,
+  getAuthStatus,
+} from '../lib/tauri';
 
 export function Governance() {
-  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Transparency log state
+  const [logEntries, setLogEntries] = useState<AuditLogEntry[]>([]);
+  const [logLoading, setLogLoading] = useState(true);
+  const [logError, setLogError] = useState<string | null>(null);
+
+  // Active Triage Polls state
+  const [underReviewItems, setUnderReviewItems] = useState<UnderReviewItem[]>([]);
+  const [polls, setPolls] = useState<Record<string, TriagePoll | null>>({});
+  const [pollsLoading, setPollsLoading] = useState(true);
+  const [pollsError, setPollsError] = useState<string | null>(null);
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+
+  // Recent Resolutions state
+  const [resolutions, setResolutions] = useState<AuditLogEntry[]>([]);
+  const [resolutionsLoading, setResolutionsLoading] = useState(true);
+  const [resolutionsError, setResolutionsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    // --- Transparency log ---
     listAuditLog(200)
       .then((data) => {
-        if (!cancelled) {
-          setEntries(data);
-          setLoading(false);
-        }
+        if (!cancelled) setLogEntries(data);
       })
       .catch((e) => {
-        if (!cancelled) {
-          setError(formatError(e));
-          setLoading(false);
-        }
+        if (!cancelled) setLogError(formatError(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLogLoading(false);
       });
+
+    // --- Auth check ---
+    getAuthStatus()
+      .then((auth) => {
+        if (!cancelled) setAuthenticated(auth);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthenticated(false);
+      });
+
+    // --- Under-review items ---
+    listUnderReviewItems()
+      .then((items) => {
+        if (!cancelled) setUnderReviewItems(items);
+      })
+      .catch((e) => {
+        if (!cancelled) setPollsError(formatError(e));
+      })
+      .finally(() => {
+        if (!cancelled) setPollsLoading((prev) => !prev);
+      });
+
+    // --- Recent resolutions ---
+    listRecentResolutions(50)
+      .then((data) => {
+        if (!cancelled) setResolutions(data);
+      })
+      .catch((e) => {
+        if (!cancelled) setResolutionsError(formatError(e));
+      })
+      .finally(() => {
+        if (!cancelled) setResolutionsLoading(false);
+      });
+
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Fetch polls for each under-review item (only if authenticated)
+  useEffect(() => {
+    if (!authenticated || underReviewItems.length === 0) return;
+
+    const cancelled = false;
+    const fetchPolls = async () => {
+      const results: Record<string, TriagePoll | null> = {};
+      const errors: string[] = [];
+
+      await Promise.all(
+        underReviewItems.map(async (item) => {
+          try {
+            results[item.id] = await fetchTriagePoll(item.id);
+          } catch (e) {
+            errors.push(formatError(e));
+            results[item.id] = null;
+          }
+        }),
+      );
+
+      if (!cancelled) {
+        setPolls(results);
+        if (errors.length > 0) {
+          setPollsError(errors.join('; '));
+        }
+        setPollsLoading(false);
+      }
+    };
+
+    fetchPolls();
+
+    return () => {
+      // cancelled is captured above; we set a ref-like flag
+    };
+  }, [authenticated, underReviewItems]);
+
+  // --- Helpers ---
+
+  const actionBadgeColor = (action: string): string => {
+    switch (action) {
+      case 'triage_archive':
+        return 'bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200';
+      case 'triage_keep':
+        return 'bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-200';
+      case 'organic_under_review':
+        return 'bg-orange-200 dark:bg-orange-900 text-orange-800 dark:text-orange-200';
+      case 'raid_breaker_offenders':
+        return 'bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200';
+      default:
+        return 'bg-gray-200 dark:bg-gray-700 text-[rgb(var(--muted))]';
+    }
+  };
+
+  const openDiscussion = (url: string | null) => {
+    if (url && url.startsWith('https://')) {
+      window.open(url, '_blank');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -35,35 +150,195 @@ export function Governance() {
         </p>
       </section>
 
-      {/* Polls placeholder */}
-      <div className="rounded-xl p-6 border border-dashed border-gray-300 dark:border-gray-600 text-center">
-        <p className="text-[rgb(var(--muted))]">No active polls or resolutions.</p>
-        <p className="text-sm text-[rgb(var(--muted))] mt-2">
-          TODO: Query under_review items and live GitHub Discussions poll data.
-        </p>
-      </div>
+      {/* Auth banner for unauthenticated users */}
+      {authenticated === false && (
+        <div className="rounded-xl p-4 border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-[rgb(var(--surface))]/50 text-center">
+          <p className="text-[rgb(var(--muted))]">
+            Sign in with GitHub to see live triage poll results.
+          </p>
+        </div>
+      )}
+
+      {/* Active Triage Polls */}
+      <section className="rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-semibold mb-4">Active Triage Polls</h3>
+
+        {pollsError && (
+          <div className="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
+            {pollsError}
+          </div>
+        )}
+
+        {pollsLoading && (
+          <p className="text-[rgb(var(--muted))]">Loading triage polls…</p>
+        )}
+
+        {!pollsLoading && !pollsError && underReviewItems.length === 0 && (
+          <p className="text-[rgb(var(--muted))]">No items under review.</p>
+        )}
+
+        {!pollsLoading && !pollsError && underReviewItems.length > 0 && (
+          <div className="space-y-3">
+            {underReviewItems.map((item) => {
+              const poll = polls[item.id] ?? null;
+              const totalVotes = (poll?.keep_votes ?? 0) + (poll?.remove_votes ?? 0);
+              const keepPct =
+                totalVotes > 0
+                  ? Math.round(((poll?.keep_votes ?? 0) / totalVotes) * 100)
+                  : 0;
+              const removePct = 100 - keepPct;
+              const canViewPoll = authenticated && poll !== null;
+
+              return (
+                <div
+                  key={item.id}
+                  className="p-4 rounded-lg bg-gray-50 dark:bg-[rgb(var(--surface))]/50 border border-gray-100 dark:border-gray-700"
+                >
+                  <div className="flex items-start gap-3">
+                    {item.icon_url && (
+                      <img
+                        src={item.icon_url}
+                        alt=""
+                        className="w-8 h-8 rounded flex-shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium truncate">{item.name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-[rgb(var(--muted))] capitalize">
+                          {item.content_type}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
+                          Score: {item.net_score}
+                        </span>
+                      </div>
+
+                      {/* Poll bars or placeholder */}
+                      {canViewPoll && totalVotes > 0 && (
+                        <div className="mt-3">
+                          <div className="flex rounded-full overflow-hidden h-3 bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className="bg-green-500"
+                              style={{ width: `${keepPct}%` }}
+                            />
+                            <div
+                              className="bg-red-500"
+                              style={{ width: `${removePct}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-xs text-[rgb(var(--muted))] mt-1">
+                            <span>Keep {keepPct}%</span>
+                            <span>Remove {removePct}%</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {canViewPoll && totalVotes === 0 && (
+                        <p className="mt-2 text-sm text-[rgb(var(--muted))]">
+                          No votes yet.
+                        </p>
+                      )}
+
+                      {!authenticated && (
+                        <p className="mt-2 text-sm text-[rgb(var(--muted))]">
+                          Sign in to view live results
+                        </p>
+                      )}
+
+                      {/* Vote button */}
+                      {poll && poll.discussion_url ? (
+                        <button
+                          onClick={() => openDiscussion(poll.discussion_url)}
+                          className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          Cast Your Vote ↗
+                        </button>
+                      ) : (
+                        poll && (
+                          <p className="mt-2 text-sm text-[rgb(var(--muted))]">
+                            Poll not available
+                          </p>
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Recent Resolutions */}
+      <section className="rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-semibold mb-4">Recent Resolutions</h3>
+
+        {resolutionsError && (
+          <div className="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
+            {resolutionsError}
+          </div>
+        )}
+
+        {resolutionsLoading && (
+          <p className="text-[rgb(var(--muted))]">Loading resolutions…</p>
+        )}
+
+        {!resolutionsLoading && !resolutionsError && resolutions.length === 0 && (
+          <p className="text-[rgb(var(--muted))]">No triage resolutions yet.</p>
+        )}
+
+        {!resolutionsLoading && !resolutionsError && resolutions.length > 0 && (
+          <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+            {resolutions.map((entry) => (
+              <div
+                key={entry.id}
+                className="p-3 rounded-lg bg-gray-50 dark:bg-[rgb(var(--surface))]/50 border border-gray-100 dark:border-gray-700"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <time
+                    dateTime={entry.timestamp}
+                    className="text-sm text-[rgb(var(--muted))] font-mono"
+                  >
+                    {entry.timestamp}
+                  </time>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full capitalize ${actionBadgeColor(
+                      entry.action,
+                    )}`}
+                  >
+                    {entry.action}
+                  </span>
+                </div>
+                {entry.details && (
+                  <p className="text-sm text-[rgb(var(--muted))]">{entry.details}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Transparency Log */}
       <section className="rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <h3 className="text-lg font-semibold mb-4">Transparency Log</h3>
 
-        {error && (
+        {logError && (
           <div className="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
-            {error}
+            {logError}
           </div>
         )}
 
-        {loading && (
+        {logLoading && (
           <p className="text-[rgb(var(--muted))]">Loading transparency log…</p>
         )}
 
-        {!loading && !error && entries.length === 0 && (
+        {!logLoading && !logError && logEntries.length === 0 && (
           <p className="text-[rgb(var(--muted))]">No governance actions recorded yet.</p>
         )}
 
-        {!loading && !error && entries.length > 0 && (
+        {!logLoading && !logError && logEntries.length > 0 && (
           <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
-            {entries.map((entry) => (
+            {logEntries.map((entry) => (
               <div
                 key={entry.id}
                 className="p-3 rounded-lg bg-gray-50 dark:bg-[rgb(var(--surface))]/50 border border-gray-100 dark:border-gray-700"

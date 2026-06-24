@@ -1,9 +1,12 @@
 pub mod commands;
 pub mod auth;
 pub mod crash_diagnostics;
+pub mod crash_investigator;
 pub mod db;
+pub mod dependency_ops;
 pub mod download;
 pub mod error;
+pub mod governance;
 pub mod instances;
 pub mod launcher_profiles;
 pub mod loader_manifests;
@@ -80,7 +83,23 @@ pub fn run() {
             commands::list_modrinth_loaders,
             commands::list_modrinth_game_versions,
             commands::list_raw_modrinth_versions,
-            commands::install_raw_modrinth
+            commands::install_raw_modrinth,
+            commands::list_under_review_items,
+            commands::list_recent_resolutions,
+            commands::list_mod_reviews,
+            commands::fetch_triage_poll,
+            commands::flag_review,
+            commands::get_flag_rate_limit,
+            commands::investigate_crash,
+            commands::investigate_manual,
+            commands::disable_mod_for_test,
+            commands::enable_mod_for_test,
+            commands::confirm_crash_fix,
+            commands::report_still_crashing,
+            commands::get_disable_plan,
+            commands::get_removal_plan,
+            commands::get_install_plan,
+            commands::enable_mod_with_auto_deps
         ])
         .setup(|app| {
             let handle = app.handle().clone();

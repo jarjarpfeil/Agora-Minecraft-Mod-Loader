@@ -62,6 +62,21 @@ pub struct InstalledMod {
     pub version: Option<String>,
     pub sha256: String,
     pub installed_at: String,
+    #[serde(default)]
+    pub java_packages: Vec<String>,
+    #[serde(default)]
+    pub mod_jar_id: Option<String>,
+    /// REQUIRED dependencies only (Fabric `depends`, Forge type=required);
+    /// see `optional_deps` and `incompatible_deps` for non-required dep types.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    /// Optional dependencies (Fabric `recommends`/`suggests`; Forge type=optional).
+    #[serde(default)]
+    pub optional_deps: Vec<String>,
+    /// Incompatible dependencies (Forge type=incompatible). Stored but not
+    /// used in install/remove flow for v1.
+    #[serde(default)]
+    pub incompatible_deps: Vec<String>,
 }
 
 /// A candidate version returned by the mod version resolution API.

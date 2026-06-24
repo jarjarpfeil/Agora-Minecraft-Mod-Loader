@@ -418,3 +418,166 @@ export const installRawModrinth = (
   projectId: string,
   candidate: RawModrinthVersionCandidate,
 ) => invoke<InstalledMod>('install_raw_modrinth', { instanceId, projectId, candidate });
+
+// --- Governance / Triage ---
+
+export interface UnderReviewItem {
+  id: string;
+  name: string;
+  content_type: string;
+  icon_url: string | null;
+  net_score: number;
+}
+
+export interface ModReview {
+  author: string | null;
+  text: string;
+  issue_number: number;
+  created_at: string | null;
+}
+
+export interface TriagePoll {
+  discussion_url: string | null;
+  keep_votes: number;
+  remove_votes: number;
+}
+
+export interface FlagRateLimit {
+  remaining_hour: number;
+  remaining_day: number;
+  reset_hour_at_unix: number;
+  reset_day_at_unix: number;
+  can_flag: boolean;
+}
+
+export const listUnderReviewItems = () =>
+  invoke<UnderReviewItem[]>('list_under_review_items');
+
+export const listRecentResolutions = (limit?: number) =>
+  invoke<AuditLogEntry[]>('list_recent_resolutions', { limit });
+
+export const listModReviews = (itemId: string) =>
+  invoke<ModReview[]>('list_mod_reviews', { itemId });
+
+export const fetchTriagePoll = (modId: string) =>
+  invoke<TriagePoll>('fetch_triage_poll', { modId });
+
+export const flagReview = (params: {
+  modId: string;
+  modName: string;
+  issueNumber: number;
+  author: string;
+  quotedText: string;
+  reporterLogin: string;
+}) => invoke<string>('flag_review', params);
+
+export const getFlagRateLimit = () =>
+  invoke<FlagRateLimit>('get_flag_rate_limit');
+
+// --- Crash Investigation (guided isolation) ---
+
+export interface CrashFingerprint {
+  exception_class: string;
+  top_frames: string[];
+}
+
+export interface SuspectScore {
+  mod_id: string;
+  filename: string;
+  total_score: number;
+  breakdown: Record<string, unknown>;
+  is_dependent_of: string | null;
+}
+
+export type SuggestedAction =
+  | { kind: 'GuidedDisable'; next_suspect: SuspectScore }
+  | { kind: 'ConfidenceAutoDisable'; mod_id: string; filename: string }
+  | { kind: 'ShowTriageBanner'; mod_id: string }
+  | { kind: 'NoSuspects' };
+
+export interface InvestigationResult {
+  fingerprint: CrashFingerprint | null;
+  signature_name: string | null;
+  suspects: SuspectScore[];
+  suggested_action: SuggestedAction;
+  ruled_out: string[];
+}
+
+export const investigateCrash = (instanceId: string, filename?: string) =>
+  invoke<InvestigationResult>('investigate_crash', { instanceId, filename });
+
+export const investigateManual = (instanceId: string, logText: string) =>
+  invoke<InvestigationResult>('investigate_manual', { instanceId, logText });
+
+export const disableModForTest = (instanceId: string, filename: string) =>
+  invoke<void>('disable_mod_for_test', { instanceId, filename });
+
+export const enableModForTest = (instanceId: string, filename: string) =>
+  invoke<void>('enable_mod_for_test', { instanceId, filename });
+
+export const confirmCrashFix = (fingerprint: CrashFingerprint, modId: string) =>
+  invoke<void>('confirm_crash_fix', { fingerprint, modId });
+
+export const reportStillCrashing = (
+  instanceId: string,
+  fingerprint: CrashFingerprint,
+  ruledOutModId: string,
+  crashLogText: string,
+) =>
+  invoke<InvestigationResult>('report_still_crashing', {
+    instanceId,
+    fingerprint,
+    ruledOutModId,
+    crashLogText,
+  });
+
+// --- Dependency Plans (PREVIEW) ---
+
+export type Requirement = 'Required' | 'Optional';
+
+export type DepSource = 'Jar' | 'Manifest';
+
+export interface DependentInfo {
+  mod_id: string;
+  filename: string;
+  requirement: Requirement;
+  source: DepSource;
+}
+
+export interface DepCandidate {
+  mod_jar_id: string;
+  requirement: Requirement;
+  source: DepSource;
+}
+
+export interface DepConflict {
+  mod_jar_id: string;
+  jar_requirement: Requirement | null;
+  manifest_requirement: Requirement | null;
+}
+
+export interface InstallPlan {
+  missing_required: DepCandidate[];
+  missing_optional: DepCandidate[];
+  conflicts: DepConflict[];
+}
+
+export interface RemovalPlan {
+  dependents: DependentInfo[];
+}
+
+export interface DisablePlan {
+  dependents: DependentInfo[];
+}
+
+export const getDisablePlan = (instanceId: string, filename: string) =>
+  invoke<DisablePlan>('get_disable_plan', { instanceId, filename });
+
+export const getRemovalPlan = (instanceId: string, filename: string) =>
+  invoke<RemovalPlan>('get_removal_plan', { instanceId, filename });
+
+export const getInstallPlan = (instanceId: string, itemId: string, jarPath: string) =>
+  invoke<InstallPlan>('get_install_plan', { instanceId, itemId, jarPath });
+
+export const enableModWithAutoDeps = (instanceId: string, filename: string) =>
+  invoke<string[]>('enable_mod_with_auto_deps', { instanceId, filename });

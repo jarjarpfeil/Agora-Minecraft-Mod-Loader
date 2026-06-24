@@ -13,10 +13,19 @@ import {
   listManifestMcVersions,
   createInstance,
   formatError,
+  listModReviews,
+  flagReview,
+  getFlagRateLimit,
+  getAuthStatus,
+  getGithubProfile,
+  getInstallPlan,
   type RegistryItem,
   type InstanceRow,
   type ModVersionCandidate,
   type CreateInstanceRequest,
+  type ModReview,
+  type FlagRateLimit,
+  type InstallPlan,
 } from '../lib/tauri';
 
 type CompatibleVersionEntry = Record<string, unknown> | string;
@@ -106,6 +115,21 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   const [phase, setPhase] = useState<'idle' | 'loadingVersions' | 'pickingVersion' | 'installing' | 'done' | 'error'>('idle');
   const [installMsg, setInstallMsg] = useState<string | null>(null);
 
+  // v1 informational dependency preview (no auto-batch-install yet)
+  const [depPlan, setDepPlan] = useState<InstallPlan | null>(null);
+  const [showDepPrompt, setShowDepPrompt] = useState(false);
+  const [_depPlanLoading, setDepPlanLoading] = useState(false);
+
+  // Reviews state
+  const [reviews, setReviews] = useState<ModReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [profile, setProfile] = useState<import('../lib/tauri').GithubProfile | null>(null);
+  const [rateLimit, setRateLimit] = useState<FlagRateLimit | null>(null);
+  const [flaggingId, setFlaggingId] = useState<number | null>(null);
+  const [flagResult, setFlagResult] = useState<string | null>(null);
+  const [flagError, setFlagError] = useState<string | null>(null);
+
   // Inline create-instance state (inside install flow)
   const [showCreateInline, setShowCreateInline] = useState(false);
   const [createName, setCreateName] = useState('');
@@ -171,6 +195,45 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     );
     return () => { cancelled = true; };
   }, []);
+
+  // Load reviews, auth status, profile, and rate limit on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [auth, prof, rl] = await Promise.all([
+          getAuthStatus(),
+          getGithubProfile(),
+          getFlagRateLimit(),
+        ]);
+        if (cancelled) return;
+        setAuthed(auth);
+        setProfile(prof);
+        setRateLimit(rl);
+      } catch (e) {
+        if (!cancelled) setFlagError(formatError(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load reviews when item is available
+  useEffect(() => {
+    if (!item) return;
+    let cancelled = false;
+    (async () => {
+      if (!cancelled) setReviewsLoading(true);
+      try {
+        const revs = await listModReviews(item.id);
+        if (!cancelled) setReviews(revs);
+      } catch (e) {
+        if (!cancelled) setFlagError(formatError(e));
+      } finally {
+        if (!cancelled) setReviewsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item]);
 
   if (loading) {
     return (
@@ -238,12 +301,36 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
 
   const handleConfirmInstall = async () => {
     if (!selectedInstanceId || !selectedCandidate) return;
+    // v1: fetch dependency plan for informational preview before install.
+    // Actual auto-batch-install of deps is a future enhancement — for v1 we
+    // show the plan as INFORMATIONAL and proceed with the main mod install.
+    setDepPlanLoading(true);
+    try {
+      // We need a jarPath for getInstallPlan; use the candidate filename
+      // as a best-effort path hint. The backend resolves the actual jar.
+      const plan = await getInstallPlan(selectedInstanceId, itemId, selectedCandidate.filename);
+      setDepPlan(plan);
+      // Only show the prompt if there are actual dependencies/conflicts
+      if (plan.missing_required.length > 0 || plan.missing_optional.length > 0 || plan.conflicts.length > 0) {
+        setShowDepPrompt(true);
+        return; // wait for user to click "Continue anyway"
+      }
+    } catch {
+      // If the plan fetch fails, proceed with install anyway
+    } finally {
+      setDepPlanLoading(false);
+    }
+    proceedWithInstall(selectedInstanceId, selectedCandidate);
+  };
+
+  // v1: proceed with main mod install only (deps are informational)
+  const proceedWithInstall = async (instanceId: string, candidate: ModVersionCandidate) => {
     setPhase('installing');
     setInstallMsg(null);
     try {
-      await installModVersion(selectedInstanceId, itemId, selectedCandidate);
+      await installModVersion(instanceId, itemId, candidate);
       setPhase('done');
-      setInstallMsg(`Installed ${selectedCandidate.filename} to ${instances.find((i) => i.instance_id === selectedInstanceId)?.name ?? selectedInstanceId}.`);
+      setInstallMsg(`Installed ${candidate.filename} to ${instances.find((i) => i.instance_id === instanceId)?.name ?? instanceId}.`);
     } catch (e) {
       setPhase('error');
       setInstallMsg(formatError(e));
@@ -257,6 +344,8 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     setSelectedInstanceId(null);
     setCandidates([]);
     setSelectedCandidate(null);
+    setShowDepPrompt(false);
+    setDepPlan(null);
   };
 
   // Inline create: submit handler
@@ -293,6 +382,38 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       setCreateError(formatError(e));
     } finally {
       setCreateBusy(false);
+    }
+  };
+
+  // Flag handler
+  const handleFlagReview = async (review: ModReview) => {
+    if (!authed) return;
+    if (!window.confirm(
+      `Flag this review?\n\nAuthor: ${review.author ?? 'Anonymous'}\nText: ${review.text.slice(0, 200)}${review.text.length > 200 ? '…' : ''}`
+    )) {
+      return;
+    }
+    setFlaggingId(review.issue_number);
+    setFlagResult(null);
+    setFlagError(null);
+    try {
+      const login = profile?.login ?? '';
+      const url = await flagReview({
+        modId: item.id,
+        modName: item.name,
+        issueNumber: review.issue_number,
+        author: review.author ?? 'Anonymous',
+        quotedText: review.text,
+        reporterLogin: login,
+      });
+      if (url.startsWith('https://')) {
+        window.open(url, '_blank');
+      }
+      setFlagResult(url);
+    } catch (e) {
+      setFlagError(formatError(e));
+    } finally {
+      setFlaggingId(null);
     }
   };
 
@@ -524,6 +645,63 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
               )
             )}
 
+            {/* v1: Informational dependency preview modal */}
+            {showDepPrompt && depPlan && (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                    Dependencies detected
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
+                    This mod requires additional mods. v1 shows this as informational —
+                    automated batch install of dependencies is a future enhancement.
+                  </p>
+                  <div className="space-y-1">
+                    {depPlan.missing_required.map((d, i) => (
+                      <p key={i} className="text-xs text-amber-700 dark:text-amber-300">
+                        • Required: {d.mod_jar_id} ({d.source})
+                      </p>
+                    ))}
+                    {depPlan.missing_optional.map((d, i) => (
+                      <p key={i} className="text-xs text-amber-700 dark:text-amber-300">
+                        • Optional: {d.mod_jar_id} ({d.source})
+                      </p>
+                    ))}
+                    {depPlan.conflicts.map((c, i) => (
+                      <p key={i} className="text-xs text-amber-700 dark:text-amber-300">
+                        • Conflict: {c.mod_jar_id}
+                        {c.jar_requirement && ` (jar: ${c.jar_requirement})`}
+                        {c.manifest_requirement && ` (manifest: ${c.manifest_requirement})`}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowDepPrompt(false);
+                      setDepPlan(null);
+                    }}
+                    className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowDepPrompt(false);
+                      setDepPlan(null);
+                      if (selectedInstanceId && selectedCandidate) {
+                        proceedWithInstall(selectedInstanceId, selectedCandidate);
+                      }
+                    }}
+                    className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+                  >
+                    Continue anyway
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Step 2: Version picker */}
             {selectedInstanceId && phase !== 'idle' && phase !== 'installing' && phase !== 'done' && (
               <div>
@@ -678,9 +856,89 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
         <h3 className="font-semibold text-sm mb-3">Reviews</h3>
         {item.allow_comments ? (
-          <p className="text-sm text-[rgb(var(--muted))]">
-            Community reviews will appear here.
-          </p>
+          !authed ? (
+            <>
+              <p className="text-sm text-[rgb(var(--muted))] mb-2">
+                Reviews are disabled for this mod.
+              </p>
+              <p className="text-xs text-[rgb(var(--muted))]">
+                Sign in to flag reviews.
+              </p>
+            </>
+          ) : reviewsLoading ? (
+            <div className="text-center py-2">
+              <p className="text-sm text-[rgb(var(--muted))]">Loading reviews…</p>
+            </div>
+          ) : reviews.length === 0 ? (
+            <p className="text-sm text-[rgb(var(--muted))]">
+              No community reviews yet.
+            </p>
+          ) : (
+            <>
+              {flagResult && (
+                <p className="text-sm text-green-600 dark:text-green-400 mb-3">
+                  Flag submitted.{' '}
+                  <a
+                    href={flagResult}
+                    onClick={(e) => {
+                      if (!flagResult.startsWith('https://')) {
+                        e.preventDefault();
+                      }
+                    }}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    View admin alert ↗
+                  </a>
+                </p>
+              )}
+              {flagError && (
+                <p className="text-sm text-red-600 dark:text-red-300 mb-3">
+                  {flagError}
+                </p>
+              )}
+              <ul className="space-y-3">
+                {reviews.map((review) => {
+                  const rl = rateLimit;
+                  const disabledFlag = rl && !rl.can_flag;
+                  const resetTime = disabledFlag
+                    ? new Date(
+                        rl.reset_hour_at_unix * 1000,
+                      ).toLocaleString()
+                    : '';
+                  return (
+                    <li
+                      key={review.issue_number}
+                      className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-[rgb(var(--muted))]">
+                          {review.author ?? 'Anonymous'}
+                        </span>
+                        {review.created_at && (
+                          <span className="text-xs text-[rgb(var(--muted))]">
+                            {new Date(review.created_at).toLocaleString()}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handleFlagReview(review)}
+                          disabled={disabledFlag || flaggingId === review.issue_number}
+                          title={disabledFlag ? `Flag limit reached — resets at ${resetTime}` : ''}
+                          className="text-xs text-[rgb(var(--muted))] hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          🚩 Flag
+                        </button>
+                      </div>
+                      <p className="text-sm mt-1 whitespace-pre-wrap text-[rgb(var(--foreground))]">
+                        {review.text}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )
         ) : (
           <p className="text-sm text-[rgb(var(--muted))]">
             Reviews are disabled for this mod.

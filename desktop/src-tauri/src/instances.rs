@@ -1,3 +1,4 @@
+use crate::crash_investigator;
 use crate::db;
 use crate::download;
 use crate::error::{LauncherError, LauncherResult};
@@ -310,6 +311,18 @@ pub fn launch_instance<R: tauri::Runtime>(
         .arg(&profile_id)
         .spawn()
         .map_err(|_| LauncherError::LaunchFailed)?;
+
+    // Signal D: record which mods survived this launch for survival baseline learning.
+    if let Ok(manifest_text) = std::fs::read_to_string(paths::instance_manifest_path(app, &sanitized).unwrap_or_default()) {
+        if let Ok(manifest) = serde_json::from_str::<InstanceManifest>(&manifest_text) {
+            let mod_ids: Vec<String> = manifest
+                .mods
+                .iter()
+                .map(|m| m.registry_id.clone().unwrap_or_else(|| m.filename.clone()))
+                .collect();
+            let _ = crash_investigator::record_survival(app, &sanitized, &mod_ids);
+        }
+    }
 
     Ok(())
 }

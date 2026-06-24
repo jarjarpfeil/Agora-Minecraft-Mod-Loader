@@ -1,0 +1,16 @@
+[
+  {
+    "a": "optifine",
+    "b": "sodium",
+    "severity": "hard",
+    "mitigated_by": [],
+    "notes": "OptiFine and Sodium both replace the vanilla renderer; running both causes startup/crash conflicts."
+  },
+  {
+    "a": "optifine",
+    "b": "rubidium",
+    "severity": "hard",
+    "mitigated_by": [],
+    "notes": "Rubidium (Forge Sodium port) conflicts with OptiFine for the same renderer-replacement reason."
+  }
+]

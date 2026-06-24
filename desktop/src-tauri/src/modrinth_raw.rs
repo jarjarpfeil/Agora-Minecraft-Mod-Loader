@@ -9,6 +9,7 @@
 //! toggle is off, callers receive `LauncherError::ModrinthDisabled` rather than
 //! touching the network.
 
+use crate::crash_investigator;
 use crate::db;
 use crate::error::{LauncherError, LauncherResult};
 use crate::models::{InstanceManifest, InstanceRow, InstalledMod};
@@ -736,6 +737,7 @@ pub async fn install_raw_modrinth(
     // of the manifest schema which uses sha256 for all entries), while the
     // install was verified against Modrinth's SHA-1.
     let sha256 = crate::download::sha256_hex(&bytes);
+    let metadata = crash_investigator::parse_jar_metadata(&mod_path);
     let installed_mod = InstalledMod {
         filename: candidate.filename.clone(),
         registry_id: None,
@@ -744,6 +746,11 @@ pub async fn install_raw_modrinth(
         version: Some(candidate.version.clone()),
         sha256,
         installed_at: chrono::Utc::now().to_rfc3339(),
+        java_packages: metadata.java_packages,
+        mod_jar_id: metadata.mod_jar_id,
+        depends_on: metadata.depends_on,
+        optional_deps: metadata.optional_deps,
+        incompatible_deps: metadata.incompatible_deps,
     };
 
     manifest.mods.push(installed_mod.clone());

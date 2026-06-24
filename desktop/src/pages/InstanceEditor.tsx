@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DependencyPrompt } from '../components/DependencyPrompt';
 import {
   getInstanceDetail,
   removeModFromInstance,
@@ -12,12 +13,14 @@ import {
   installModVersion,
   listPackMods,
   formatError,
+  getRemovalPlan,
   type InstanceDetail,
   type RegistryItem,
   type CategoryInfo,
   type ModVersionCandidate,
   type SortOption,
   type PackModRow,
+  type DependentInfo,
 } from '../lib/tauri';
 
 const SORTS: { label: string; value: SortOption }[] = [
@@ -37,6 +40,9 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
   const [status, setStatus] = useState<string | null>(null);
   const [removeBusy, setRemoveBusy] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
+
+  // Removal plan prompt state
+  const [removePlanTarget, setRemovePlanTarget] = useState<{ filename: string; dependents: DependentInfo[] } | null>(null);
 
   // Add-mod state
   const [showAdd, setShowAdd] = useState(false);
@@ -95,13 +101,54 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
     setRemoveBusy(filename);
     setError(null);
     try {
-      await removeModFromInstance(instanceId, filename);
-      const result = await getInstanceDetail(instanceId);
-      setDetail(result);
+      const plan = await getRemovalPlan(instanceId, filename);
+      if (plan.dependents.length === 0) {
+        // No dependents — proceed directly
+        await removeModFromInstance(instanceId, filename);
+        const result = await getInstanceDetail(instanceId);
+        setDetail(result);
+      } else {
+        // Show dependency prompt for removal
+        setRemovePlanTarget({ filename, dependents: plan.dependents });
+      }
     } catch (e) {
       setError(formatError(e));
     } finally {
       setRemoveBusy(null);
+    }
+  };
+
+  const handleRemoveConfirm = async (selectedKeys: string[]) => {
+    if (!removePlanTarget) return;
+    const { filename, dependents } = removePlanTarget;
+    setRemoveBusy(filename);
+    setError(null);
+    try {
+      // Build set of all filenames to remove (target + selected dependents)
+      const selectedSet = new Set(selectedKeys);
+      const allFilenames = [filename, ...dependents
+        .filter((d) => selectedSet.has(d.mod_id))
+        .map((d) => d.filename)];
+
+      // Best-effort: continue past individual failures
+      const errors: string[] = [];
+      for (const fn of allFilenames) {
+        try {
+          await removeModFromInstance(instanceId, fn);
+        } catch (e) {
+          errors.push(`${fn}: ${formatError(e)}`);
+        }
+      }
+      const result = await getInstanceDetail(instanceId);
+      setDetail(result);
+      if (errors.length > 0) {
+        setError(`Removed ${allFilenames.length - errors.length} of ${allFilenames.length} mods. Errors: ${errors.join('; ')}`);
+      }
+    } catch (e) {
+      setError(formatError(e));
+    } finally {
+      setRemoveBusy(null);
+      setRemovePlanTarget(null);
     }
   };
 
@@ -748,6 +795,22 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
             </div>
           )}
         </section>
+      )}
+
+      {/* Dependency removal prompt */}
+      {removePlanTarget && (
+        <DependencyPrompt
+          title="Remove mod and dependents"
+          actionLabel="Remove selected"
+          candidates={removePlanTarget.dependents.map((d) => ({
+            key: d.mod_id,
+            label: d.mod_id || d.filename,
+            requirement: d.requirement,
+            source: d.source,
+          }))}
+          onConfirm={handleRemoveConfirm}
+          onCancel={() => setRemovePlanTarget(null)}
+        />
       )}
     </div>
   );

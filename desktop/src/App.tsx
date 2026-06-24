@@ -9,7 +9,7 @@ import { Settings } from './pages/Settings';
 import { Onboarding } from './pages/Onboarding';
 import { ModDetail } from './pages/ModDetail';
 import { InstanceEditor } from './pages/InstanceEditor';
-import { getSetting, setSetting } from './lib/tauri';
+import { getSetting } from './lib/tauri';
 
 type Tab = 'home' | 'browse' | 'modrinth' | 'instances' | 'governance' | 'settings';
 
@@ -33,7 +33,8 @@ export default function App() {
   const [editingInstanceId, setEditingInstanceId] = useState<string | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const [modrinthEnabled, setModrinthEnabled] = useState<boolean>(false);
-  const [showTelemetryPrompt, setShowTelemetryPrompt] = useState(false);
+  // Telemetry upload prompt disabled — no aggregation endpoint exists yet ($0/month footprint). Local crash learning runs regardless. The crash_telemetry_opt_in setting is preserved for future shared-data use.
+  // const [showTelemetryPrompt, setShowTelemetryPrompt] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,28 +69,28 @@ export default function App() {
   }, [activeTab, onboardingComplete]);
 
   // One-time telemetry opt-in prompt: show only when the setting has never been set.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const v = await getSetting('crash_telemetry_opt_in');
-        if (!cancelled) setShowTelemetryPrompt(v === null || v === undefined);
-      } catch {
-        if (!cancelled) setShowTelemetryPrompt(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // useEffect(() => {
+  //   let cancelled = false;
+  //   (async () => {
+  //     try {
+  //       const v = await getSetting('crash_telemetry_opt_in');
+  //       if (!cancelled) setShowTelemetryPrompt(v === null || v === undefined);
+  //     } catch {
+  //       if (!cancelled) setShowTelemetryPrompt(true);
+  //     }
+  //   })();
+  //   return () => {
+  //     cancelled = true;
+  //   };
+  // }, []);
 
-  const handleTelemetryChoice = async (allow: boolean) => {
-    try {
-      await setSetting('crash_telemetry_opt_in', allow);
-    } finally {
-      setShowTelemetryPrompt(false);
-    }
-  };
+  // const handleTelemetryChoice = async (allow: boolean) => {
+  //   try {
+  //     await setSetting('crash_telemetry_opt_in', allow);
+  //   } finally {
+  //     setShowTelemetryPrompt(false);
+  //   }
+  // };
 
   if (onboardingComplete === null) {
     return null;
@@ -121,7 +122,8 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden">
-        {showTelemetryPrompt && (
+        {/* Telemetry upload prompt disabled — no aggregation endpoint exists yet ($0/month footprint). Local crash learning runs regardless. The crash_telemetry_opt_in setting is preserved for future shared-data use. */}
+        {/* {showTelemetryPrompt && (
           <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border border-gray-200 dark:border-gray-700 surface p-4 shadow-lg">
             <p className="text-sm font-medium mb-2">Help improve Agora</p>
             <p className="text-xs text-[rgb(var(--muted))] mb-3">
@@ -142,7 +144,7 @@ export default function App() {
               </button>
             </div>
           </div>
-        )}
+        )} */}
         <Sidebar tabs={tabs} activeTab={effectiveTab} onSelectTab={(t) => { setSelectedModId(null); setEditingInstanceId(null); setActiveTab(t); }} />
         <main className="flex-1 overflow-y-auto p-6 surface">
           {editingInstanceId !== null ? (

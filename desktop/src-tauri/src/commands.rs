@@ -1,13 +1,16 @@
 use crate::auth::{DeviceFlowResponse, GithubProfile};
 use crate::crash_diagnostics::{self, CrashReportInfo, CrashTriageResult};
+use crate::crash_investigator;
 use crate::db;
+use crate::dependency_ops;
 use crate::error::{LauncherError, LauncherResult};
 use crate::instances::{self, CreateInstanceRequest, InstanceDetail, LoaderVersionSummary};
 use crate::loader_manifests;
 use crate::mod_install;
-use crate::models::{InstanceRow, InstalledMod, ModVersionCandidate};
+use crate::models::{InstanceManifest, InstanceRow, InstalledMod, ModVersionCandidate};
 use crate::modrinth_raw;
-use crate::registry::{self, AuditLogEntry, CategoryInfo, PackModRow, RegistryItem, SortOption};
+use crate::paths;
+use crate::registry::{self, AuditLogEntry, CategoryInfo, ModReview, PackModRow, RegistryItem, SortOption, UnderReviewItem};
 use crate::state::LauncherState;
 
 #[tauri::command]
@@ -571,4 +574,461 @@ pub async fn install_raw_modrinth(
     candidate: modrinth_raw::RawModrinthVersionCandidate,
 ) -> LauncherResult<InstalledMod> {
     modrinth_raw::install_raw_modrinth(&app, &instance_id, &project_id, &candidate).await
+}
+
+/// List registry items whose status is `under_review`, ordered by net_score.
+#[tauri::command]
+pub async fn list_under_review_items(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+) -> LauncherResult<Vec<UnderReviewItem>> {
+    tokio::task::spawn_blocking(move || {
+        let conn = registry::open_registry(&app)?;
+        registry::list_under_review_items(&conn)
+    })
+    .await
+    .map_err(|_| LauncherError::Generic {
+        code: "ERR_REGISTRY_QUERY".to_string(),
+        message: "Under-review query task failed.".to_string(),
+    })?
+}
+
+/// List recent triage resolutions from the audit log.
+#[tauri::command]
+pub async fn list_recent_resolutions(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    limit: Option<u32>,
+) -> LauncherResult<Vec<AuditLogEntry>> {
+    let limit = limit.unwrap_or(50);
+    tokio::task::spawn_blocking(move || {
+        let conn = registry::open_registry(&app)?;
+        registry::list_recent_resolutions(&conn, limit)
+    })
+    .await
+    .map_err(|_| LauncherError::Generic {
+        code: "ERR_REGISTRY_QUERY".to_string(),
+        message: "Recent resolutions query task failed.".to_string(),
+    })?
+}
+
+/// Load parsed curator reviews for a single registry item.
+#[tauri::command]
+pub async fn list_mod_reviews(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    item_id: String,
+) -> LauncherResult<Vec<ModReview>> {
+    tokio::task::spawn_blocking(move || {
+        let conn = registry::open_registry(&app)?;
+        registry::list_mod_reviews(&conn, item_id)
+    })
+    .await
+    .map_err(|_| LauncherError::Generic {
+        code: "ERR_REGISTRY_QUERY".to_string(),
+        message: "Mod reviews query task failed.".to_string(),
+    })?
+}
+
+/// Fetch the live triage poll for a mod from GitHub Discussions.
+#[tauri::command]
+pub async fn fetch_triage_poll(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    mod_id: String,
+) -> LauncherResult<crate::governance::TriagePoll> {
+    crate::governance::fetch_triage_poll(&app, mod_id).await
+}
+
+/// Submit a comment-flag for a mod, creating a GitHub issue.
+#[tauri::command]
+pub async fn flag_review(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    mod_id: String,
+    mod_name: String,
+    issue_number: i64,
+    author: String,
+    quoted_text: String,
+    reporter_login: String,
+) -> LauncherResult<String> {
+    crate::governance::flag_review(&app, mod_id, mod_name, issue_number, author, quoted_text, reporter_login).await
+}
+
+/// Return the current flag rate-limit status for the local state database.
+#[tauri::command]
+pub async fn get_flag_rate_limit(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+) -> LauncherResult<crate::db::FlagRateLimit> {
+    crate::governance::get_flag_rate_limit(&app)
+}
+
+/// Load the instance manifest for the given instance_id.
+fn load_manifest<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    instance_id: &str,
+) -> LauncherResult<InstanceManifest> {
+    let manifest_path = paths::instance_manifest_path(app, instance_id)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let text = std::fs::read_to_string(&manifest_path)
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_MANIFEST_MISSING".to_string(),
+            message: format!("Instance manifest not found for '{}'.", instance_id),
+        })?;
+    serde_json::from_str(&text)
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_MANIFEST_PARSE".to_string(),
+            message: "Failed to parse instance manifest.".to_string(),
+        })
+}
+
+/// Investigate a crash for an instance using the auto-detected or provided
+/// crash log filename. Runs the full guided-isolation pipeline.
+#[tauri::command]
+pub async fn investigate_crash(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: Option<String>,
+) -> LauncherResult<crash_investigator::InvestigationResult> {
+    tokio::task::spawn_blocking(move || {
+        // Determine the crash log filename.
+        let filename = match filename {
+            Some(f) => f,
+            None => {
+                let report = crash_diagnostics::check_for_crash(&app, &instance_id)
+                    .map_err(|_| LauncherError::LocalStateFailed)?;
+                report.ok_or_else(|| LauncherError::Generic {
+                    code: "ERR_NO_CRASH_LOG".to_string(),
+                    message: "No crash log detected for this instance.".to_string(),
+                })?
+                .filename
+            }
+        };
+
+        // Read the crash log text.
+        let crash_text = crash_diagnostics::read_crash_log(&app, &instance_id, &filename)
+            .map_err(|_| LauncherError::Generic {
+                code: "ERR_CRASH_LOG_READ".to_string(),
+                message: "Could not read the crash log file.".to_string(),
+            })?;
+
+        // Load the instance manifest for installed mods.
+        let manifest = load_manifest(&app, &instance_id)?;
+
+        // Run the investigation pipeline.
+        let fingerprint = match crash_investigator::parse_crash_log(&crash_text) {
+            Some(fp) => fp,
+            None => {
+                // Can't parse — return empty investigation.
+                return Ok(crash_investigator::InvestigationResult {
+                    fingerprint: None,
+                    signature_name: None,
+                    suspects: Vec::new(),
+                    suggested_action: crash_investigator::SuggestedAction::NoSuspects,
+                    ruled_out: Vec::new(),
+                });
+            }
+        };
+
+        crash_investigator::continue_investigation(
+            &app,
+            &instance_id,
+            &fingerprint,
+            &manifest.mods,
+            &crash_text,
+        )
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Investigate a crash using a manually-provided crash log text.
+#[tauri::command]
+pub async fn investigate_manual(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    log_text: String,
+) -> LauncherResult<crash_investigator::InvestigationResult> {
+    tokio::task::spawn_blocking(move || {
+        let manifest = load_manifest(&app, &instance_id)?;
+
+        let fingerprint = match crash_investigator::parse_crash_log(&log_text) {
+            Some(fp) => fp,
+            None => {
+                return Ok(crash_investigator::InvestigationResult {
+                    fingerprint: None,
+                    signature_name: None,
+                    suspects: Vec::new(),
+                    suggested_action: crash_investigator::SuggestedAction::NoSuspects,
+                    ruled_out: Vec::new(),
+                });
+            }
+        };
+
+        crash_investigator::continue_investigation(
+            &app,
+            &instance_id,
+            &fingerprint,
+            &manifest.mods,
+            &log_text,
+        )
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Temporarily disable a mod by renaming it to `<filename>.disabled`.
+#[tauri::command]
+pub async fn disable_mod_for_test(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<()> {
+    tokio::task::spawn_blocking(move || {
+        crash_investigator::disable_mod(&app, &instance_id, &filename)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Re-enable a previously disabled mod (rename back).
+#[tauri::command]
+pub async fn enable_mod_for_test(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<()> {
+    tokio::task::spawn_blocking(move || {
+        crash_investigator::enable_mod(&app, &instance_id, &filename)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Confirm that a mod was the cause of a crash (for telemetry).
+#[tauri::command]
+pub async fn confirm_crash_fix(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    fingerprint: crash_investigator::CrashFingerprint,
+    mod_id: String,
+) -> LauncherResult<()> {
+    tokio::task::spawn_blocking(move || {
+        crash_investigator::confirm_attribution(&app, &fingerprint, &mod_id)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Report that the crash persists after disabling the top suspect.
+/// Rules out the mod and re-runs the investigation to find the next suspect.
+#[tauri::command]
+pub async fn report_still_crashing(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    fingerprint: crash_investigator::CrashFingerprint,
+    ruled_out_mod_id: String,
+    crash_log_text: String,
+) -> LauncherResult<crash_investigator::InvestigationResult> {
+    tokio::task::spawn_blocking(move || {
+        // Rule out the mod.
+        crash_investigator::rule_out(&app, &fingerprint, &ruled_out_mod_id)
+            .map_err(|_| LauncherError::LocalStateFailed)?;
+
+        // Reload the manifest and re-investigate.
+        let manifest = load_manifest(&app, &instance_id)?;
+
+        crash_investigator::continue_investigation(
+            &app,
+            &instance_id,
+            &fingerprint,
+            &manifest.mods,
+            &crash_log_text,
+        )
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Build a disable plan for a mod: which other installed mods would be affected
+/// if this mod is disabled (renamed to `.disabled`).
+#[tauri::command]
+pub async fn get_disable_plan(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<dependency_ops::DisablePlan> {
+    tokio::task::spawn_blocking(move || {
+        let manifest = load_manifest(&app, &instance_id)?;
+        let target = manifest
+            .mods
+            .iter()
+            .find(|m| m.filename == filename)
+            .ok_or_else(|| LauncherError::Generic {
+                code: "ERR_MOD_NOT_FOUND".to_string(),
+                message: format!("Mod '{}' not found in instance manifest.", filename),
+            })?
+            .clone();
+        Ok(dependency_ops::build_disable_plan(&manifest.mods, &target))
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Build a removal plan for a mod: which other installed mods would break if
+/// this mod is removed entirely.
+#[tauri::command]
+pub async fn get_removal_plan(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<dependency_ops::RemovalPlan> {
+    tokio::task::spawn_blocking(move || {
+        let manifest = load_manifest(&app, &instance_id)?;
+        let target = manifest
+            .mods
+            .iter()
+            .find(|m| m.filename == filename)
+            .ok_or_else(|| LauncherError::Generic {
+                code: "ERR_MOD_NOT_FOUND".to_string(),
+                message: format!("Mod '{}' not found in instance manifest.", filename),
+            })?
+            .clone();
+        Ok(dependency_ops::build_removal_plan(&manifest.mods, &target))
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Build an install plan for a target mod: which dependencies are missing,
+/// which are optional, and whether there are any conflicts between jar and
+/// manifest declarations.
+#[tauri::command]
+pub async fn get_install_plan(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    item_id: String,
+    jar_path: String,
+) -> LauncherResult<dependency_ops::InstallPlan> {
+    tokio::task::spawn_blocking(move || {
+        // Fetch the target mod's manifest-declared dependencies from the registry.
+        let conn = registry::open_registry(&app)?;
+        let manifest_deps = registry::get_manifest_dependencies(&conn, item_id)?;
+
+        // Parse the jar for declared dependencies (defensive: bad path → empty deps).
+        let jar_metadata = crash_investigator::parse_jar_metadata(std::path::Path::new(&jar_path));
+
+        // Load the target instance's installed mods to determine which deps are missing.
+        let manifest = load_manifest(&app, &instance_id)?;
+
+        Ok(dependency_ops::build_install_plan(
+            manifest_deps,
+            &jar_metadata,
+            &manifest.mods,
+        ))
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Enable a mod by renaming `<filename>.disabled` → `<filename>` and
+/// auto-re-enable any previously-disabled required dependencies.
+///
+/// Returns the list of filenames that were auto-enabled (toast messages).
+/// Best-effort: individual enable failures are logged but do not abort the
+/// entire operation.
+#[tauri::command]
+pub async fn enable_mod_with_auto_deps(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<Vec<String>> {
+    tokio::task::spawn_blocking(move || {
+        let manifest = load_manifest(&app, &instance_id)?;
+
+        let target = manifest
+            .mods
+            .iter()
+            .find(|m| m.filename == filename)
+            .ok_or_else(|| LauncherError::Generic {
+                code: "ERR_MOD_NOT_FOUND".to_string(),
+                message: format!("Mod '{}' not found in instance manifest.", filename),
+            })?;
+
+        let mut auto_enabled: Vec<String> = Vec::new();
+
+        // Resolve the target mod's required deps from jar metadata.
+        let depends_on = match &target.mod_jar_id {
+            Some(_) => &target.depends_on,
+            None => &Vec::new(),
+        };
+
+        // For each required dep, find the corresponding installed mod and check
+        // if it's disabled (`.disabled` file exists). If so, enable it.
+        for dep_jar_id in depends_on {
+            let dep_lower = dep_jar_id.to_lowercase();
+
+            // Find the installed mod whose mod_jar_id matches this dep.
+            let dep_mod = manifest.mods.iter().find(|m| {
+                m.mod_jar_id
+                    .as_ref()
+                    .map(|jid| jid.to_lowercase() == dep_lower)
+                    .unwrap_or(false)
+            });
+
+            let dep_mod = match dep_mod {
+                Some(m) => m,
+                None => continue, // Missing entirely — skip silently (can't auto-install).
+            };
+
+            // Check if the dep's jar file is disabled.
+            let mods_dir = paths::instance_dir(&app, &instance_id)
+                .map_err(|_| LauncherError::InstanceCreateFailed)?
+                .join("mods");
+            let disabled_path = mods_dir.join(format!("{}.disabled", dep_mod.filename));
+
+            if !disabled_path.exists() {
+                continue; // Already enabled.
+            }
+
+            // Best-effort enable: continue past individual failures.
+            if let Err(e) = crash_investigator::enable_mod(&app, &instance_id, &dep_mod.filename) {
+                crate::auth::log_line(&format!(
+                    "enable_mod_with_auto_deps: failed to enable dep '{}': {}",
+                    dep_mod.filename, e
+                ));
+                continue;
+            }
+
+            auto_enabled.push(dep_mod.filename.clone());
+        }
+
+        // Now enable the target mod itself.
+        if let Err(e) = crash_investigator::enable_mod(&app, &instance_id, &filename) {
+            crate::auth::log_line(&format!(
+                "enable_mod_with_auto_deps: failed to enable target '{}': {}",
+                filename, e
+            ));
+            // Still return the auto-enabled deps we managed; the target failure
+            // is surfaced via the Err path below.
+            return Err(LauncherError::Generic {
+                code: "ERR_ENABLE_FAILED".to_string(),
+                message: format!("Failed to enable '{}': {}", filename, e),
+            });
+        }
+
+        Ok(auto_enabled)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
 }

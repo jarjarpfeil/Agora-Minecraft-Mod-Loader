@@ -1,6 +1,7 @@
 use crate::models::InstanceRow;
 use crate::paths;
 use rusqlite::Connection;
+use serde::Serialize;
 
 /// Expected schema version for the downloaded read-only registry database.
 /// The launcher compares this against `SELECT version FROM schema_version`.
@@ -8,7 +9,7 @@ pub const REGISTRY_SCHEMA_VERSION: i64 = 1;
 
 /// Expected schema version for the mutable local SQLite database.
 /// Migrations are applied sequentially on startup.
-pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 1;
+pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 3;
 
 /// Open a connection to the mutable local state database, creating it if needed.
 pub fn local_state_connection<R: tauri::Runtime>(
@@ -75,16 +76,76 @@ fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                  PRIMARY KEY (mod_a_id, mod_b_id)
              );
 
-             CREATE TABLE IF NOT EXISTS mcp_approval_grants (
-                 tool_name TEXT NOT NULL,
-                 instance_id TEXT NOT NULL,
-                 state TEXT NOT NULL,
-                 granted_at TEXT NOT NULL,
-                 expires_at TEXT,
-                 PRIMARY KEY (tool_name, instance_id)
-             );",
+              CREATE TABLE IF NOT EXISTS mcp_approval_grants (
+                  tool_name TEXT NOT NULL,
+                  instance_id TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  granted_at TEXT NOT NULL,
+                  expires_at TEXT,
+                  PRIMARY KEY (tool_name, instance_id)
+              );
+
+              CREATE TABLE IF NOT EXISTS flag_submissions (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  timestamp INTEGER NOT NULL
+              );",
         )?;
         conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (1)", [])?;
+    }
+
+    // Migration v2: add flag_submissions table for comment-flag rate limiting (§5.5).
+    if current < 2 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS flag_submissions (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 timestamp INTEGER NOT NULL
+             );",
+        )?;
+        conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (2)", [])?;
+    }
+
+    // Migration v3: add crash-investigator tables for dynamic scoring algorithm.
+    if current < 3 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS crash_events (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 instance_id TEXT NOT NULL,
+                 fingerprint TEXT NOT NULL,
+                 exception_class TEXT NOT NULL,
+                 top_frames_json TEXT NOT NULL,
+                 signature_name TEXT,
+                 occurred_at TEXT NOT NULL
+             );
+
+             CREATE TABLE IF NOT EXISTS crash_survivals (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 instance_id TEXT NOT NULL,
+                 occurred_at TEXT NOT NULL
+             );
+
+             CREATE TABLE IF NOT EXISTS crash_survival_mods (
+                 survival_id INTEGER NOT NULL,
+                 mod_id TEXT NOT NULL,
+                 PRIMARY KEY (survival_id, mod_id),
+                 FOREIGN KEY (survival_id) REFERENCES crash_survivals(id)
+             );
+
+             CREATE TABLE IF NOT EXISTS crash_attribution (
+                 fingerprint TEXT NOT NULL,
+                 mod_id TEXT NOT NULL,
+                 confirm_count INTEGER NOT NULL DEFAULT 0,
+                 last_confirmed_at TEXT,
+                 PRIMARY KEY (fingerprint, mod_id)
+             );
+
+             CREATE TABLE IF NOT EXISTS crash_ruled_out (
+                 fingerprint TEXT NOT NULL,
+                 mod_id TEXT NOT NULL,
+                 ruled_out_at TEXT NOT NULL,
+                 PRIMARY KEY (fingerprint, mod_id)
+             );",
+        )?;
+        conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (3)", [])?;
     }
 
     // Migration: add jvm_always_pre_touch column to existing databases.
@@ -279,6 +340,83 @@ pub fn purge_stale_crash_telemetry(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Record a flag submission for rate-limit tracking (§5.5).
+pub fn record_flag_submission(conn: &Connection, now_unix: i64) -> anyhow::Result<()> {
+    conn.execute(
+        "INSERT INTO flag_submissions (timestamp) VALUES (?1)",
+        rusqlite::params![now_unix],
+    )?;
+    Ok(())
+}
+
+/// Return the number of flag submissions at or after `since_unix`.
+pub fn count_flags_since(conn: &Connection, since_unix: i64) -> anyhow::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM flag_submissions WHERE timestamp >= ?1",
+        rusqlite::params![since_unix],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Rate-limit status for comment-flag submissions (§5.5).
+#[derive(Serialize)]
+pub struct FlagRateLimit {
+    pub remaining_hour: i64,
+    pub remaining_day: i64,
+    pub reset_hour_at_unix: i64,
+    pub reset_day_at_unix: i64,
+    pub can_flag: bool,
+}
+
+const MAX_FLAGS_PER_HOUR: i64 = 5;
+const MAX_FLAGS_PER_DAY: i64 = 20;
+
+/// Compute the current flag rate-limit status for a connection at `now_unix`.
+pub fn get_flag_rate_limit_status(
+    conn: &Connection,
+    now_unix: i64,
+) -> anyhow::Result<FlagRateLimit> {
+    let hour_window_start = now_unix - 3600;
+    let day_window_start = now_unix - 86400;
+
+    let hour_count = count_flags_since(conn, hour_window_start)?;
+    let day_count = count_flags_since(conn, day_window_start)?;
+
+    let remaining_hour = (MAX_FLAGS_PER_HOUR - hour_count).max(0);
+    let remaining_day = (MAX_FLAGS_PER_DAY - day_count).max(0);
+
+    let reset_hour_at_unix = if hour_count > 0 {
+        let mut stmt = conn.prepare(
+            "SELECT MIN(timestamp) FROM flag_submissions WHERE timestamp >= ?1",
+        )?;
+        let oldest_hour: i64 = stmt.query_row([hour_window_start], |row| row.get(0))?;
+        oldest_hour + 3600
+    } else {
+        now_unix + 3600
+    };
+
+    let reset_day_at_unix = if day_count > 0 {
+        let mut stmt = conn.prepare(
+            "SELECT MIN(timestamp) FROM flag_submissions WHERE timestamp >= ?1",
+        )?;
+        let oldest_day: i64 = stmt.query_row([day_window_start], |row| row.get(0))?;
+        oldest_day + 86400
+    } else {
+        now_unix + 86400
+    };
+
+    let can_flag = remaining_hour > 0 && remaining_day > 0;
+
+    Ok(FlagRateLimit {
+        remaining_hour,
+        remaining_day,
+        reset_hour_at_unix,
+        reset_day_at_unix,
+        can_flag,
+    })
+}
+
 fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstanceRow> {
     Ok(InstanceRow {
         instance_id: row.get(0)?,
@@ -295,4 +433,177 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstanceRow> {
         jvm_always_pre_touch: row.get::<_, i64>(11)? != 0,
         created_at: row.get(12)?,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Crash Investigator tables (v3 schema)
+// ---------------------------------------------------------------------------
+
+/// An attribution row: (mod_id, confirm_count, last_confirmed_at).
+#[derive(Debug, Clone, Serialize)]
+pub struct CrashAttribution {
+    pub mod_id: String,
+    pub confirm_count: i64,
+    pub last_confirmed_at: Option<String>,
+}
+
+/// Insert a crash event and return the new row id.
+pub fn insert_crash_event(
+    conn: &Connection,
+    instance_id: &str,
+    fingerprint: &str,
+    exception_class: &str,
+    top_frames_json: &str,
+    signature_name: Option<&str>,
+) -> anyhow::Result<i64> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let rows = conn.execute(
+        "INSERT INTO crash_events (instance_id, fingerprint, exception_class, top_frames_json, signature_name, occurred_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![instance_id, fingerprint, exception_class, top_frames_json, signature_name, now],
+    )?;
+    Ok(rows as i64)
+}
+
+/// Insert a survival (successful launch) with associated mod ids.
+pub fn insert_survival(
+    conn: &Connection,
+    instance_id: &str,
+    mod_ids: &[String],
+) -> anyhow::Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO crash_survivals (instance_id, occurred_at) VALUES (?1, ?2)",
+        rusqlite::params![instance_id, now],
+    )?;
+    let survival_id = conn.last_insert_rowid();
+    for mod_id in mod_ids {
+        conn.execute(
+            "INSERT INTO crash_survival_mods (survival_id, mod_id) VALUES (?1, ?2)",
+            rusqlite::params![survival_id, mod_id],
+        )?;
+    }
+    Ok(())
+}
+
+/// Return confirmed attributions for a fingerprint, ordered by confirm_count DESC.
+pub fn get_confirmed_attribution(
+    conn: &Connection,
+    fingerprint: &str,
+) -> anyhow::Result<Vec<CrashAttribution>> {
+    let mut stmt = conn.prepare(
+        "SELECT mod_id, confirm_count, last_confirmed_at
+         FROM crash_attribution
+         WHERE fingerprint = ?1
+         ORDER BY confirm_count DESC",
+    )?;
+    let rows = stmt.query_map([fingerprint], |row| {
+        Ok(CrashAttribution {
+            mod_id: row.get(0)?,
+            confirm_count: row.get(1)?,
+            last_confirmed_at: row.get(2)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Upsert a confirmed attribution: insert with confirm_count=1 or increment + update last_confirmed_at.
+pub fn increment_confirmation(
+    conn: &Connection,
+    fingerprint: &str,
+    mod_id: &str,
+) -> anyhow::Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO crash_attribution (fingerprint, mod_id, confirm_count, last_confirmed_at)
+         VALUES (?1, ?2, 1, ?3)
+         ON CONFLICT(fingerprint, mod_id) DO UPDATE SET
+             confirm_count = confirm_count + 1,
+             last_confirmed_at = excluded.last_confirmed_at",
+        rusqlite::params![fingerprint, mod_id, now],
+    )?;
+    Ok(())
+}
+
+/// Idempotently add a ruled-out mod for a fingerprint.
+pub fn add_ruled_out(
+    conn: &Connection,
+    fingerprint: &str,
+    mod_id: &str,
+) -> anyhow::Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR IGNORE INTO crash_ruled_out (fingerprint, mod_id, ruled_out_at) VALUES (?1, ?2, ?3)",
+        rusqlite::params![fingerprint, mod_id, now],
+    )?;
+    Ok(())
+}
+
+/// Check whether a mod has been ruled out for a fingerprint.
+pub fn is_ruled_out(
+    conn: &Connection,
+    fingerprint: &str,
+    mod_id: &str,
+) -> anyhow::Result<bool> {
+    let mut stmt = conn.prepare(
+        "SELECT 1 FROM crash_ruled_out WHERE fingerprint = ?1 AND mod_id = ?2",
+    )?;
+    Ok(stmt.exists([fingerprint, mod_id])?)
+}
+
+/// Return the mod_ids ruled out for a fingerprint.
+pub fn get_ruled_out_mods(
+    conn: &Connection,
+    fingerprint: &str,
+) -> anyhow::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT mod_id FROM crash_ruled_out WHERE fingerprint = ?1",
+    )?;
+    let rows = stmt.query_map([fingerprint], |row| row.get(0))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Return the number of survivals a mod appears in.
+pub fn get_mod_survival_count(conn: &Connection, mod_id: &str) -> anyhow::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM crash_survival_mods WHERE mod_id = ?1",
+        rusqlite::params![mod_id],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Return the number of survivals where both mods a and b appear together.
+pub fn get_pair_survival_count(
+    conn: &Connection,
+    a: &str,
+    b: &str,
+) -> anyhow::Result<i64> {
+    let (first, second) = normalize_pair(a, b);
+    conn.query_row(
+        "SELECT COUNT(*) FROM crash_survival_mods x
+         JOIN crash_survival_mods y ON x.survival_id = y.survival_id
+         WHERE x.mod_id = ?1 AND y.mod_id = ?2",
+        rusqlite::params![first, second],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Return the total number of crash_survivals rows.
+pub fn get_total_survival_count(conn: &Connection) -> anyhow::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM crash_survivals",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
 }

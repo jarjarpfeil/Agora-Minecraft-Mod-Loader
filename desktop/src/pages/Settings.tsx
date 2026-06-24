@@ -175,6 +175,9 @@ export function Settings() {
             <p className="text-xs text-[rgb(var(--muted))]">
               Allow anonymous local crash telemetry to be collected for mod-incompatibility research. Aggregates are never uploaded unless you opt in. Saying no disables all telemetry.
             </p>
+            <p className="text-xs text-[rgb(var(--muted))] mt-2">
+              Local crash learning (mod isolation & co-crash detection) runs automatically and never leaves your machine. This toggle only controls future anonymous aggregate sharing, which is not yet active.
+            </p>
           </div>
         </>
       )}

@@ -10,6 +10,15 @@
   "package_signatures": [
     "net.fabricmc.fabric"
   ],
+  "mod_dependencies": {
+    "required": ["fabricloader"],
+    "optional": [],
+    "incompatible": ["optifine"]
+  },
+  "mod_jar_aliases": [
+    "fabric",
+    "fabric_api"
+  ],
   "base_categories": [
     "library",
     "fabric"
