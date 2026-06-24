@@ -25,7 +25,6 @@ export default async function HomePage() {
           >
             Browse the database
           </Link>
-          <DownloadButton />
           <a
             href={GITHUB_REPO_URL}
             className="rounded-lg border border-white px-5 py-3 font-semibold text-white hover:bg-white/10"
@@ -34,6 +33,9 @@ export default async function HomePage() {
           >
             View on GitHub
           </a>
+        </div>
+        <div className="mt-6">
+          <DownloadButton />
         </div>
       </section>
 
