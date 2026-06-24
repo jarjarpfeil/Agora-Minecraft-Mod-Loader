@@ -10,8 +10,21 @@ use tauri::AppHandle;
 
 // --- Constants ---
 
-pub const AGORA_GOVERNANCE_REPO: &str = "agora-mc/agora-mc";
-pub const AGORA_ADMIN_ALERTS_REPO: &str = "agora-mc/admin-alerts";
+/// The governance repo (where mod review issues, triage discussions, and
+/// reactions live) IS the registry repo itself. Configurable at build time
+/// via AGORA_REGISTRY_REPO; defaults to the real repo.
+pub const AGORA_GOVERNANCE_REPO: &str = match option_env!("AGORA_REGISTRY_REPO") {
+    Some(v) => v,
+    None => "jarjarpfeil/Agora-Minecraft-Mod-Loader",
+};
+
+/// Admin-alerts repo is where curator flag issues are filed. Configurable at
+/// build time via AGORA_ADMIN_ALERTS_REPO; defaults to the same owner as the
+/// governance/registry repo.
+pub const AGORA_ADMIN_ALERTS_REPO: &str = match option_env!("AGORA_ADMIN_ALERTS_REPO") {
+    Some(v) => v,
+    None => "jarjarpfeil/admin-alerts",
+};
 
 // --- Types ---
 

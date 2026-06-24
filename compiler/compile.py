@@ -123,10 +123,22 @@ _load_dotenv(REPO_ROOT / ".env")
 # layout (### Mod Registry ID heading + value) and aggregates reactions on the
 # issue + its comments to produce per-mod upvotes/downvotes.
 #
-# Override locally via the AGORA_GOVERNANCE_REPO env var ("owner/repo" form).
+# The governance repo IS the registry repo itself — issues are filed on the
+# main repository, not a separate governance repo. Override locally via
+# the AGORA_REGISTRY_REPO env var ("owner/repo" form). In GitHub Actions,
+# GITHUB_REPOSITORY is auto-set to "owner/repo" and used as fallback.
 GITHUB_API_BASE = "https://api.github.com"
-DEFAULT_GOV_OWNER = "agora-mc"
-DEFAULT_GOV_REPO = "agora-mc"
+DEFAULT_REGISTRY_OWNER = "jarjarpfeil"
+DEFAULT_REGISTRY_REPO = "Agora-Minecraft-Mod-Loader"
+
+
+def _get_registry_repo() -> str:
+    """Return the 'owner/repo' string for the registry/governance repo."""
+    return (
+        os.environ.get("AGORA_REGISTRY_REPO")
+        or os.environ.get("GITHUB_REPOSITORY")
+        or f"{DEFAULT_REGISTRY_OWNER}/{DEFAULT_REGISTRY_REPO}"
+    )
 GITHUB_REACTION_UPVOTES = {"+1"}
 GITHUB_REACTION_DOWNVOTES = {"-1"}
 
@@ -233,7 +245,7 @@ def _github_request(
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "AgoraCompiler/1.0 (https://github.com/agora-mc/agora-mc)",
+        "User-Agent": f"AgoraCompiler/1.0 (https://github.com/{_get_registry_repo()})",
     }
     last_exc: Exception | None = None
     for attempt in range(max_retries):
@@ -290,7 +302,7 @@ def _github_graphql(
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "AgoraCompiler/1.0 (https://github.com/agora-mc/agora-mc)",
+                "User-Agent": f"AgoraCompiler/1.0 (https://github.com/{_get_registry_repo()})",
             },
             json=body,
             timeout=60,
@@ -489,20 +501,30 @@ def _hydrate_github_social_metrics(
     if not token:
         logger.info("GITHUB_TOKEN not set; social metrics will be zeroed (local dev mode).")
         return
-    gov_full = os.environ.get("AGORA_GOVERNANCE_REPO", f"{DEFAULT_GOV_OWNER}/{DEFAULT_GOV_REPO}")
+    gov_full = _get_registry_repo()
     owner, _, repo = gov_full.partition("/")
     if not owner or not repo:
-        logger.warning("AGORA_GOVERNANCE_REPO='%s' is not 'owner/repo' format; skipping social metrics.", gov_full)
+        logger.warning("AGORA_REGISTRY_REPO='%s' is not 'owner/repo' format; skipping social metrics.", gov_full)
         return
     blacklist = _load_poll_blacklist()
 
     mod_ids_present = {item["id"].lower(): item for item in items if "id" in item}
 
-    all_issues = _github_paginate(
-        f"/repos/{owner}/{repo}/issues",
-        token=token,
-        params={"state": "all"},
-    )
+    try:
+        all_issues = _github_paginate(
+            f"/repos/{owner}/{repo}/issues",
+            token=token,
+            params={"state": "all"},
+        )
+    except RuntimeError as exc:
+        if "404" in str(exc):
+            logger.warning(
+                "Registry repo %s/%s not found or has no issues (404). "
+                "Social metrics will be zeroed. Set AGORA_REGISTRY_REPO to the correct owner/repo.",
+                owner, repo,
+            )
+            return
+        raise
     logger.info("Found %d issues in %s/%s governance repo", len(all_issues), owner, repo)
 
     by_mod: dict[str, ModSocialMetrics] = {}
@@ -756,8 +778,8 @@ def _apply_trust_velocity_pass(
         # Tally upvotes/downvotes applying trust + Sybil + freeze-at-pre-spike.
         accepted_up = 0
         accepted_down = 0
-        gov_full = os.environ.get("AGORA_GOVERNANCE_REPO", f"{DEFAULT_GOV_OWNER}/{DEFAULT_GOV_REPO}")
-        gov_org = gov_full.split("/")[0] or DEFAULT_GOV_OWNER
+        gov_full = _get_registry_repo()
+        gov_org = gov_full.split("/")[0] or DEFAULT_REGISTRY_OWNER
         interaction_counts = _user_interaction_counts(by_mod, token=token, org=gov_org, cache=trust_interaction_cache)
         for r in m.reactions:
             if r.is_upvote is None:
@@ -2557,7 +2579,7 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
     # admin-alert, 8 create triage poll + resolve expired polls). Runs only
     # when GITHUB_TOKEN is present.
     if _gh_token:
-        gov_full = os.environ.get("AGORA_GOVERNANCE_REPO", f"{DEFAULT_GOV_OWNER}/{DEFAULT_GOV_REPO}")
+        gov_full = _get_registry_repo()
         _owner, _, _repo = gov_full.partition("/")
         if _owner and _repo:
             _respond_to_circuit_breaker(
@@ -2570,7 +2592,7 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
                 token=_gh_token,
             )
         else:
-            logger.warning("AGORA_GOVERNANCE_REPO='%s' invalid; skipping Pass 3 responses.", gov_full)
+            logger.warning("AGORA_REGISTRY_REPO='%s' invalid; skipping Pass 3 responses.", gov_full)
 
     # Insert items, handling pack-specific fields.
     mod_count = 0
