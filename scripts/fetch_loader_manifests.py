@@ -27,6 +27,7 @@ CACHE_DIR = REPO_ROOT / ".cache" / "loader-manifests"
 
 DOMAIN_ALLOWLIST = [
     "meta.fabricmc.net",
+    "piston-meta.mojang.com",
     "maven.fabricmc.net",
     "neoforged.net",
     "maven.neoforged.net",

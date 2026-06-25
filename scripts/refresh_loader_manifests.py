@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Refresh loader manifests, compile the registry database, and verify hashes.
 
-Auto-discovers available stable Minecraft versions from the Fabric meta API,
+Auto-discovers available stable Minecraft versions from Mojang's official
+version manifest,
 optionally limited to the latest N or versions released since a given version.
 You can still pass an explicit list with --mc-versions.
 
@@ -56,18 +57,21 @@ def _is_standard_release(version: str) -> bool:
 def discover_stable_mc_versions(
     since: str | None = None, latest: int | None = None
 ) -> list[str]:
-    """Return stable Minecraft versions from Fabric's game-version list.
+    """Return stable Minecraft versions from Mojang's official version manifest.
 
-    The Fabric meta API returns versions in reverse release order (newest first),
-    so "latest" is a simple slice after filtering to standard releases.
+    Mojang's manifest at https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+    lists every version ever released (1.0 onward). We filter to type=='release'
+    and apply the existing _is_standard_release() regex (drops snapshots,
+    prereleases, experimentals). Versions are listed newest-first by Mojang.
     """
-    url = "https://meta.fabricmc.net/v2/versions/game"
-    logger.info("Discovering stable Minecraft versions from %s", url)
-    data: list[dict[str, Any]] = fetch._fetch_json(url)
+    url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+    logger.info("Discovering stable Minecraft versions from Mojang: %s", url)
+    data: dict[str, Any] = fetch._fetch_json(url)
+
     stable = [
-        v["version"]
-        for v in data
-        if v.get("stable") and _is_standard_release(v["version"])
+        v["id"]
+        for v in data.get("versions", [])
+        if v.get("type") == "release" and _is_standard_release(v["id"])
     ]
 
     if since:
@@ -78,8 +82,10 @@ def discover_stable_mc_versions(
         stable = stable[:latest]
 
     if not stable:
-        raise RuntimeError("Could not discover any stable Minecraft versions")
+        raise RuntimeError("Could not discover any stable Minecraft versions from Mojang")
 
+    logger.info("Discovered %d stable Minecraft versions (%s ... %s)",
+                len(stable), stable[-1] if stable else "?", stable[0] if stable else "?")
     return stable
 
 
@@ -256,7 +262,7 @@ def main() -> int:
     source.add_argument(
         "--auto-versions",
         action="store_true",
-        help="Auto-discover stable Minecraft versions from the Fabric meta API",
+        help="Auto-discover stable Minecraft versions from Mojang's official version manifest",
     )
     parser.add_argument(
         "--latest",
@@ -300,6 +306,12 @@ def main() -> int:
         # or --since X to keep only versions newer than X.
         latest = args.latest
         mc_versions = discover_stable_mc_versions(since=args.since, latest=latest)
+
+        # Write minecraft_versions.json for the desktop app to bake in.
+        mc_versions_path = Path(__file__).resolve().parent.parent / "loader-manifests" / "minecraft_versions.json"
+        mc_versions_path.parent.mkdir(parents=True, exist_ok=True)
+        mc_versions_path.write_text(json.dumps(mc_versions, indent=2) + "\n", encoding="utf-8")
+        logger.info("Wrote %d Minecraft versions to %s", len(mc_versions), mc_versions_path)
     elif args.mc_versions:
         mc_versions = args.mc_versions
     else:
