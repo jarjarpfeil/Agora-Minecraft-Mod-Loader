@@ -47,6 +47,7 @@ const SORTS: { label: string; value: ModrinthSort }[] = [
  */
 export function ModrinthRaw({ onOpenInstanceEditor }: { onOpenInstanceEditor?: (id: string) => void }) {
   const [query, setQuery] = useState('');
+  const [projectType, setProjectType] = useState<string>('mod');
   const [sort, setSort] = useState<ModrinthSort>('relevance');
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [selectedLoaders, setSelectedLoaders] = useState<string[]>([]);
@@ -103,6 +104,7 @@ export function ModrinthRaw({ onOpenInstanceEditor }: { onOpenInstanceEditor?: (
     categories: selectedCats.length ? selectedCats : undefined,
     loaders: selectedLoaders.length ? selectedLoaders : undefined,
     game_versions: selectedVersions.length ? selectedVersions : undefined,
+    project_type: projectType,
     offset,
     limit: PAGE_SIZE,
   });
@@ -145,7 +147,7 @@ export function ModrinthRaw({ onOpenInstanceEditor }: { onOpenInstanceEditor?: (
   useEffect(() => {
     void fetchPage(0, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchKey, sort, selectedCats, selectedLoaders, selectedVersions]);
+  }, [searchKey, sort, selectedCats, selectedLoaders, selectedVersions, projectType]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,6 +184,7 @@ export function ModrinthRaw({ onOpenInstanceEditor }: { onOpenInstanceEditor?: (
   };
 
   const clearFilters = () => {
+    setProjectType('mod');
     setSelectedCats([]);
     setSelectedLoaders([]);
     setSelectedVersions([]);
@@ -196,6 +199,7 @@ export function ModrinthRaw({ onOpenInstanceEditor }: { onOpenInstanceEditor?: (
         project={activeProject}
         onBack={() => setActiveProject(null)}
         onOpenInstanceEditor={onOpenInstanceEditor}
+        projectType={projectType}
       />
     );
   }
@@ -229,6 +233,17 @@ export function ModrinthRaw({ onOpenInstanceEditor }: { onOpenInstanceEditor?: (
         >
           {loading ? 'Searching…' : 'Search'}
         </button>
+        <select
+          value={projectType}
+          onChange={(e) => setProjectType(e.target.value)}
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+        >
+          <option value="mod">Mods</option>
+          <option value="shader">Shaders</option>
+          <option value="resourcepack">Resource Packs</option>
+          <option value="datapack">Datapacks</option>
+          <option value="modpack">Modpacks</option>
+        </select>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as ModrinthSort)}
@@ -593,10 +608,12 @@ function ModrinthProjectDetail({
   project,
   onBack,
   onOpenInstanceEditor,
+  projectType,
 }: {
   project: ModrinthSearchResult;
   onBack: () => void;
   onOpenInstanceEditor?: (id: string) => void;
+  projectType: string;
 }) {
   const [instances, setInstances] = useState<InstanceRow[]>([]);
   const [instancesLoading, setInstancesLoading] = useState(true);
@@ -721,6 +738,13 @@ function ModrinthProjectDetail({
 
   const confirmInstall = async () => {
     if (!selectedInstanceId || !selectedCandidate) return;
+    if (projectType === 'modpack') {
+      setPhase('error');
+      setStatusMsg(
+        'Modpack import from Modrinth is coming soon. For now, download the .mrpack file and use Import Pack from the Instances tab.',
+      );
+      return;
+    }
     setPhase('installing');
     setStatusMsg(null);
     try {
@@ -728,6 +752,7 @@ function ModrinthProjectDetail({
         selectedInstanceId,
         project.project_id,
         selectedCandidate,
+        projectType,
       );
       setPhase('done');
       setStatusMsg(
@@ -993,7 +1018,11 @@ function ModrinthProjectDetail({
                       disabled={phase === 'installing' || !selectedCandidate.sha1}
                       className="mt-3 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                     >
-                      {phase === 'installing' ? 'Installing…' : `Install ${selectedCandidate.filename}`}
+                      {phase === 'installing'
+                        ? 'Installing…'
+                        : projectType === 'modpack'
+                          ? `Import Pack ${selectedCandidate.filename}`
+                          : `Install ${selectedCandidate.filename}`}
                     </button>
                   )}
                 </div>

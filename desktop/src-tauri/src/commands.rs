@@ -582,8 +582,9 @@ pub async fn install_raw_modrinth(
     instance_id: String,
     project_id: String,
     candidate: modrinth_raw::RawModrinthVersionCandidate,
+    project_type: Option<String>,
 ) -> LauncherResult<InstalledMod> {
-    modrinth_raw::install_raw_modrinth(&app, &instance_id, &project_id, &candidate).await
+    modrinth_raw::install_raw_modrinth(&app, &instance_id, &project_id, &candidate, project_type.as_deref().unwrap_or("mod")).await
 }
 
 /// List registry items whose status is `under_review`, ordered by net_score.

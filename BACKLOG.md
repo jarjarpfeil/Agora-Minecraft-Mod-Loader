@@ -172,21 +172,13 @@
   - **Spec:** §8.4
   - **Acceptance:** App finds launcher installed via MSIX/registry on Windows.
 
-- [ ] **MCP server** (§10)
+- [x] **MCP server** (§10)
   - **Short:** Implement localhost MCP server with ephemeral port, per-session token, 6 tools, approval queue, and system context injection.
   - **Detail:** (a) Bind to `127.0.0.1` on an ephemeral port, (b) Bearer token auth via `LAUNCHER_MCP_TOKEN`, (c) 6 tools: `list_instances`, `list_instance_mods`, `disable_mod`, `search_crash_signatures`, `suggest_mod_incompatibility`, `get_system_context`, (d) approval state machine with persistent grants in `local_state.db`, (e) `resources/list` exposing `system_context.md`, (f) toggle on/off from Settings.
   - **Spec:** §10
   - **Acceptance:** Claude Desktop connects with token, calls `list_instance_mods`, user sees approval prompt.
 
-- [ ] **Dev Mode (sandboxed builds)** (§11)
-  - **Short:** Detect Docker/Podman/Firecracker; clone + build mod .jar in sandbox with no network.
-  - **Spec:** §11
-  - **Acceptance:** User can build a mod from a GitHub URL inside Docker and test it.
 
-- [ ] **Anonymous crash telemetry aggregation** (§12)
-  - **Short:** Opt-in weekly compression + upload of `local_crash_telemetry` table to an aggregation endpoint.
-  - **Spec:** §12
-  - **Acceptance:** Opt-in user's crash matrix data is compressed and submitted weekly.
 
 ---
 
@@ -348,13 +340,22 @@
 
 ---
 
-## Deferred — Cross-cutting Pack Overrides
-
-- [ ] **mrpack `overrides/` extraction + non-mod file round-trip**
+## Deferred 
+- [ ] **Cross-cutting Pack Overrides: mrpack `overrides/` extraction + non-mod file round-trip**
   - **Short:** When importing or exporting `.mrpack` packs, honor Modrinth's `overrides/` (and `client-overrides/` / `server-overrides/`) directory convention and broaden the agora-pack JSON to round-trip non-mod files.
   - **Detail:** Currently `import_instance_pack` (in `desktop/src-tauri/src/mod_install.rs` → `import_mrpack`) only processes `mods/<filename>` entries from `modrinth.index.json` and skips everything else. `export_instance_pack`'s mrpack path likewise only writes `mods/`. Modrinth packs routinely ship `overrides/config/`, `overrides/defaultconfigs/`, `overrides/shaderpacks/`, `overrides/resourcepacks/`, `overrides/kubejs/`, etc. — those need to be (a) extracted into the corresponding instance subdirectory on import, and (b) bundled back into `overrides/` on export, subject to the existing Override Sanitization Engine's directory whitelist + zip-slip + zip-bomb protections (§7.2). When this lands, also tighten `import_mrpack` to silently reject any path outside the whitelist. Sidelined 2026-06-21 pending a broader "rest of the systems" pass so the same directory-whitelist treatment is consistently applied wherever pack contents touch the filesystem.
   - **Spec:** §7.2 (override sanitization), mrpack v1 (`overrides/`, `client-overrides/`, `server-overrides/`) .agora-pack/v1 (extend `mods[]` or add `files[]`).
   - **Acceptance:** Importing a `.mrpack` that ships `overrides/config/foo.toml` extracts the file into `<instance>/config/foo.toml`; a malicious `overrides/../../evil.exe` is rejected; exporting an instance whose `config/` dir has files bundles them under `overrides/config/` in the resulting `.mrpack`.
+
+- [ ] **Dev Mode (sandboxed builds)** (§11)
+  - **Short:** Detect Docker/Podman/Firecracker; clone + build mod .jar in sandbox with no network.
+  - **Spec:** §11
+  - **Acceptance:** User can build a mod from a GitHub URL inside Docker and test it.
+
+- [ ] **Anonymous crash telemetry aggregation** (§12)
+  - **Short:** Opt-in weekly compression + upload of `local_crash_telemetry` table to an aggregation endpoint.
+  - **Spec:** §12
+  - **Acceptance:** Opt-in user's crash matrix data is compressed and submitted weekly.
 
 ---
 

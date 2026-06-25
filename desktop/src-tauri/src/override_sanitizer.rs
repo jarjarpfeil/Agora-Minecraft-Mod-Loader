@@ -13,6 +13,8 @@ const ALLOWED_PREFIXES: &[&str] = &[
     "config/",
     "defaultconfigs/",
     "resourcepacks/",
+    "shaderpacks/",
+    "datapacks/",
     "kubejs/",
 ];
 
@@ -323,5 +325,19 @@ mod tests {
         assert!(has_banned_extension("kubejs/evil.sh"));
         assert!(!has_banned_extension("config/mod.toml"));
         assert!(!has_banned_extension("kubejs/script.js"));
+    }
+
+    #[test]
+    fn test_whitelist_allows_shaderpacks() {
+        assert!(is_whitelisted("shaderpacks/ComplementaryShaders.zip"));
+        assert!(is_whitelisted("datapacks/custom_loot.zip"));
+    }
+
+    #[test]
+    fn test_whitelist_rejects_shaderpacks_jar() {
+        // .jar in shaderpacks is still banned — it should go through mods/
+        assert!(has_banned_extension("shaderpacks/evil.jar"));
+        // .zip is fine
+        assert!(!has_banned_extension("shaderpacks/ComplementaryShaders.zip"));
     }
 }

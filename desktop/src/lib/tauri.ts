@@ -356,6 +356,7 @@ export interface ModrinthSearchParams {
   categories?: string[];
   loaders?: string[];
   game_versions?: string[];
+  project_type?: string;
   sort?: ModrinthSort;
   offset?: number;
   limit?: number;
@@ -417,7 +418,8 @@ export const installRawModrinth = (
   instanceId: string,
   projectId: string,
   candidate: RawModrinthVersionCandidate,
-) => invoke<InstalledMod>('install_raw_modrinth', { instanceId, projectId, candidate });
+  projectType?: string,
+) => invoke<InstalledMod>('install_raw_modrinth', { instanceId, projectId, candidate, projectType: projectType ?? null });
 
 // --- Governance / Triage ---
 

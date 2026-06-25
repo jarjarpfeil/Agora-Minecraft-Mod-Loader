@@ -1281,6 +1281,82 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
     }
     }
 
+    // Extract override files from the zip (overrides/ and client_overrides/).
+    let instance_root = paths::instance_dir(app, &instance_id)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+    let mut override_extracted: Vec<String> = Vec::new();
+    let mut override_skipped: Vec<String> = Vec::new();
+
+    for i in 0..archive.len() {
+        let mut entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = entry.name().to_string();
+
+        // Only process overrides/ and client_overrides/ directories.
+        let stripped = if let Some(s) = name.strip_prefix("overrides/") {
+            s
+        } else if let Some(s) = name.strip_prefix("client_overrides/") {
+            s
+        } else {
+            continue;
+        };
+
+        if entry.is_dir() {
+            continue;
+        }
+
+        // Sanitize: reject path traversal, absolute paths.
+        let normalized = stripped.replace('\\', "/");
+        if normalized.starts_with('/') || normalized.contains("..") {
+            continue;
+        }
+
+        // Check directory whitelist.
+        let allowed = ["config/", "defaultconfigs/", "resourcepacks/", "shaderpacks/", "datapacks/", "kubejs/"];
+        if !allowed.iter().any(|p| normalized.starts_with(p)) {
+            override_skipped.push(normalized.clone());
+            continue;
+        }
+
+        // Check banned extensions.
+        let lower = normalized.to_lowercase();
+        let banned = [".jar", ".class", ".exe", ".bat", ".cmd", ".sh", ".ps1", ".dll", ".so", ".dylib", ".msi", ".dmg"];
+        if banned.iter().any(|ext| lower.ends_with(ext)) {
+            auth::log_line(&format!(
+                "import_mrpack: banned extension in override: '{normalized}', skipping"
+            ));
+            continue;
+        }
+
+        let dest_path = instance_root.join(&normalized);
+        if !dest_path.starts_with(&instance_root) {
+            continue;
+        }
+
+        if let Some(parent) = dest_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        let mut data = Vec::new();
+        use std::io::Read;
+        if entry.read_to_end(&mut data).is_ok() {
+            if std::fs::write(&dest_path, &data).is_ok() {
+                override_extracted.push(normalized);
+            }
+        }
+    }
+
+    if !override_extracted.is_empty() {
+        auth::log_line(&format!(
+            "import_mrpack: extracted {} override files, skipped {}",
+            override_extracted.len(),
+            override_skipped.len()
+        ));
+    }
+
     // Update manifest atomically
     if !installed_mods.is_empty() {
         let manifest_path = paths::instance_manifest_path(app, &instance_id)
@@ -1487,7 +1563,7 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
                             })
                             .or_else(|| candidates.first());
                         if let Some(c) = candidate {
-                            if let Err(e) = crate::modrinth_raw::install_raw_modrinth(app, &instance_id, mid, c).await {
+                            if let Err(e) = crate::modrinth_raw::install_raw_modrinth(app, &instance_id, mid, c, "mod").await {
                                 auth::log_line(&format!(
                                     "import_agora_pack: failed to install modrinth mod {mid}: {e}"
                                 ));

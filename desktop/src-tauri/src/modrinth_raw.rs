@@ -145,6 +145,9 @@ pub struct ModrinthSearchParams {
     pub sort: Option<ModrinthSort>,
     pub offset: Option<u32>,
     pub limit: Option<u32>,
+    /// Modrinth project type filter: "mod", "shader", "resourcepack", "modpack", "datapack".
+    /// Defaults to "mod" when None (preserving existing behavior).
+    pub project_type: Option<String>,
 }
 
 /// A page of search results with paging metadata for infinite scroll.
@@ -338,8 +341,9 @@ pub async fn search_modrinth(
         }
     }
 
-    // Always restrict to mods in this tab.
-    facet_groups.push(vec!["project_type:mod".to_string()]);
+    // Restrict by project type (mod, shader, resourcepack, modpack, datapack).
+    let ptype = params.project_type.as_deref().unwrap_or("mod");
+    facet_groups.push(vec![format!("project_type:{}", ptype)]);
 
     let facets_json = serde_json::to_string(&facet_groups).unwrap_or_else(|_| "[]".to_string());
 
@@ -669,15 +673,27 @@ pub async fn list_raw_modrinth_versions(
 ///
 /// Downloads the file from Modrinth's CDN (host-allowlist enforced by
 /// `download_mod_bytes`) and verifies the SHA-1 hash published by the
-/// Modrinth API before writing it to `mods/`. The manifest entry uses
-/// `source: "modrinth_raw"` per the spec (§6.3 / §6.5).
+/// Modrinth API before writing it to the appropriate instance directory
+/// based on `project_type` (mods → `mods/`, shaders → `shaderpacks/`,
+/// resourcepacks → `resourcepacks/`, datapacks → `datapacks/`).
+/// The manifest entry uses `source: "modrinth_raw"` per the spec (§6.3 / §6.5).
 pub async fn install_raw_modrinth(
     app: &tauri::AppHandle,
     instance_id: &str,
     project_id: &str,
     candidate: &RawModrinthVersionCandidate,
+    project_type: &str,
 ) -> LauncherResult<InstalledMod> {
     require_modrinth_enabled(app)?;
+
+    // Modpacks must use the pack import flow, not single-file install.
+    if project_type == "modpack" {
+        return Err(LauncherError::Generic {
+            code: "ERR_USE_PACK_IMPORT".to_string(),
+            message: "Modpacks must be imported via the pack import flow, not installed as a single file."
+                .to_string(),
+        });
+    }
 
     // Modrinth's API must have published a SHA-1 hash for this file. Without
     // it we cannot integrity-check the download, so we refuse to install.
@@ -710,10 +726,16 @@ pub async fn install_raw_modrinth(
         return Err(LauncherError::HashMismatch);
     }
 
-    // Write the file to mods/.
-    let mods_dir = instance_dir.join("mods");
-    std::fs::create_dir_all(&mods_dir).map_err(|_| LauncherError::InstanceCreateFailed)?;
-    let mod_path = mods_dir.join(&candidate.filename);
+    // Route to the correct instance subdirectory based on project type.
+    let target_subdir = match project_type {
+        "shader" => "shaderpacks",
+        "resourcepack" => "resourcepacks",
+        "datapack" => "datapacks",
+        _ => "mods",
+    };
+    let target_dir = instance_dir.join(target_subdir);
+    std::fs::create_dir_all(&target_dir).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let mod_path = target_dir.join(&candidate.filename);
     std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     // Update the instance manifest atomically.
