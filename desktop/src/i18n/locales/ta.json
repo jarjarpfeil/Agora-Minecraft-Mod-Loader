@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "ஒரு தனித்துவமான, சமூக-நிர்வாக மைன்கிராஃட் மோட் தளம்."
+  },
+  "nav": {
+    "home": "முகப்பு",
+    "browse": "உலாவு",
+    "instances": "இன்ஸ்டன்ஸ்கள்",
+    "modrinth": "Modrinth",
+    "governance": "நிர்வாகம்",
+    "ai": "AI சாட்",
+    "settings": "அமைப்புகள்"
+  },
+  "home": {
+    "installButton": "நிறுவு",
+    "browseButton": "அனைத்தையும் உலாவு",
+    "viewOnGithub": "GitHub-ல் காண்க"
+  },
+  "instances": {
+    "create": {
+      "title": "இன்ஸ்டன்ஸ் உருவாக்கு",
+      "name": "இன்ஸ்டன்ஸ் பெயர்",
+      "mcVersion": "மைன்கிராஃட் பதிப்பு",
+      "loader": "மோட் ஏற்றி",
+      "loaderVersion": "ஏற்றி பதிப்பு",
+      "create": "உருவாக்கு",
+      "cancel": "ரத்து செய்"
+    },
+    "empty": {
+      "title": "இன்னும் இன்ஸ்டன்ஸ்கள் இல்லை",
+      "description": "தொடங்க உங்கள் முதல் இன்ஸ்டன்ஸை உருவாக்குங்கள்."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "மோட்ரிந்த் திட்டங்களைத் தேடு…",
+    "uncuratedWarning": "இந்த திட்டங்கள் நிறுவப்பட்ட Agora பதிவேட்டின் பகுதியல்ல.",
+    "install": "நிறுவு",
+    "createInstance": "இன்ஸ்டன்ஸ் உருவாக்கு"
+  },
+  "settings": {
+    "title": "அமைப்புகள்",
+    "appearance": "தோற்றம்",
+    "network": "வலையமைப்பு",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "பற்றி"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agora-க்கு வரவேற்கிறோம்",
+      "description": "ஒரு தனித்துவமான, சமூக-நிர்வாக மைன்கிராஃட் மோட் தளம்.",
+      "getStarted": "தொடங்கு"
+    }
+  },
+  "common": {
+    "loading": "ஏற்றுகிறது…",
+    "error": "பிழை",
+    "cancel": "ரத்து செய்",
+    "save": "சேமி",
+    "close": "மூடு",
+    "refresh": "புதுப்பி"
+  },
+  "language": {
+    "label": "மொழி",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

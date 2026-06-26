@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "منصة بوتيك لـمودات ماينكرافت، يديرها المجتمع."
+  },
+  "nav": {
+    "home": "الرئيسية",
+    "browse": "تصفح",
+    "instances": "المثيلاتها",
+    "modrinth": "Modrinth",
+    "governance": "الإدارة",
+    "ai": "محادثة بالذكاء الاصطناعي",
+    "settings": "الإعدادات"
+  },
+  "home": {
+    "installButton": "تثبيت",
+    "browseButton": "تصفح الكل",
+    "viewOnGithub": "عرض على GitHub"
+  },
+  "instances": {
+    "create": {
+      "title": "إنشاء مثيل",
+      "name": "اسم المثيل",
+      "mcVersion": "إصدار ماينكرافت",
+      "loader": "محمّل المودات",
+      "loaderVersion": "إصدار المحمّل",
+      "create": "إنشاء",
+      "cancel": "إلغاء"
+    },
+    "empty": {
+      "title": "لا يوجد مثيلات بعد",
+      "description": "أنشئ مثيلك الأول للبدء."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "البحث عن مشاريع Modrinth…",
+    "uncuratedWarning": "هذه المشاريع ليست جزءًا من سجل Agora المُختار.",
+    "install": "تثبيت",
+    "createInstance": "إنشاء مثيل"
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "appearance": "المظهر",
+    "network": "الشبكة",
+    "ai": "الذكاء الاصطناعي",
+    "mcp": "MCP",
+    "about": "حول"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "مرحبًا بك في Agora",
+      "description": "منصة بوتيك لـمودات ماينكرافت، يديرها المجتمع.",
+      "getStarted": "ابدأ"
+    }
+  },
+  "common": {
+    "loading": "جارٍ التحميل…",
+    "error": "خطأ",
+    "cancel": "إلغاء",
+    "save": "حفظ",
+    "close": "إغلاق",
+    "refresh": "تحديث"
+  },
+  "language": {
+    "label": "اللغة",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

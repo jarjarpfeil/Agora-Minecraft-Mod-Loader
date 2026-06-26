@@ -196,6 +196,54 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     return () => { cancelled = true; };
   }, []);
 
+  // When createLoader changes, re-fetch MC versions filtered by that loader
+  // and intersect with the mod's compatible_versions_json if available.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!createLoader) return;
+      try {
+        const filtered = await listManifestMcVersions(createLoader);
+        if (cancelled) return;
+
+        // Also intersect with the mod's compatible_versions if available
+        let result = filtered;
+        if (item?.compatible_versions_json) {
+          try {
+            const compat = JSON.parse(item.compatible_versions_json) as Array<{
+              mc_version: string;
+              loader: string;
+              mod_version: string;
+            }>;
+            const modMcVersions = new Set(
+              compat
+                .filter((c) => c.loader.toLowerCase() === createLoader.toLowerCase())
+                .map((c) => c.mc_version),
+            );
+            if (modMcVersions.size > 0) {
+              result = result.filter((v) => modMcVersions.has(v));
+            }
+          } catch {
+            // compatible_versions_json parse failure — skip the mod-compat filter
+          }
+        }
+
+        // Fallback: if filtered results are empty, show the full loader-filtered list
+        if (result.length === 0) {
+          result = filtered;
+        }
+
+        setCreateAvailableMcVersions(result);
+        if (result.length > 0 && !result.includes(createMcVersion)) {
+          setCreateMcVersion(result[0]);
+        }
+      } catch {
+        // Fetch failure — keep existing list (graceful)
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [createLoader, item?.compatible_versions_json, createMcVersion]);
+
   // Load reviews, auth status, profile, and rate limit on mount
   useEffect(() => {
     let cancelled = false;
@@ -1009,6 +1057,26 @@ function PackCreateDialog({
     );
     return () => { cancelled = true; };
   }, []);
+
+  // When loader changes, re-fetch MC versions filtered by that loader.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!loader) return;
+      try {
+        const filtered = await listManifestMcVersions(loader);
+        if (cancelled) return;
+        // Fallback: if filtered results are empty, keep existing list
+        setAvailableMcVersions(filtered.length > 0 ? filtered : availableMcVersions);
+        if (filtered.length > 0 && !filtered.includes(mcVersion)) {
+          setMcVersion(filtered[0]);
+        }
+      } catch {
+        // Fetch failure — keep existing list (graceful)
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loader]);
 
   const submit = async () => {
     setBusy(true);

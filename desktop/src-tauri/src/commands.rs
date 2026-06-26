@@ -212,6 +212,36 @@ pub async fn delete_instance(
         .map_err(|_| LauncherError::LocalStateFailed)?
 }
 
+/// Unlock a locked pack instance for manual mod management (§6.5).
+#[tauri::command]
+pub async fn unlock_instance(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+) -> LauncherResult<()> {
+    instances::unlock_instance(&app, &instance_id).await
+}
+
+/// Lock an unlocked pack instance, discarding the lock snapshot.
+#[tauri::command]
+pub async fn lock_instance(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+) -> LauncherResult<()> {
+    instances::lock_instance(&app, &instance_id).await
+}
+
+/// Revert an unlocked instance to its lock snapshot.
+#[tauri::command]
+pub async fn revert_instance(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+) -> LauncherResult<()> {
+    instances::revert_instance(&app, &instance_id).await
+}
+
 /// Launch an instance via the official Mojang launcher delegation.
 #[tauri::command]
 pub async fn launch_instance(
@@ -585,6 +615,15 @@ pub async fn install_raw_modrinth(
     project_type: Option<String>,
 ) -> LauncherResult<InstalledMod> {
     modrinth_raw::install_raw_modrinth(&app, &instance_id, &project_id, &candidate, project_type.as_deref().unwrap_or("mod")).await
+}
+
+/// Fetch a single Modrinth project's full details (including body markdown).
+#[tauri::command]
+pub async fn fetch_modrinth_project(
+    app: tauri::AppHandle,
+    project_id: String,
+) -> Result<modrinth_raw::ModrinthProjectFull, LauncherError> {
+    modrinth_raw::fetch_project_full(&app, &project_id).await
 }
 
 /// List registry items whose status is `under_review`, ordered by net_score.

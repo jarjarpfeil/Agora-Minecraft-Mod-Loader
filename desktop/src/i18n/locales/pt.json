@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "Uma plataforma boutique de mods para Minecraft, curada pela comunidade."
+  },
+  "nav": {
+    "home": "Início",
+    "browse": "Explorar",
+    "instances": "Instâncias",
+    "modrinth": "Modrinth",
+    "governance": "Governança",
+    "ai": "Chat com IA",
+    "settings": "Configurações"
+  },
+  "home": {
+    "installButton": "Instalar",
+    "browseButton": "Ver todos",
+    "viewOnGithub": "Ver no GitHub"
+  },
+  "instances": {
+    "create": {
+      "title": "Criar Instância",
+      "name": "Nome da Instância",
+      "mcVersion": "Versão do Minecraft",
+      "loader": "Carregador de Mods",
+      "loaderVersion": "Versão do Carregador",
+      "create": "Criar",
+      "cancel": "Cancelar"
+    },
+    "empty": {
+      "title": "Nenhuma instância ainda",
+      "description": "Crie sua primeira instância para começar."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Pesquisar projetos no Modrinth…",
+    "uncuratedWarning": "Estes projetos não fazem parte do registro curado da Agora.",
+    "install": "Instalar",
+    "createInstance": "Criar Instância"
+  },
+  "settings": {
+    "title": "Configurações",
+    "appearance": "Aparência",
+    "network": "Rede",
+    "ai": "IA",
+    "mcp": "MCP",
+    "about": "Sobre"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Bem-vindo à Agora",
+      "description": "Uma plataforma boutique de mods para Minecraft, curada pela comunidade.",
+      "getStarted": "Começar"
+    }
+  },
+  "common": {
+    "loading": "Carregando…",
+    "error": "Erro",
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "close": "Fechar",
+    "refresh": "Atualizar"
+  },
+  "language": {
+    "label": "Idioma",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

@@ -229,6 +229,15 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
     Ok(())
 }
 
+/// Set the locked flag for an instance.
+pub fn set_locked(conn: &Connection, instance_id: &str, locked: bool) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE user_instances SET is_locked = ?1 WHERE instance_id = ?2",
+        rusqlite::params![locked, instance_id],
+    )?;
+    Ok(())
+}
+
 /// Delete an instance row.
 pub fn delete_instance(conn: &Connection, instance_id: &str) -> anyhow::Result<()> {
     conn.execute(

@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "ఒక బుటిక్, సముదాయ-నిర్వహించిన మైన్‌క్రాఫ్ట్ మోడ్ ప్లాట్‌ఫారమ్."
+  },
+  "nav": {
+    "home": "హోమ్",
+    "browse": "బ్రౌజ్",
+    "instances": "ఇన్‌స్టన్స్‌లు",
+    "modrinth": "Modrinth",
+    "governance": "పాలన",
+    "ai": "AI చాట్",
+    "settings": "సెట్టింగులు"
+  },
+  "home": {
+    "installButton": "ఇన్‌స్టాల్",
+    "browseButton": "అన్నీ బ్రౌజ్",
+    "viewOnGithub": "GitHubలో చూడండి"
+  },
+  "instances": {
+    "create": {
+      "title": "ఇన్‌స్టన్స్ సృష్టించండి",
+      "name": "ఇన్‌స్టన్స్ పేరు",
+      "mcVersion": "మైన్‌క్రాఫ్ట్ వెర్షన్",
+      "loader": "మోడ్ లోడర్",
+      "loaderVersion": "లోడర్ వెర్షన్",
+      "create": "సృష్టించండి",
+      "cancel": "రద్దు చేయి"
+    },
+    "empty": {
+      "title": "ఇంకా ఇన్‌స్టన్స్‌లు లేవు",
+      "description": "ప్రారంభించడానికి మీ మొదటి ఇన్‌స్టన్స్‌ను సృష్టించండి."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "మోడ్రింత్ ప్రాజెక్ట్‌లను శోధించండి…",
+    "uncuratedWarning": "ఈ ప్రాజెక్ట్‌లు నిర్వహించబడిన Agora రిజిస్ట్రీ భాగం కావు.",
+    "install": "ఇన్‌స్టాల్",
+    "createInstance": "ఇన్‌స్టన్స్ సృష్టించండి"
+  },
+  "settings": {
+    "title": "సెట్టింగులు",
+    "appearance": "తோహెరు",
+    "network": "నెట్‌వర్క్",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "గురించి"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agoraకి స్వాగతం",
+      "description": "ఒక బుటిక్, సముదాయ-నిర్వహించిన మైన్‌క్రాఫ్ట్ మోడ్ ప్లాట్‌ఫారమ్.",
+      "getStarted": "ప్రారంభించండి"
+    }
+  },
+  "common": {
+    "loading": "లోడ్ అవుతోంది…",
+    "error": "పొరపాటు",
+    "cancel": "రద్దు చేయి",
+    "save": "సేవ్",
+    "close": "మూసివేయి",
+    "refresh": "రిఫ్రెష్"
+  },
+  "language": {
+    "label": "భాష",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

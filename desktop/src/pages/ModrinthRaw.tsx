@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import {
   searchModrinth,
   listModrinthCategories,
@@ -12,6 +15,7 @@ import {
   listManifestLoaders,
   listManifestMcVersions,
   formatError,
+  fetchModrinthProject,
   type ModrinthSearchResult,
   type ModrinthSearchParams,
   type ModrinthSort,
@@ -22,6 +26,7 @@ import {
   type InstanceRow,
   type LoaderVersionSummary,
   type CreateInstanceRequest,
+  type ModrinthProjectFull,
 } from '../lib/tauri';
 
 const PAGE_SIZE = 20;
@@ -623,6 +628,8 @@ function ModrinthProjectDetail({
   const [selectedCandidate, setSelectedCandidate] = useState<RawModrinthVersionCandidate | null>(null);
   const [phase, setPhase] = useState<'idle' | 'loadingVersions' | 'installing' | 'done' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [projectFull, setProjectFull] = useState<ModrinthProjectFull | null>(null);
+  const [projectFullLoading, setProjectFullLoading] = useState(false);
 
   // Inline create-instance state
   const [showCreateInline, setShowCreateInline] = useState(false);
@@ -635,6 +642,9 @@ function ModrinthProjectDetail({
   const [createLoaderVersion, setCreateLoaderVersion] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Compatible versions/loaders for this project (fetched on mount, used to filter create form)
+  const [compatCandidates, setCompatCandidates] = useState<RawModrinthVersionCandidate[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -657,7 +667,42 @@ function ModrinthProjectDetail({
     };
   }, []);
 
-  // Fetch available manifest loaders and MC versions once on mount
+  // Fetch full project details (body markdown) once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setProjectFullLoading(true);
+      try {
+        const full = await fetchModrinthProject(project.project_id);
+        if (!cancelled) setProjectFull(full);
+      } catch {
+        // Silently fail — the detail view still works without body markdown.
+      } finally {
+        if (!cancelled) setProjectFullLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.project_id]);
+
+  // Fetch all Modrinth version candidates for this project on mount (used to filter create form)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const allVers = await listRawModrinthVersions(null, project.project_id);
+        if (!cancelled) setCompatCandidates(allVers);
+      } catch {
+        // Swallow — if this fails, the create form shows full version lists (graceful degradation)
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.project_id]);
+
+  // Fetch available manifest loaders and MC versions, filtered by project compatibility
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -667,13 +712,33 @@ function ModrinthProjectDetail({
           listManifestMcVersions(),
         ]);
         if (cancelled) return;
-        setCreateLoaders(loaders);
-        setCreateMcVersions(versions);
-        if (!createLoader && loaders.length > 0) {
-          setCreateLoader(loaders[0]);
-        }
-        if (!createMcVersion && versions.length > 0) {
-          setCreateMcVersion(versions[0]);
+
+        if (compatCandidates.length > 0) {
+          const compatLoaders = new Set<string>();
+          const compatMcVersions = new Set<string>();
+          for (const cand of compatCandidates) {
+            for (const l of cand.loaders) compatLoaders.add(l.toLowerCase());
+            for (const v of cand.mc_versions) compatMcVersions.add(v);
+          }
+          const filteredLoaders = loaders.filter((l) => compatLoaders.has(l.toLowerCase()));
+          const filteredVersions = versions.filter((v) => compatMcVersions.has(v));
+          setCreateLoaders(filteredLoaders.length > 0 ? filteredLoaders : loaders);
+          setCreateMcVersions(filteredVersions.length > 0 ? filteredVersions : versions);
+          if (!createLoader && filteredLoaders.length > 0) {
+            setCreateLoader(filteredLoaders[0]);
+          }
+          if (!createMcVersion && filteredVersions.length > 0) {
+            setCreateMcVersion(filteredVersions[0]);
+          }
+        } else {
+          setCreateLoaders(loaders);
+          setCreateMcVersions(versions);
+          if (!createLoader && loaders.length > 0) {
+            setCreateLoader(loaders[0]);
+          }
+          if (!createMcVersion && versions.length > 0) {
+            setCreateMcVersion(versions[0]);
+          }
         }
       } catch {
         // Swallow silently — degraded UX with empty dropdowns is acceptable
@@ -682,11 +747,46 @@ function ModrinthProjectDetail({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [compatCandidates]);
+
+  // Re-filter MC versions when selected loader or compat candidates change
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!createLoader) return;
+      try {
+        const loaderFiltered = await listManifestMcVersions(createLoader);
+        if (cancelled) return;
+
+        let result = loaderFiltered;
+        if (compatCandidates.length > 0) {
+          const compatMcVersions = new Set<string>();
+          for (const cand of compatCandidates) {
+            for (const v of cand.mc_versions) compatMcVersions.add(v);
+          }
+          result = result.filter((v) => compatMcVersions.has(v));
+          if (result.length === 0) {
+            result = Array.from(compatMcVersions);
+          }
+        }
+
+        setCreateMcVersions(result);
+        if (result.length > 0 && !result.includes(createMcVersion)) {
+          setCreateMcVersion(result[0]);
+        }
+      } catch {
+        // Keep existing list (graceful degradation)
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [createLoader, compatCandidates]);
 
   // Loader-version fetch when create form is shown
+  const createFormVisible = showCreateInline || instances.length === 0;
   useEffect(() => {
-    if (!showCreateInline) return;
+    if (!createFormVisible) return;
     let cancelled = false;
     (async () => {
       try {
@@ -701,7 +801,7 @@ function ModrinthProjectDetail({
     return () => {
       cancelled = true;
     };
-  }, [showCreateInline, createLoader, createMcVersion]);
+  }, [createFormVisible, createLoader, createMcVersion]);
 
   // When an instance is selected, fetch versions scoped to that instance.
   useEffect(() => {
@@ -843,6 +943,21 @@ function ModrinthProjectDetail({
         </div>
       </section>
 
+      {projectFullLoading && !projectFull ? (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-6">
+          <p className="text-sm text-[rgb(var(--muted))]">Loading details…</p>
+        </section>
+      ) : projectFull?.body ? (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-6">
+          <h3 className="text-lg font-semibold mb-3">About</h3>
+          <div className="prose prose-sm dark:prose-invert max-w-none">
+            <ReactMarkdown
+              rehypePlugins={[[rehypeRaw, { passThrough: ['html'] }], [rehypeSanitize]]}
+            >{projectFull.body}</ReactMarkdown>
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4 space-y-4">
         <h3 className="font-semibold text-sm">Install to Instance</h3>
 
@@ -852,34 +967,36 @@ function ModrinthProjectDetail({
 
         {instancesLoading ? (
           <p className="text-sm text-[rgb(var(--muted))]">Loading instances…</p>
-        ) : instances.length === 0 ? (
-          <p className="text-sm text-[rgb(var(--muted))]">
-            You need an instance first. Create one in My Instances, then come back here.
-          </p>
         ) : (
           <>
-            <label className="block">
-              <span className="text-xs font-medium">Select instance</span>
-              <select
-                value={selectedInstanceId ?? ''}
-                onChange={(e) => setSelectedInstanceId(e.target.value || null)}
-                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
-              >
-                <option value="">Choose an instance…</option>
-                {instances.map((inst) => (
-                  <option key={inst.instance_id} value={inst.instance_id}>
-                    {inst.name} ({inst.loader} · MC {inst.minecraft_version})
-                  </option>
-                ))}
-              </select>
-            </label>
+            {instances.length === 0 ? (
+              <p className="text-sm text-[rgb(var(--muted))]">
+                You don't have any instances yet. Create one below to install this {projectType}.
+              </p>
+            ) : (
+              <label className="block">
+                <span className="text-xs font-medium">Select instance</span>
+                <select
+                  value={selectedInstanceId ?? ''}
+                  onChange={(e) => setSelectedInstanceId(e.target.value || null)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+                >
+                  <option value="">Choose an instance…</option>
+                  {instances.map((inst) => (
+                    <option key={inst.instance_id} value={inst.instance_id}>
+                      {inst.name} ({inst.loader} · MC {inst.minecraft_version})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button
               onClick={() => setShowCreateInline((v) => !v)}
               className="mt-3 block text-xs text-brand-600 hover:underline dark:text-brand-400"
             >
               + Create new instance
             </button>
-            {showCreateInline && (
+            {(showCreateInline || instances.length === 0) && (
               <div className="mt-3 space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                 <p className="text-xs font-medium">Create new instance</p>
                 <label className="block">

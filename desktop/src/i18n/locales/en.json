@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "A boutique, community-curated Minecraft mod platform."
+  },
+  "nav": {
+    "home": "Home",
+    "browse": "Browse",
+    "instances": "Instances",
+    "modrinth": "Modrinth",
+    "governance": "Governance",
+    "ai": "AI Chat",
+    "settings": "Settings"
+  },
+  "home": {
+    "installButton": "Install",
+    "browseButton": "Browse All",
+    "viewOnGithub": "View on GitHub"
+  },
+  "instances": {
+    "create": {
+      "title": "Create Instance",
+      "name": "Instance Name",
+      "mcVersion": "Minecraft Version",
+      "loader": "Mod Loader",
+      "loaderVersion": "Loader Version",
+      "create": "Create",
+      "cancel": "Cancel"
+    },
+    "empty": {
+      "title": "No instances yet",
+      "description": "Create your first instance to get started."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Search Modrinth projects…",
+    "uncuratedWarning": "These projects are not part of the curated Agora registry.",
+    "install": "Install",
+    "createInstance": "Create Instance"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "network": "Network",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "About"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Welcome to Agora",
+      "description": "A boutique, community-curated Minecraft mod platform.",
+      "getStarted": "Get Started"
+    }
+  },
+  "common": {
+    "loading": "Loading…",
+    "error": "Error",
+    "cancel": "Cancel",
+    "save": "Save",
+    "close": "Close",
+    "refresh": "Refresh"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "একটি বাটিক, কমিউনিটি-সম্পাদিত মাইনক্রাফট মড প্ল্যাটফর্ম।"
+  },
+  "nav": {
+    "home": "হোম",
+    "browse": "ব্রাউজ",
+    "instances": "ইনস্ট্যান্স",
+    "modrinth": "Modrinth",
+    "governance": "শাসন",
+    "ai": "AI চ্যাট",
+    "settings": "সেটিংস"
+  },
+  "home": {
+    "installButton": "ইনস্টল করুন",
+    "browseButton": "সব দেখুন",
+    "viewOnGithub": "GitHub-এ দেখুন"
+  },
+  "instances": {
+    "create": {
+      "title": "ইনস্ট্যান্স তৈরি করুন",
+      "name": "ইনস্ট্যান্সের নাম",
+      "mcVersion": "মাইনক্রাফট সংস্করণ",
+      "loader": "মড লোডার",
+      "loaderVersion": "লোডার সংস্করণ",
+      "create": "তৈরি করুন",
+      "cancel": "বাতিল করুন"
+    },
+    "empty": {
+      "title": "এখনো কোনো ইনস্ট্যান্স নেই",
+      "description": "শুরু করতে আপনার প্রথম ইনস্ট্যান্স তৈরি করুন।"
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinth প্রজেক্ট খুঁজুন…",
+    "uncuratedWarning": "এই প্রজেক্টগুলো সম্পাদিত Agora রেজিস্ট্রির অংশ নয়।",
+    "install": "ইনস্টল করুন",
+    "createInstance": "ইনস্ট্যান্স তৈরি করুন"
+  },
+  "settings": {
+    "title": "সেটিংস",
+    "appearance": "উপস্থিতি",
+    "network": "নেটওয়ার্ক",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "সম্পর্কে"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agora-তে স্বাগতম",
+      "description": "একটি বাটিক, কমিউনিটি-সম্পাদিত মাইনক্রাফট মড প্ল্যাটফর্ম।",
+      "getStarted": "শুরু করুন"
+    }
+  },
+  "common": {
+    "loading": "লোড হচ্ছে…",
+    "error": "ত্রুটি",
+    "cancel": "বাতিল করুন",
+    "save": "সংরক্ষণ",
+    "close": "বন্ধ করুন",
+    "refresh": "রিফ্রেশ"
+  },
+  "language": {
+    "label": "ভাষা",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

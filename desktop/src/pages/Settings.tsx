@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { check } from '@tauri-apps/plugin-updater';
+import { invoke } from '@tauri-apps/api/core';
 import {
   aiGetDefaultModel,
   aiGetModels,
@@ -34,6 +37,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 }
 
 export function Settings() {
+  const { t, i18n } = useTranslation();
   const [modrinth, setModrinth] = useState(false);
   const [aiMcp, setAiMcp] = useState(false);
   const [aiChatEnabled, setAiChatEnabled] = useState(false);
@@ -250,6 +254,40 @@ export function Settings() {
         </p>
       </section>
 
+      {/* Language Selector */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4 space-y-3">
+        <h3 className="font-semibold">{t('language.label')}</h3>
+        <label className="flex items-center justify-between">
+          <span className="text-sm">{t('language.label')}</span>
+          <select
+            value={i18n.language}
+            onChange={(e) => i18n.changeLanguage(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-sm"
+          >
+            <option value="en">{t('language.en')}</option>
+            <option value="es">{t('language.es')}</option>
+            <option value="zh">{t('language.zh')}</option>
+            <option value="hi">{t('language.hi')}</option>
+            <option value="bn">{t('language.bn')}</option>
+            <option value="pt">{t('language.pt')}</option>
+            <option value="ru">{t('language.ru')}</option>
+            <option value="ja">{t('language.ja')}</option>
+            <option value="ar">{t('language.ar')}</option>
+            <option value="de">{t('language.de')}</option>
+            <option value="ko">{t('language.ko')}</option>
+            <option value="tr">{t('language.tr')}</option>
+            <option value="vi">{t('language.vi')}</option>
+            <option value="fr">{t('language.fr')}</option>
+            <option value="ta">{t('language.ta')}</option>
+            <option value="te">{t('language.te')}</option>
+            <option value="ur">{t('language.ur')}</option>
+            <option value="it">{t('language.it')}</option>
+            <option value="nl">{t('language.nl')}</option>
+            <option value="pl">{t('language.pl')}</option>
+          </select>
+        </label>
+      </div>
+
       {loading ? (
         <p className="text-[rgb(var(--muted))]">Loading settings…</p>
       ) : (
@@ -283,7 +321,23 @@ export function Settings() {
               Enable the local MCP server for external AI tools.
             </p>
 
-            {(aiMcp || aiChatEnabled) && (
+           
+
+            <label className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+              <div>
+                <span className="text-sm">Integrated AI Assistant</span>
+                <p className="text-xs text-[rgb(var(--muted))] mt-0.5">
+                  Built-in AI chat powered by GitHub Models (GPT-4.1 Mini). Free with your GitHub account — no separate API key needed. Use this for quick crash analysis and mod questions.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={aiChatEnabled}
+                onChange={(e) => toggleAiChat(e.target.checked)}
+                className="h-5 w-5 accent-brand-600"
+              />
+            </label>
+             {(aiMcp || aiChatEnabled) && (
               <div className="rounded-lg bg-gray-50 dark:bg-gray-900/50 p-3 space-y-2">
                 <h4 className="text-xs font-semibold">Two ways to use AI with Agora</h4>
                 <p className="text-xs text-[rgb(var(--muted))]">
@@ -295,21 +349,6 @@ export function Settings() {
               </div>
             )}
 
-            <label className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
-              <div>
-                <span className="text-sm">Integrated AI Assistant</span>
-                <p className="text-xs text-[rgb(var(--muted))] mt-0.5">
-                  Built-in AI chat powered by GitHub Models (GPT-4.1 Mini). Free with your GitHub account — no separate API key needed. Use this for quick crash analysis and mod questions.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={aiChatEnabled}
-                onChange={(e) => toggleAiChat(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
-              />
-            </label>
-
             {aiChatEnabled && (
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700 space-y-3">
                 <div className="space-y-1">
@@ -332,11 +371,18 @@ export function Settings() {
                       ))}
                     </select>
                   )}
+                  
                 </div>
+                <p className="text-xs text-[rgb(var(--muted))]">
+                  GPT-4.1 Mini is recommended — free (limited usage from GitHub), fast, and probably good enough for crash diagnosis. GPT-4.1 is also available for free and offers a bit more intelligence, but with less available usage. Both models are free with your GitHub account.
+                </p>
+                <p className="text-xs text-[rgb(var(--muted))]">
+                  For newer, smarter, more advanced AI with much higher usage limits and more capabilities to customize Agora, connect an AI agent like Claude Code, Codex, Opencode or countless others via the MCP server above. If you're curious, my personal recommendation is Opencode desktop, which is free, open-source, includes a few free models, and is fairly easy to use, though almost any agent will work for Agora. I personally use Kilo Code (VS Code extension) for Agora development.
+                </p>
               </div>
             )}
 
-            {(aiMcp || aiChatEnabled) && (
+            {/* {(aiMcp || aiChatEnabled) && (
               <div className="rounded-lg bg-gray-50 dark:bg-gray-900/50 p-3 mt-2 space-y-1">
                 <p className="text-xs font-semibold">Two ways to use AI with Agora</p>
                 <p className="text-xs text-[rgb(var(--muted))]">
@@ -346,9 +392,9 @@ export function Settings() {
                   <strong>Integrated AI</strong> — A built-in chat in Agora. Quick questions, crash analysis, mod help. No external setup — uses free GitHub Models. Simpler but less powerful than an external agent.
                 </p>
               </div>
-            )}
+            )} */}
 
-            <label className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+            {/* <label className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
               <div>
                 <span className="text-sm">Integrated AI Assistant</span>
                 <p className="text-xs text-[rgb(var(--muted))] mt-0.5">
@@ -361,9 +407,9 @@ export function Settings() {
                 onChange={(e) => toggleAiChat(e.target.checked)}
                 className="h-5 w-5 accent-brand-600"
               />
-            </label>
+            </label> */}
 
-            {aiChatEnabled && (
+            {/* {aiChatEnabled && (
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700 space-y-3">
                 <div className="space-y-1">
                   <label htmlFor="ai-model-select-chat" className="text-sm">
@@ -387,7 +433,7 @@ export function Settings() {
                   )}
                 </div>
               </div>
-            )}
+            )} */}
 
             {aiMcp && (
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700 space-y-3">
@@ -606,7 +652,7 @@ export function Settings() {
             )}
           </div>
 
-          {/* AI Model Selector */}
+          {/* AI Model Selector
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4 space-y-3">
             <h3 className="font-semibold">AI Assistant</h3>
             {modelLoading ? (
@@ -638,7 +684,7 @@ export function Settings() {
                 </p>
               </>
             )}
-          </div>
+          </div> */}
 
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4 space-y-3">
             <h3 className="font-semibold">Launcher Path</h3>
@@ -693,6 +739,36 @@ export function Settings() {
               Local crash learning (mod isolation & co-crash detection) runs automatically and never leaves your machine. This toggle only controls future anonymous aggregate sharing, which is not yet active.
             </p>
           </div> */}
+
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4 space-y-3">
+            <h3 className="font-semibold">Software Updates</h3>
+            <button
+              onClick={async () => {
+                try {
+                  const update = await check();
+                  if (update?.available) {
+                    const ok = await window.confirm(
+                      `Update available: ${update.version}\n\n${update.body ?? ''}\n\nDownload and install now?`
+                    );
+                    if (ok) {
+                      await update.downloadAndInstall();
+                      await invoke('plugin:process|restart');
+                    }
+                  } else {
+                    window.alert('You are running the latest version of Agora.');
+                  }
+                } catch (e) {
+                  alert(formatError(e));
+                }
+              }}
+              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+            >
+              Check for Updates
+            </button>
+            <p className="text-xs text-[rgb(var(--muted))]">
+              Check for new versions published to GitHub Releases. Updates are downloaded and installed automatically.
+            </p>
+          </div>
         </>
       )}
     </div>

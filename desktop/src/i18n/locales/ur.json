@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "ایک بوٹیک، کمیونٹی-کیوریٹڈ مائنکرافٹ ماڈ پلیٹ فارم۔"
+  },
+  "nav": {
+    "home": "ہوم",
+    "browse": "براؤز",
+    "instances": "انسٹنسز",
+    "modrinth": "Modrinth",
+    "governance": "حکمرانی",
+    "ai": "AI چیٹ",
+    "settings": "ترتیبات"
+  },
+  "home": {
+    "installButton": "انسٹال کریں",
+    "browseButton": "سب دیکھیں",
+    "viewOnGithub": "GitHub پر دیکھیں"
+  },
+  "instances": {
+    "create": {
+      "title": "انسٹنس بنائیں",
+      "name": "انسٹنس کا نام",
+      "mcVersion": "مائنکرافٹ ورژن",
+      "loader": "ماڈ لوڈر",
+      "loaderVersion": "لوڈر ورژن",
+      "create": "بنائیں",
+      "cancel": "منسوخ کریں"
+    },
+    "empty": {
+      "title": "ابھی تک کوئی انسٹنس نہیں",
+      "description": "شروع کرنے کے لیے اپنا پہلا انسٹنس بنائیں۔"
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinth پروجیکٹس تلاش کریں…",
+    "uncuratedWarning": "یہ پروجیکٹس کیوریٹڈ Agora ریجسٹری کا حصہ نہیں ہیں۔",
+    "install": "انسٹال کریں",
+    "createInstance": "انسٹنس بنائیں"
+  },
+  "settings": {
+    "title": "ترتیبات",
+    "appearance": "ظاہری شکل",
+    "network": "نیٹ ورک",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "تفصیلات"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agora میں خوش آمدید",
+      "description": "ایک بوٹیک، کمیونٹی-کیوریٹڈ مائنکرافٹ ماڈ پلیٹ فارم۔",
+      "getStarted": "شروع کریں"
+    }
+  },
+  "common": {
+    "loading": "لوڈ ہو رہا ہے…",
+    "error": "غلطی",
+    "cancel": "منسوخ کریں",
+    "save": "محفوظ کریں",
+    "close": "بند کریں",
+    "refresh": "ریفریش"
+  },
+  "language": {
+    "label": "زبان",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

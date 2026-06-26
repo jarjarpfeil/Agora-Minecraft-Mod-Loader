@@ -14,6 +14,9 @@ import {
   listPackMods,
   formatError,
   getRemovalPlan,
+  unlockInstance,
+  lockInstance,
+  revertInstance,
   type InstanceDetail,
   type RegistryItem,
   type CategoryInfo,
@@ -269,6 +272,45 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
     getInstanceDetail(instanceId).then((result) => setDetail(result));
   };
 
+  // Refresh detail (row + manifest) after lock/unlock/revert.
+  const refreshDetail = async () => {
+    const result = await getInstanceDetail(instanceId);
+    setDetail(result);
+  };
+
+  const handleUnlock = async () => {
+    setError(null);
+    try {
+      await unlockInstance(instanceId);
+      await refreshDetail();
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
+  const handleLock = async () => {
+    setError(null);
+    try {
+      await lockInstance(instanceId);
+      await refreshDetail();
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
+  const handleRevert = async () => {
+    if (!confirm('Revert to the snapshot taken when this instance was unlocked? This removes any mods you added since then.')) {
+      return;
+    }
+    setError(null);
+    try {
+      await revertInstance(instanceId);
+      await refreshDetail();
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
   const handleImportPack = async () => {
     setError(null);
     setStatus(null);
@@ -448,6 +490,36 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
               {exportBusy ? 'Exporting…' : 'Export as .mrpack'}
             </button>
           </div>
+        </div>
+
+        {/* Lock / Unlock / Revert controls (§6.5) */}
+        <div className="mt-3 flex items-center gap-3 text-sm">
+          <span className="text-[rgb(var(--muted))]">
+            {manifest?.is_locked ? '🔒 Locked' : '🔓 Unlocked'}
+          </span>
+          {manifest?.is_locked ? (
+            <button
+              onClick={handleUnlock}
+              className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-[rgb(var(--muted))] hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              🔓 Unlock
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleLock}
+                className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-[rgb(var(--muted))] hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                🔒 Lock
+              </button>
+              <button
+                onClick={handleRevert}
+                className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm font-medium text-[rgb(var(--muted))] hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                ↩ Revert
+              </button>
+            </>
+          )}
         </div>
 
         {error && (

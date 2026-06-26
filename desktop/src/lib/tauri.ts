@@ -177,6 +177,12 @@ export const createInstance = (request: CreateInstanceRequest) =>
   invoke<InstanceRow>('create_instance', { request });
 export const deleteInstance = (instanceId: string) =>
   invoke<void>('delete_instance', { instanceId });
+export const unlockInstance = (instanceId: string) =>
+  invoke<void>('unlock_instance', { instanceId });
+export const lockInstance = (instanceId: string) =>
+  invoke<void>('lock_instance', { instanceId });
+export const revertInstance = (instanceId: string) =>
+  invoke<void>('revert_instance', { instanceId });
 export const launchInstance = (instanceId: string) =>
   invoke<void>('launch_instance', { instanceId });
 export const listLoaderVersions = (loader: string, mcVersion: string) =>
@@ -420,6 +426,20 @@ export const installRawModrinth = (
   candidate: RawModrinthVersionCandidate,
   projectType?: string,
 ) => invoke<InstalledMod>('install_raw_modrinth', { instanceId, projectId, candidate, projectType: projectType ?? null });
+
+export interface ModrinthProjectFull {
+    id: string;
+    title: string;
+    description: string;
+    body: string | null;
+    icon_url: string | null;
+    page_url: string | null;
+    license_id: string | null;
+    source_updated_at: string | null;
+}
+
+export const fetchModrinthProject = (projectId: string) =>
+  invoke<ModrinthProjectFull>('fetch_modrinth_project', { projectId });
 
 // --- Governance / Triage ---
 

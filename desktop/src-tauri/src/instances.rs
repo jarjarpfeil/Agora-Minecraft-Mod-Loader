@@ -575,6 +575,171 @@ fn write_manifest<R: tauri::Runtime>(
     Ok(())
 }
 
+/// Unlock a locked pack instance: snapshot the current manifest, then clear
+/// the locked flag so the user may freely add or remove mods.
+///
+/// Idempotent: if the instance is already unlocked, returns `Ok(())`.
+pub async fn unlock_instance<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    instance_id: &str,
+) -> LauncherResult<()> {
+    let sanitized = paths::sanitize_id(instance_id);
+    let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
+
+    let row = db::get_instance(&conn, &sanitized)
+        .map_err(|_| LauncherError::LocalStateFailed)?
+        .ok_or(LauncherError::Generic {
+            code: "ERR_INSTANCE_NOT_FOUND".to_string(),
+            message: format!("Instance '{}' not found.", instance_id),
+        })?;
+
+    // Idempotent: already unlocked.
+    if !row.is_locked {
+        return Ok(());
+    }
+
+    // Snapshot the current manifest before unlocking.
+    let instance_dir = paths::instance_dir(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let snapshot_path = instance_dir.join(".lock-snapshot.json");
+    let manifest_path = paths::instance_manifest_path(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+    if manifest_path.exists() {
+        let text = std::fs::read_to_string(&manifest_path)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        std::fs::write(&snapshot_path, text)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    }
+
+    db::set_locked(&conn, &sanitized, false)
+        .map_err(|_| LauncherError::LocalStateFailed)?;
+
+    Ok(())
+}
+
+/// Lock an unlocked pack instance: discard the lock snapshot (the current
+/// state becomes the new "official" baseline) and set the locked flag.
+///
+/// Idempotent: if the instance is already locked, returns `Ok(())`.
+pub async fn lock_instance<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    instance_id: &str,
+) -> LauncherResult<()> {
+    let sanitized = paths::sanitize_id(instance_id);
+    let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
+
+    let row = db::get_instance(&conn, &sanitized)
+        .map_err(|_| LauncherError::LocalStateFailed)?
+        .ok_or(LauncherError::Generic {
+            code: "ERR_INSTANCE_NOT_FOUND".to_string(),
+            message: format!("Instance '{}' not found.", instance_id),
+        })?;
+
+    // Idempotent: already locked.
+    if row.is_locked {
+        return Ok(());
+    }
+
+    // Discard the snapshot — current state is now the new baseline.
+    let instance_dir = paths::instance_dir(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let snapshot_path = instance_dir.join(".lock-snapshot.json");
+    let _ = std::fs::remove_file(&snapshot_path);
+
+    db::set_locked(&conn, &sanitized, true)
+        .map_err(|_| LauncherError::LocalStateFailed)?;
+
+    Ok(())
+}
+
+/// Revert an unlocked instance to the snapshot taken at unlock time.
+///
+/// Only works while unlocked (the snapshot is only present during the
+/// unlocked window). Best-effort deletion of extra mods not in the snapshot.
+/// Does not auto-lock after revert — leaves the snapshot on disk so the
+/// user may revert again.
+pub async fn revert_instance<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    instance_id: &str,
+) -> LauncherResult<()> {
+    let sanitized = paths::sanitize_id(instance_id);
+    let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
+
+    let row = db::get_instance(&conn, &sanitized)
+        .map_err(|_| LauncherError::LocalStateFailed)?
+        .ok_or(LauncherError::Generic {
+            code: "ERR_INSTANCE_NOT_FOUND".to_string(),
+            message: format!("Instance '{}' not found.", instance_id),
+        })?;
+
+    // Revert only works while unlocked.
+    if row.is_locked {
+        return Err(LauncherError::InstanceLocked);
+    }
+
+    let instance_dir = paths::instance_dir(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let snapshot_path = instance_dir.join(".lock-snapshot.json");
+
+    if !snapshot_path.exists() {
+        return Err(LauncherError::Generic {
+            code: "ERR_NO_SNAPSHOT".to_string(),
+            message: "No lock snapshot found to revert to.".to_string(),
+        });
+    }
+
+    // Read snapshot and parse it.
+    let snapshot_text = std::fs::read_to_string(&snapshot_path)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let snapshot_manifest: InstanceManifest = serde_json::from_str(&snapshot_text)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+    // Build a set of allowed mod filenames from the snapshot.
+    let allowed_mods: std::collections::HashSet<String> = snapshot_manifest
+        .mods
+        .iter()
+        .map(|m| m.filename.clone())
+        .collect();
+
+    // Atomic write: replace instance_manifest.json with snapshot via .tmp + rename.
+    let manifest_path = paths::instance_manifest_path(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let tmp_path = manifest_path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, &snapshot_text)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    std::fs::rename(&tmp_path, &manifest_path)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+    // Delete extra mods in mods/ that are NOT in the snapshot.
+    let mods_dir = instance_dir.join("mods");
+    if let Ok(entries) = std::fs::read_dir(&mods_dir) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file() {
+                    let filename = entry.file_name();
+                    let filename_str = filename.to_string_lossy().to_string();
+                    // Only consider .jar files as mods.
+                    if !filename_str.ends_with(".jar") {
+                        continue;
+                    }
+                    if !allowed_mods.contains(&filename_str) {
+                        // Best-effort: log and continue past failures.
+                        if let Err(e) = std::fs::remove_file(entry.path()) {
+                            eprintln!(
+                                "revert_instance: failed to remove extra mod '{}': {}",
+                                filename_str, e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::compute_always_pre_touch;

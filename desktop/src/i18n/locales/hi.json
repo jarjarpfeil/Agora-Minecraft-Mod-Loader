@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "बुटीक, सामुदायिक-संपादित माइनक्राफ्ट मॉड प्लेटफ़ॉर्म।"
+  },
+  "nav": {
+    "home": "होम",
+    "browse": "ब्राउज़",
+    "instances": "इंस्टेंस",
+    "modrinth": "Modrinth",
+    "governance": "प्रशासन",
+    "ai": "AI चैट",
+    "settings": "सेटिंग्स"
+  },
+  "home": {
+    "installButton": "इंस्टॉल करें",
+    "browseButton": "सभी देखें",
+    "viewOnGithub": "GitHub पर देखें"
+  },
+  "instances": {
+    "create": {
+      "title": "इंस्टेंस बनाएं",
+      "name": "इंस्टेंस का नाम",
+      "mcVersion": "माइनक्राफ्ट संस्करण",
+      "loader": "मॉड लोडर",
+      "loaderVersion": "लोडर संस्करण",
+      "create": "बनाएं",
+      "cancel": "रद्द करें"
+    },
+    "empty": {
+      "title": "अभी तक कोई इंस्टेंस नहीं",
+      "description": "शुरू करने के लिए अपना पहला इंस्टेंस बनाएं।"
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinth परियोजनाएं खोजें…",
+    "uncuratedWarning": "ये परियोजनाएं संपादित Agora रजिस्ट्री का हिस्सा नहीं हैं।",
+    "install": "इंस्टॉल करें",
+    "createInstance": "इंस्टेंस बनाएं"
+  },
+  "settings": {
+    "title": "सेटिंग्स",
+    "appearance": "दिखावट",
+    "network": "नेटवर्क",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "जानकारी"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agora में आपका स्वागत है",
+      "description": "बुटीक, सामुदायिक-संपादित माइनक्राफ्ट मॉड प्लेटफ़ॉर्म।",
+      "getStarted": "शुरू करें"
+    }
+  },
+  "common": {
+    "loading": "लोड हो रहा है…",
+    "error": "त्रुटि",
+    "cancel": "रद्द करें",
+    "save": "सहेजें",
+    "close": "बंद करें",
+    "refresh": "रिफ्रेश करें"
+  },
+  "language": {
+    "label": "भाषा",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

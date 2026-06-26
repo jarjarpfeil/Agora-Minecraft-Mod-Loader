@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "Una piattaforma di mod per Minecraft curata dalla comunità."
+  },
+  "nav": {
+    "home": "Home",
+    "browse": "Sfoglia",
+    "instances": "Istanze",
+    "modrinth": "Modrinth",
+    "governance": "Governance",
+    "ai": "Chat IA",
+    "settings": "Impostazioni"
+  },
+  "home": {
+    "installButton": "Installa",
+    "browseButton": "Sfoglia tutto",
+    "viewOnGithub": "Visualizza su GitHub"
+  },
+  "instances": {
+    "create": {
+      "title": "Crea istanza",
+      "name": "Nome istanza",
+      "mcVersion": "Versione di Minecraft",
+      "loader": "Mod loader",
+      "loaderVersion": "Versione del loader",
+      "create": "Crea",
+      "cancel": "Annulla"
+    },
+    "empty": {
+      "title": "Nessuna istanza ancora",
+      "description": "Crea la tua prima istanza per iniziare."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Cerca progetti Modrinth…",
+    "uncuratedWarning": "Questi progetti non fanno parte del registro curato di Agora.",
+    "install": "Installa",
+    "createInstance": "Crea istanza"
+  },
+  "settings": {
+    "title": "Impostazioni",
+    "appearance": "Aspetto",
+    "network": "Rete",
+    "ai": "IA",
+    "mcp": "MCP",
+    "about": "Informazioni"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Benvenuto in Agora",
+      "description": "Una piattaforma di mod per Minecraft curata dalla comunità.",
+      "getStarted": "Inizia"
+    }
+  },
+  "common": {
+    "loading": "Caricamento…",
+    "error": "Errore",
+    "cancel": "Annulla",
+    "save": "Salva",
+    "close": "Chiudi",
+    "refresh": "Aggiorna"
+  },
+  "language": {
+    "label": "Lingua",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

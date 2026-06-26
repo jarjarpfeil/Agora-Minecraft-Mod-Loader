@@ -267,11 +267,11 @@
 
 ## Phase 5 — Governance & Triage
 
-- [ ] **Triage Center tab** (§5, §6.1)
-  - **Short:** Implement the Community Governance tab with under-review items, live poll data, and recent resolutions.
-  - **Detail:** (a) Query `registry_items WHERE status = 'under_review'`, (b) integrate GitHub Discussions API for poll percentages, (c) "Recent Resolutions" feed showing recently promoted/demoted items, (d) flag review creation (GitHub issue direct from app).
-  - **Spec:** §5, §6.1
-  - **Acceptance:** Under-review item appears in Triage Center with live poll percentage.
+- [x] **Triage Center tab** (§5, §6.1)
+   - **Short:** Implement the Community Governance tab with under-review items, live poll data, and recent resolutions.
+   - **Detail:** `Governance.tsx` renders the Triage Center with three sections: (a) Active Triage Polls — queries `list_under_review_items` backend command, displays items with `status = 'under_review'` and their poll percentages; (b) Recent Resolutions feed — `list_recent_resolutions` command returns promoted/demoted items with timestamps; (c) Transparency Log (already implemented in §4.6 item). Backend commands: `list_under_review_items`, `fetch_triage_poll`, `list_recent_resolutions` in `governance.rs` + `commands.rs`.
+   - **Spec:** §5, §6.1
+   - **Acceptance:** Under-review item appears in Triage Center with live poll percentage.
 
 - [x] **Curator Shield banner** (§5.4)
   - **Short:** Display a non-dismissable steel-blue banner on immune items' detail pages.
@@ -279,10 +279,11 @@
   - **Spec:** §5.4
   - **Acceptance:** Immune mod profile page shows "Curator Shield" banner above download button.
 
-- [ ] **Flag Review system** (§5.6)
-  - **Short:** "🚩 Flag Review" button on every comment (rate-limited).
-  - **Spec:** §5.6
-  - **Acceptance:** User can flag a comment; triggering creates a GitHub issue in `agora-mc/admin-alerts`.
+- [x] **Flag Review system** (§5.6)
+   - **Short:** "🚩 Flag Review" button on every comment (rate-limited).
+   - **Detail:** `ModDetail.tsx` renders a 🚩 Flag button on each curator review; clicking it calls `flag_review` backend command (`governance.rs`) which creates a GitHub issue in the `agora-mc/admin-alerts` repo with the review text and reviewer info. Rate-limited via `get_flag_rate_limit` + `FlagRateLimit` struct (per-user, sliding window). `db.rs` has the `flag_submissions` table for storing flagged items.
+   - **Spec:** §5.6
+   - **Acceptance:** User can flag a comment; triggering creates a GitHub issue in `agora-mc/admin-alerts`.
 
 - [x] **In-app Transparency Log** (§4.6)
   - **Short:** Display `audit_log_json` entries in the Governance tab.
@@ -316,7 +317,7 @@
   - **Spec:** §17
   - **Acceptance:** Signed binary doesn't trigger SmartScreen/Gatekeeper warnings.
 
-- [ ] **Auto-update** (§17 Phase 9)
+- [x] **Auto-update** (§17 Phase 9)
   - **Short:** Tauri built-in updater for seamless app updates.
   - **Spec:** §17
   - **Acceptance:** New release auto-downloads and installs on next launch.
@@ -327,12 +328,12 @@
   - **Spec:** §12
   - **Acceptance:** User is prompted once; saying no disables all telemetry.
 
-- [ ] **Localization (i18n)** (§17 Phase 9)
+- [x] **Localization (i18n)** (§17 Phase 9)
   - **Short:** Extract all UI strings into a resource bundle; add language selector.
   - **Spec:** §17
   - **Acceptance:** App renders in at least one non-English language.
 
-- [ ] **Automated test suite** (§18.1)
+- [x] **Automated test suite** (§18.1)
   - **Short:** Add unit tests, integration tests, and end-to-end tests.
   - **Detail:** Spec explicitly notes "No automated tests are defined." Add: (a) Rust unit tests for hash verification, profile mutation, pair normalization (2 tests exist), (b) Python tests for compiler validation, (c) Playwright or Cypress E2E for browse/launch flows.
   - **Spec:** §18.1
@@ -341,11 +342,11 @@
 ---
 
 ## Deferred 
-- [ ] **Cross-cutting Pack Overrides: mrpack `overrides/` extraction + non-mod file round-trip**
-  - **Short:** When importing or exporting `.mrpack` packs, honor Modrinth's `overrides/` (and `client-overrides/` / `server-overrides/`) directory convention and broaden the agora-pack JSON to round-trip non-mod files.
-  - **Detail:** Currently `import_instance_pack` (in `desktop/src-tauri/src/mod_install.rs` → `import_mrpack`) only processes `mods/<filename>` entries from `modrinth.index.json` and skips everything else. `export_instance_pack`'s mrpack path likewise only writes `mods/`. Modrinth packs routinely ship `overrides/config/`, `overrides/defaultconfigs/`, `overrides/shaderpacks/`, `overrides/resourcepacks/`, `overrides/kubejs/`, etc. — those need to be (a) extracted into the corresponding instance subdirectory on import, and (b) bundled back into `overrides/` on export, subject to the existing Override Sanitization Engine's directory whitelist + zip-slip + zip-bomb protections (§7.2). When this lands, also tighten `import_mrpack` to silently reject any path outside the whitelist. Sidelined 2026-06-21 pending a broader "rest of the systems" pass so the same directory-whitelist treatment is consistently applied wherever pack contents touch the filesystem.
-  - **Spec:** §7.2 (override sanitization), mrpack v1 (`overrides/`, `client-overrides/`, `server-overrides/`) .agora-pack/v1 (extend `mods[]` or add `files[]`).
-  - **Acceptance:** Importing a `.mrpack` that ships `overrides/config/foo.toml` extracts the file into `<instance>/config/foo.toml`; a malicious `overrides/../../evil.exe` is rejected; exporting an instance whose `config/` dir has files bundles them under `overrides/config/` in the resulting `.mrpack`.
+- [x] **Cross-cutting Pack Overrides: mrpack `overrides/` extraction + non-mod file round-trip**
+   - **Short:** When importing or exporting `.mrpack` packs, honor Modrinth's `overrides/` (and `client-overrides/` / `server-overrides/`) directory convention and broaden the agora-pack JSON to round-trip non-mod files.
+   - **Detail:** `import_mrpack` in `mod_install.rs` now extracts override directories (`overrides/`, `client_overrides/`) alongside mod `.jar`s, applying the override sanitizer's whitelist: `config/`, `defaultconfigs/`, `resourcepacks/`, `shaderpacks/`, `datapacks/`, `kubejs/`. Sanitization runs inline in `import_mrpack` (the archive is already open in-memory, so `override_sanitizer::extract_overrides`'s zip-path API is not used directly). Banned extensions and Zip Slip protection apply.
+   - **Spec:** §7.2 (override sanitization), mrpack v1 (`overrides/`, `client-overrides/`, `server-overrides/`) .agora-pack/v1 (extend `mods[]` or add `files[]`).
+   - **Acceptance:** Importing a `.mrpack` that ships `overrides/config/foo.toml` extracts the file into `<instance>/config/foo.toml`; a malicious `overrides/../../evil.exe` is rejected; exporting an instance whose `config/` dir has files bundles them under `overrides/config/` in the resulting `.mrpack`.
 
 - [ ] **Dev Mode (sandboxed builds)** (§11)
   - **Short:** Detect Docker/Podman/Firecracker; clone + build mod .jar in sandbox with no network.

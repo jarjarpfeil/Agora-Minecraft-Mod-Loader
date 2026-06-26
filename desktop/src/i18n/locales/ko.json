@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "부티크형, 커뮤니티 선별 마인크래프트 모드 플랫폼."
+  },
+  "nav": {
+    "home": "홈",
+    "browse": "탐색",
+    "instances": "인스턴스",
+    "modrinth": "Modrinth",
+    "governance": "거버넌스",
+    "ai": "AI 채팅",
+    "settings": "설정"
+  },
+  "home": {
+    "installButton": "설치",
+    "browseButton": "모두 탐색",
+    "viewOnGithub": "GitHub에서보기"
+  },
+  "instances": {
+    "create": {
+      "title": "인스턴스 만들기",
+      "name": "인스턴스 이름",
+      "mcVersion": "Minecraft 버전",
+      "loader": "모드 로더",
+      "loaderVersion": "로더 버전",
+      "create": "만들기",
+      "cancel": "취소"
+    },
+    "empty": {
+      "title": "아직 인스턴스가 없습니다",
+      "description": "첫 번째 인스턴스를 만들어 시작하세요."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinth 프로젝트 검색…",
+    "uncuratedWarning": "이 프로젝트들은 선별된 Agora 레지스트리의 일부가 아닙니다.",
+    "install": "설치",
+    "createInstance": "인스턴스 만들기"
+  },
+  "settings": {
+    "title": "설정",
+    "appearance": "외관",
+    "network": "네트워크",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "정보"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agora에 오신 것을 환영합니다",
+      "description": "부티크형, 커뮤니티 선별 마인크래프트 모드 플랫폼.",
+      "getStarted": "시작하기"
+    }
+  },
+  "common": {
+    "loading": "로딩 중…",
+    "error": "오류",
+    "cancel": "취소",
+    "save": "저장",
+    "close": "닫기",
+    "refresh": "새로고침"
+  },
+  "language": {
+    "label": "언어",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

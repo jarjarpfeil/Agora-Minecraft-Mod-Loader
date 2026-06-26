@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "Boutique, topluluk tarafından derlenmiş Minecraft mod platformu."
+  },
+  "nav": {
+    "home": "Ana Sayfa",
+    "browse": "Gözat",
+    "instances": "Örnekler",
+    "modrinth": "Modrinth",
+    "governance": "Yönetim",
+    "ai": "AI Sohbet",
+    "settings": "Ayarlar"
+  },
+  "home": {
+    "installButton": "Yükle",
+    "browseButton": "Tümünü Gözat",
+    "viewOnGithub": "GitHub'da Görüntüle"
+  },
+  "instances": {
+    "create": {
+      "title": "Örnek Oluştur",
+      "name": "Örnek Adı",
+      "mcVersion": "Minecraft Sürümü",
+      "loader": "Mod Yükleyici",
+      "loaderVersion": "Yükleyici Sürümü",
+      "create": "Oluştur",
+      "cancel": "İptal"
+    },
+    "empty": {
+      "title": "Henüz örnek yok",
+      "description": "Başlamak için ilk örneğinizi oluşturun."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinth projelerini ara…",
+    "uncuratedWarning": "Bu projeler derlenmiş Agora kayıtlarının bir parçası değildir.",
+    "install": "Yükle",
+    "createInstance": "Örnek Oluştur"
+  },
+  "settings": {
+    "title": "Ayarlar",
+    "appearance": "Görünüm",
+    "network": "Ağ",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "Hakkında"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agora'ya Hoş Geldiniz",
+      "description": "Boutique, topluluk tarafından derlenmiş Minecraft mod platformu.",
+      "getStarted": "Başlayın"
+    }
+  },
+  "common": {
+    "loading": "Yükleniyor…",
+    "error": "Hata",
+    "cancel": "İptal",
+    "save": "Kaydet",
+    "close": "Kapat",
+    "refresh": "Yenile"
+  },
+  "language": {
+    "label": "Dil",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

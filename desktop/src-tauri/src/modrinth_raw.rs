@@ -18,6 +18,39 @@ use crate::mod_install::{available_disk_space_bytes, download_mod_bytes, MIN_DIS
 
 use serde::{Deserialize, Serialize};
 
+// --- Modrinth project full-details types ---
+
+#[derive(Debug, Deserialize)]
+struct ModrinthProjectFullRaw {
+    id: String,
+    title: String,
+    description: String,
+    body: Option<String>,
+    icon_url: Option<String>,
+    slug: Option<String>,
+    project_type: String,
+    license: Option<ModrinthLicenseRaw>,
+    updated: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModrinthLicenseRaw {
+    id: Option<String>,
+}
+
+/// Full project details returned from the Modrinth v2 project endpoint.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModrinthProjectFull {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub body: Option<String>,
+    pub icon_url: Option<String>,
+    pub page_url: Option<String>,
+    pub license_id: Option<String>,
+    pub source_updated_at: Option<String>,
+}
+
 /// Read the `modrinth_enabled` boolean setting from `local_state.db`.
 /// Returns `false` on any read failure (security default: off).
 pub fn is_modrinth_enabled(app: &tauri::AppHandle) -> bool {
@@ -503,6 +536,60 @@ async fn modrinth_get_json<T: serde::de::DeserializeOwned>(url: &str) -> Launche
             code: "ERR_NETWORK".to_string(),
             message: "Failed to parse Modrinth response.".to_string(),
         })
+}
+
+/// Fetch a single Modrinth project's full details including the body (markdown
+/// description) via `GET /v2/project/{id}`.
+pub async fn fetch_project_full(
+    app: &tauri::AppHandle,
+    project_id: &str,
+) -> LauncherResult<ModrinthProjectFull> {
+    require_modrinth_enabled(app)?;
+
+    let client = reqwest::Client::builder()
+        .user_agent("AgoraLauncher/1.0")
+        .build()
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_NETWORK".to_string(),
+            message: format!("Failed to build HTTP client: {e}"),
+        })?;
+
+    let url = format!(
+        "https://api.modrinth.com/v2/project/{pid}",
+        pid = urlencoding::encode(project_id),
+    );
+
+    let resp: ModrinthProjectFullRaw = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|_| LauncherError::NetworkOffline)?
+        .error_for_status()
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_MODRINTH_FETCH".to_string(),
+            message: format!("Failed to fetch project '{project_id}' from Modrinth.").to_string(),
+        })?
+        .json()
+        .await
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_MODRINTH_FETCH".to_string(),
+            message: "Failed to parse Modrinth project response.".to_string(),
+        })?;
+
+    let page_url = resp.slug.as_ref().map(|slug| {
+        format!("https://modrinth.com/{}/{}", resp.project_type, slug)
+    });
+
+    Ok(ModrinthProjectFull {
+        id: resp.id,
+        title: resp.title,
+        description: resp.description,
+        body: resp.body,
+        icon_url: resp.icon_url,
+        page_url,
+        license_id: resp.license.and_then(|l| l.id),
+        source_updated_at: resp.updated,
+    })
 }
 
 /// Resolve Modrinth-published per-file metadata (URL + sha1 + sha512 + size)

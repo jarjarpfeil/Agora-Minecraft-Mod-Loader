@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "Een boetiek, door de community samengesteld Minecraft mod platform."
+  },
+  "nav": {
+    "home": "Home",
+    "browse": "Bladeren",
+    "instances": "Instanties",
+    "modrinth": "Modrinth",
+    "governance": "Governance",
+    "ai": "AI-chat",
+    "settings": "Instellingen"
+  },
+  "home": {
+    "installButton": "Installeren",
+    "browseButton": "Alles bekijken",
+    "viewOnGithub": "Bekijken op GitHub"
+  },
+  "instances": {
+    "create": {
+      "title": "Instantie aanmaken",
+      "name": "Instantienaam",
+      "mcVersion": "Minecraft-versie",
+      "loader": "Mod-lader",
+      "loaderVersion": "Laderversie",
+      "create": "Aanmaken",
+      "cancel": "Annuleren"
+    },
+    "empty": {
+      "title": "Nog geen instanties",
+      "description": "Maak je eerste instantie om aan de slag te gaan."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinth-projecten doorzoeken…",
+    "uncuratedWarning": "Deze projecten maken geen deel uit van het samengestelde Agora-register.",
+    "install": "Installeren",
+    "createInstance": "Instantie aanmaken"
+  },
+  "settings": {
+    "title": "Instellingen",
+    "appearance": "Uiterlijk",
+    "network": "Netwerk",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "Over"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Welkom bij Agora",
+      "description": "Een boetiek, door de community samengesteld Minecraft mod platform.",
+      "getStarted": "Aan de slag"
+    }
+  },
+  "common": {
+    "loading": "Laden…",
+    "error": "Fout",
+    "cancel": "Annuleren",
+    "save": "Opslaan",
+    "close": "Sluiten",
+    "refresh": "Vernieuwen"
+  },
+  "language": {
+    "label": "Taal",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

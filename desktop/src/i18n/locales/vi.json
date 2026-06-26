@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "Nền tảng mod Minecraft được tuyển chọn bởi cộng đồng."
+  },
+  "nav": {
+    "home": "Trang chủ",
+    "browse": "Duyệt",
+    "instances": "Phiên bản",
+    "modrinth": "Modrinth",
+    "governance": "Quản trị",
+    "ai": "Trò chuyện AI",
+    "settings": "Cài đặt"
+  },
+  "home": {
+    "installButton": "Cài đặt",
+    "browseButton": "Duyệt tất cả",
+    "viewOnGithub": "Xem trên GitHub"
+  },
+  "instances": {
+    "create": {
+      "title": "Tạo phiên bản",
+      "name": "Tên phiên bản",
+      "mcVersion": "Phiên bản Minecraft",
+      "loader": "Trình tải mod",
+      "loaderVersion": "Phiên bản trình tải",
+      "create": "Tạo",
+      "cancel": "Hủy"
+    },
+    "empty": {
+      "title": "Chưa có phiên bản nào",
+      "description": "Tạo phiên bản đầu tiên để bắt đầu."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Tìm kiếm dự án Modrinth…",
+    "uncuratedWarning": "Các dự án này không thuộc cơ sở dữ liệu tuyển chọn của Agora.",
+    "install": "Cài đặt",
+    "createInstance": "Tạo phiên bản"
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "appearance": "Giao diện",
+    "network": "Mạng",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "Giới thiệu"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Chào mừng đến với Agora",
+      "description": "Nền tảng mod Minecraft được tuyển chọn bởi cộng đồng.",
+      "getStarted": "Bắt đầu"
+    }
+  },
+  "common": {
+    "loading": "Đang tải…",
+    "error": "Lỗi",
+    "cancel": "Hủy",
+    "save": "Lưu",
+    "close": "Đóng",
+    "refresh": "Làm mới"
+  },
+  "language": {
+    "label": "Ngôn ngữ",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

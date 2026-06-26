@@ -1,0 +1,38 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/e2e.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: desktop
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: desktop
+        run: npx playwright test
+        env:
+          CI: "true"

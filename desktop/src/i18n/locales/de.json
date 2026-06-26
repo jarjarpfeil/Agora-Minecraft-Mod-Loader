@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "Eine kuratierte, community-basierte Minecraft-Mod-Plattform."
+  },
+  "nav": {
+    "home": "Startseite",
+    "browse": "Durchsuchen",
+    "instances": "Instanzen",
+    "modrinth": "Modrinth",
+    "governance": "Governance",
+    "ai": "KI-Chat",
+    "settings": "Einstellungen"
+  },
+  "home": {
+    "installButton": "Installieren",
+    "browseButton": "Alle durchsuchen",
+    "viewOnGithub": "Auf GitHub anzeigen"
+  },
+  "instances": {
+    "create": {
+      "title": "Instanz erstellen",
+      "name": "Instanzname",
+      "mcVersion": "Minecraft-Version",
+      "loader": "Mod-Lader",
+      "loaderVersion": "Lader-Version",
+      "create": "Erstellen",
+      "cancel": "Abbrechen"
+    },
+    "empty": {
+      "title": "Noch keine Instanzen",
+      "description": "Erstellen Sie Ihre erste Instanz, um loszulegen."
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinth-Projekte durchsuchen…",
+    "uncuratedWarning": "Diese Projekte sind nicht Teil des kuratierten Agora-Registries.",
+    "install": "Installieren",
+    "createInstance": "Instanz erstellen"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "appearance": "Erscheinungsbild",
+    "network": "Netzwerk",
+    "ai": "KI",
+    "mcp": "MCP",
+    "about": "Über"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Willkommen bei Agora",
+      "description": "Eine kuratierte, community-basierte Minecraft-Mod-Plattform.",
+      "getStarted": "Loslegen"
+    }
+  },
+  "common": {
+    "loading": "Laden…",
+    "error": "Fehler",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "close": "Schließen",
+    "refresh": "Aktualisieren"
+  },
+  "language": {
+    "label": "Sprache",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

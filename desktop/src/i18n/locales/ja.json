@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "ブティック型、コミュニティ厳選のMinecraft modプラットフォーム。"
+  },
+  "nav": {
+    "home": "ホーム",
+    "browse": "閲覧",
+    "instances": "インスタンス",
+    "modrinth": "Modrinth",
+    "governance": "ガバナンス",
+    "ai": "AIチャット",
+    "settings": "設定"
+  },
+  "home": {
+    "installButton": "インストール",
+    "browseButton": "すべて閲覧",
+    "viewOnGithub": "GitHubで表示"
+  },
+  "instances": {
+    "create": {
+      "title": "インスタンスを作成",
+      "name": "インスタンス名",
+      "mcVersion": "Minecraftバージョン",
+      "loader": "Modローダー",
+      "loaderVersion": "ローダーバージョン",
+      "create": "作成",
+      "cancel": "キャンセル"
+    },
+    "empty": {
+      "title": "まだインスタンスがありません",
+      "description": "最初のインスタンスを作成して始めましょう。"
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "Modrinthプロジェクトを検索…",
+    "uncuratedWarning": "これらのプロジェクトは厳選されたAgoraレジストリの一部ではありません。",
+    "install": "インストール",
+    "createInstance": "インスタンスを作成"
+  },
+  "settings": {
+    "title": "設定",
+    "appearance": "外観",
+    "network": "ネットワーク",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "概要"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Agoraへようこそ",
+      "description": "ブティック型、コミュニティ厳選のMinecraft modプラットフォーム。",
+      "getStarted": "始める"
+    }
+  },
+  "common": {
+    "loading": "読み込み中…",
+    "error": "エラー",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "close": "閉じる",
+    "refresh": "更新"
+  },
+  "language": {
+    "label": "言語",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दੀ",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

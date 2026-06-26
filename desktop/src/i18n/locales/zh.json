@@ -1,0 +1,87 @@
+{
+  "app": {
+    "name": "Agora",
+    "tagline": "一个精品化、社区精选的 Minecraft 模组平台。"
+  },
+  "nav": {
+    "home": "主页",
+    "browse": "浏览",
+    "instances": "实例",
+    "modrinth": "Modrinth",
+    "governance": "治理",
+    "ai": "AI 聊天",
+    "settings": "设置"
+  },
+  "home": {
+    "installButton": "安装",
+    "browseButton": "浏览全部",
+    "viewOnGithub": "在 GitHub 上查看"
+  },
+  "instances": {
+    "create": {
+      "title": "创建实例",
+      "name": "实例名称",
+      "mcVersion": "Minecraft 版本",
+      "loader": "模组加载器",
+      "loaderVersion": "加载器版本",
+      "create": "创建",
+      "cancel": "取消"
+    },
+    "empty": {
+      "title": "暂无实例",
+      "description": "创建您的第一个实例以开始使用。"
+    }
+  },
+  "modrinth": {
+    "searchPlaceholder": "搜索 Modrinth 项目…",
+    "uncuratedWarning": "这些项目不属于 Agora 精选注册表。",
+    "install": "安装",
+    "createInstance": "创建实例"
+  },
+  "settings": {
+    "title": "设置",
+    "appearance": "外观",
+    "network": "网络",
+    "ai": "AI",
+    "mcp": "MCP",
+    "about": "关于"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "欢迎使用 Agora",
+      "description": "一个精品化、社区精选的 Minecraft 模组平台。",
+      "getStarted": "开始使用"
+    }
+  },
+  "common": {
+    "loading": "加载中…",
+    "error": "错误",
+    "cancel": "取消",
+    "save": "保存",
+    "close": "关闭",
+    "refresh": "刷新"
+  },
+  "language": {
+    "label": "语言",
+    "en": "English",
+    "es": "Español",
+    "zh": "中文",
+    "hi": "हिन्दी",
+    "bn": "বাংলা",
+    "pt": "Português",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ar": "العربية",
+    "de": "Deutsch",
+    "ko": "한국어",
+    "tr": "Türkçe",
+    "vi": "Tiếng Việt",
+    "fr": "Français",
+    "ta": "தமிழ்",
+    "te": "తెలుగు",
+    "ur": "اردو",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "pl": "Polski"
+  }
+}

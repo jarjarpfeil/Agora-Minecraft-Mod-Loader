@@ -315,6 +315,29 @@ function CreateInstanceDialog({
     };
   }, []);
 
+  // Re-filter MC versions when the loader changes.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!loader) return;
+      try {
+        const filtered = await listManifestMcVersions(loader);
+        if (cancelled) return;
+        if (filtered.length > 0) {
+          setMcVersions(filtered);
+          if (!filtered.includes(mcVersion)) {
+            setMcVersion(filtered[0]);
+          }
+        }
+      } catch {
+        // Fetch failure — keep existing list (graceful)
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loader]);
+
   // Progress event listener during creation
   useEffect(() => {
     if (!busy) return;

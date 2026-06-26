@@ -63,6 +63,10 @@ jobs:
           AGORA_OAUTH_CLIENT_ID: ${{ secrets.AGORA_OAUTH_CLIENT_ID }}
           AGORA_REGISTRY_REPO: ${{ github.repository }}
           AGORA_REGISTRY_PUBKEY: ${{ secrets.AGORA_REGISTRY_PUBKEY }}
+          # Updater signing key — required for signed auto-update checks.
+          # Generate once locally with: npx @tauri-apps/cli signer generate -w ~/.tauri/agora.key
+          # Copy the PEM output to GitHub Secrets > TAURI_SIGNING_PRIVATE_KEY
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           projectPath: desktop
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
