@@ -156,10 +156,40 @@ export function Browse({ onSelectMod, onOpenModrinth }: { onSelectMod?: (id: str
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="text-2xl font-bold mb-2">Browse</h2>
+        <div className="flex items-center gap-3 mb-2">
+          <h2 className="text-2xl font-bold">Browse</h2>
+          <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 px-2 py-0.5 text-xs font-medium uppercase tracking-wide">
+            Preview
+          </span>
+        </div>
         <p className="text-[rgb(var(--muted))]">
           Curated mods, packs, shaders, resource packs, and more.
         </p>
+      </section>
+
+      <section className="rounded-xl border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4">
+        <div className="flex items-start gap-3">
+          <span aria-hidden className="text-xl mt-0.5">🌱</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">
+              Help grow the community registry
+            </p>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+              Agora's curated catalog is built by the community, for the community.
+              We're assembling links to our favorite mods — ideally through
+              alternative hosting options like GitHub Releases rather than
+              centralized platforms. Every contribution counts.
+            </p>
+            <a
+              href="https://github.com/jarjarpfeil/Agora-Minecraft-Mod-Loader"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block text-xs font-medium text-blue-700 dark:text-blue-200 hover:underline"
+            >
+              Contribute on GitHub ↗
+            </a>
+          </div>
+        </div>
       </section>
 
       <div className="flex flex-col lg:flex-row gap-4">

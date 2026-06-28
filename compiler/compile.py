@@ -1827,7 +1827,11 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
 
     sha256 = validate_sha256(item.get("sha256"))
     gallery = item.get("gallery_urls", [])
-    compatible_versions = item.get("compatible_versions") or default_compatible_versions(item)
+    compatible_versions = (
+        item.get("compatible_versions")
+        or item.get("_hydrated_compatible_versions")
+        or default_compatible_versions(item)
+    )
 
     # Pass 2: pull computed social metrics when present. Immune items
     # (§3.1 step 9) bypass score evaluation — upvotes/downvotes/net_score
@@ -2153,6 +2157,84 @@ def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
             ]
             if cats:
                 item["_hydrated_categories"] = cats
+
+
+def _hydrate_modrinth_versions(items: list[dict[str, Any]]) -> None:
+    """Batch-query the Modrinth version API to populate compatible_versions.
+
+    For items with a ``modrinth_id`` that lack ``compatible_versions`` in the
+    manifest, calls ``GET /v2/project/{id}/version`` and transforms the
+    response into the internal format:
+
+        [{mc_version, loader, mod_version}, ...]
+
+    Results are stored on the item dict as ``_hydrated_compatible_versions``
+    so ``insert_registry_item`` can use them as a fallback.
+
+    Network failures degrade gracefully with a warning; items keep whatever
+    the manifest or default provides.
+    """
+    # Collect items that need version hydration.
+    to_hydrate: list[tuple[int, dict[str, Any], str]] = []
+    for idx, item in enumerate(items):
+        strategy = item.get("download_strategy", "")
+        if strategy == "modrinth_id":
+            mid = item.get("modrinth_id") or item.get("source_identifier", "")
+        else:
+            mid = item.get("modrinth_id", "")
+        if not mid:
+            continue
+        # Skip if manifest already provides compatible_versions.
+        if item.get("compatible_versions"):
+            continue
+        to_hydrate.append((idx, item, mid))
+
+    if not to_hydrate:
+        return
+
+    # Dedupe by modrinth_id; each unique ID needs one version request.
+    seen_ids: set[str] = set()
+    unique_ids: list[str] = []
+    for _idx, _item, mid in to_hydrate:
+        if mid not in seen_ids:
+            seen_ids.add(mid)
+            unique_ids.append(mid)
+
+    # Batch-fetch versions per project.
+    hydrated: dict[str, list[dict[str, str]]] = {}
+    for mid in unique_ids:
+        try:
+            resp = requests.get(
+                f"https://api.modrinth.com/v2/project/{mid}/version",
+                headers={"User-Agent": _MODRINTH_USER_AGENT},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            versions = resp.json()
+            # Transform into compatible_versions format.
+            compatible: list[dict[str, str]] = []
+            for ver in versions:
+                game_versions = ver.get("game_versions") or []
+                loaders = ver.get("loaders") or []
+                version_number = ver.get("version_number", "")
+                for mc_ver in game_versions:
+                    for loader in loaders:
+                        compatible.append({
+                            "mc_version": mc_ver,
+                            "loader": loader,
+                            "mod_version": version_number,
+                        })
+            hydrated[mid] = compatible
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Modrinth version hydration failed for project '%s': %s",
+                mid, exc,
+            )
+
+    # Apply hydrated versions back to items.
+    for _idx, item, mid in to_hydrate:
+        if mid in hydrated:
+            item["_hydrated_compatible_versions"] = hydrated[mid]
 
 
 def insert_pack_mods(conn: sqlite3.Connection, pack_id: str, mods: list[dict[str, Any]]) -> None:
@@ -2552,6 +2634,10 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
     # Hydrate Modrinth metadata (description, body, icon, gallery, page URL,
     # license, updated) for modrinth_id items (in-place, with override precedence).
     _hydrate_modrinth_metadata([item for _, item in all_items])
+
+    # Hydrate compatible_versions from Modrinth version API for items that
+    # lack it in the manifest (in-place, with manifest/override precedence).
+    _hydrate_modrinth_versions([item for _, item in all_items])
 
     # Hydrate GitHub social metrics (§3.1 step 3; Pass 1: raw reactions only
     # — trust filter, Sybil weighting, velocity circuit breaker, immune

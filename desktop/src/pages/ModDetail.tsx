@@ -26,6 +26,11 @@ import {
   type ModReview,
   type FlagRateLimit,
   type InstallPlan,
+  fetchModrinthProject,
+  isModrinthEnabled,
+  type RawModrinthVersionCandidate,
+  listRawModrinthVersions,
+  installRawModrinth,
 } from '../lib/tauri';
 
 type CompatibleVersionEntry = Record<string, unknown> | string;
@@ -129,6 +134,24 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   const [flaggingId, setFlaggingId] = useState<number | null>(null);
   const [flagResult, setFlagResult] = useState<string | null>(null);
   const [flagError, setFlagError] = useState<string | null>(null);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'about' | 'versions' | 'gallery' | 'links' | 'reviews'>('about');
+
+  // Versions tab: live Modrinth version list + selected version detail
+  const [modrinthVersions, setModrinthVersions] = useState<RawModrinthVersionCandidate[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<RawModrinthVersionCandidate | null>(null);
+  // Versions tab install: instance picker
+  const [versionsTabInstances, setVersionsTabInstances] = useState<InstanceRow[]>([]);
+  const [versionsTabInstanceId, setVersionsTabInstanceId] = useState<string | null>(null);
+  const [versionInstallPhase, setVersionInstallPhase] = useState<'idle' | 'installing' | 'done' | 'error'>('idle');
+  const [versionInstallMsg, setVersionInstallMsg] = useState<string | null>(null);
+
+  // Runtime Modrinth gallery fallback
+  const [runtimeGallery, setRuntimeGallery] = useState<string[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
 
   // Inline create-instance state (inside install flow)
   const [showCreateInline, setShowCreateInline] = useState(false);
@@ -283,6 +306,81 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     return () => { cancelled = true; };
   }, [item]);
 
+  // Runtime gallery fallback: fetch from Modrinth if the registry has no gallery.
+  useEffect(() => {
+    if (!item) return;
+    // Only fetch if the registry has no gallery images.
+    let hasGallery = false;
+    if (item.gallery_urls_json) {
+      try {
+        const parsed = JSON.parse(item.gallery_urls_json);
+        hasGallery = Array.isArray(parsed) && parsed.some((u: unknown) => typeof u === 'string');
+      } catch {
+        // parse failure — treat as no gallery
+      }
+    }
+    if (hasGallery) return;
+    if (!item.modrinth_id) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const enabled = await isModrinthEnabled();
+        if (cancelled || !enabled) return;
+        setGalleryLoading(true);
+        const project = await fetchModrinthProject(item.modrinth_id!);
+        if (cancelled) return;
+        setRuntimeGallery(project.gallery_urls ?? []);
+      } catch {
+        // Modrinth fetch failure (disabled, network, etc.) — silent.
+      } finally {
+        if (!cancelled) setGalleryLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item]);
+
+  // Fetch Modrinth versions for the Versions tab (with changelogs).
+  // Only when the mod has a modrinth_id and Modrinth is enabled.
+  useEffect(() => {
+    if (!item?.modrinth_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const enabled = await isModrinthEnabled();
+        if (cancelled) return;
+        if (!enabled) {
+          setVersionsError('Enable Modrinth integration in Settings to view live versions.');
+          return;
+        }
+        setVersionsLoading(true);
+        setVersionsError(null);
+        const versions = await listRawModrinthVersions(null, item.modrinth_id!);
+        if (cancelled) return;
+        setModrinthVersions(versions);
+      } catch (e) {
+        if (!cancelled) setVersionsError(formatError(e));
+      } finally {
+        if (!cancelled) setVersionsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item]);
+
+  // Fetch instances for the versions tab install picker.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await listInstances();
+        if (!cancelled) setVersionsTabInstances(all);
+      } catch {
+        // Silent — the picker will simply be empty.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -307,6 +405,18 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
 
   const curatorNotes = (item as CuratorNotesRegistryItem).curator_notes ?? null;
   const compatibleVersions = parseCompatibleVersions(item.compatible_versions_json);
+  const galleryUrls: string[] = (() => {
+    if (!item.gallery_urls_json) return [];
+    try {
+      const parsed = JSON.parse(item.gallery_urls_json);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((url): url is string => typeof url === 'string' && url.startsWith('https://'));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  })();
   const showIcon = item.icon_url != null && item.icon_url.startsWith('https://');
   const velocityLabel =
     item.velocity > 0 ? `▲ ${item.velocity.toFixed(1)}` : item.velocity < 0 ? `▼ ${item.velocity.toFixed(1)}` : '0.0';
@@ -462,6 +572,26 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       setFlagError(formatError(e));
     } finally {
       setFlaggingId(null);
+    }
+  };
+
+  // Versions tab install handler
+  const handleInstallVersionFromTab = async () => {
+    if (!selectedVersion || !versionsTabInstanceId || !item?.modrinth_id) return;
+    setVersionInstallPhase('installing');
+    setVersionInstallMsg(null);
+    try {
+      await installRawModrinth(
+        versionsTabInstanceId,
+        item.modrinth_id,
+        selectedVersion,
+        item.content_type === 'pack' ? 'modpack' : 'mod',
+      );
+      setVersionInstallPhase('done');
+      setVersionInstallMsg(`Installed ${selectedVersion.filename}.`);
+    } catch (e) {
+      setVersionInstallPhase('error');
+      setVersionInstallMsg(formatError(e));
     }
   };
 
@@ -838,161 +968,374 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
         )}
       </section>
 
-      {curatorNotes && (
-        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
-          <h3 className="font-semibold text-sm mb-2">Curator Notes</h3>
-          <p className="text-sm whitespace-pre-wrap text-[rgb(var(--muted))]">{curatorNotes}</p>
-        </section>
-      )}
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
+        {([
+          { key: 'about' as const, label: 'About' },
+          { key: 'versions' as const, label: 'Versions' },
+          { key: 'gallery' as const, label: 'Gallery' },
+          { key: 'links' as const, label: 'Links' },
+          { key: 'reviews' as const, label: 'Reviews' },
+        ] as const).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400'
+                : 'border-transparent text-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))] hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      {item.body_markdown && (
-        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm">About</h3>
-            <span className="text-[10px] uppercase tracking-wide text-[rgb(var(--muted))]">
-              Source: upstream
-            </span>
-          </div>
-          {/*
-            body_markdown is community-authored content baked into the signed
-            registry.db by the nightly compiler. It is rendered with
-            react-markdown + rehype-raw + rehype-sanitize: rehype-raw parses
-            upstream HTML (e.g. Modrinth <details>/<summary>, tables) into the
-            hast tree, then rehype-sanitize strips <script>, on* handlers,
-            javascript:/data: URLs, <iframe>, and `style` attributes via an
-            allowlist BEFORE React renders — so no unsafe nodes ever reach the
-            DOM. This satisfies the AGENTS.md prohibition on
-            dangerouslySetInnerHTML for community content. Links open in a new
-            tab with safe rel attributes.
-          */}
-          <div className="prose prose-sm dark:prose-invert max-w-none text-[rgb(var(--foreground))]">
-            <ReactMarkdown
-              rehypePlugins={[[rehypeRaw, { passThrough: ['html'] }], [rehypeSanitize, SANITIZE_SCHEMA]]}
-              components={{
-                a: ({ node, ...props }) => (
-                  <a {...props} target="_blank" rel="noopener noreferrer" />
-                ),
-                img: ({ node, ...props }) => (
-                  <img {...props} loading="lazy" className="max-w-full h-auto rounded-lg" />
-                ),
-              }}
-            >
-              {item.body_markdown}
-            </ReactMarkdown>
-          </div>
-        </section>
-      )}
-
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
-        <h3 className="font-semibold text-sm mb-3">Compatible Versions</h3>
-        {compatibleVersions.length === 0 ? (
-          <p className="text-sm text-[rgb(var(--muted))]">No compatible version information available.</p>
-        ) : (
-          <ul className="space-y-1.5 text-sm">
-            {compatibleVersions.map((entry, index) => (
-              <li
-                key={index}
-                className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 break-words"
-              >
-                {renderVersionEntry(entry)}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
-        <h3 className="font-semibold text-sm mb-3">Reviews</h3>
-        {item.allow_comments ? (
-          !authed ? (
-            <>
-              <p className="text-sm text-[rgb(var(--muted))] mb-2">
-                Reviews are disabled for this mod.
-              </p>
-              <p className="text-xs text-[rgb(var(--muted))]">
-                Sign in to flag reviews.
-              </p>
-            </>
-          ) : reviewsLoading ? (
-            <div className="text-center py-2">
-              <p className="text-sm text-[rgb(var(--muted))]">Loading reviews…</p>
+      {/* Tab content */}
+      {activeTab === 'about' && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4 space-y-4">
+          {curatorNotes && (
+            <div>
+              <h3 className="font-semibold text-sm mb-2">Curator Notes</h3>
+              <p className="text-sm whitespace-pre-wrap text-[rgb(var(--muted))]">{curatorNotes}</p>
             </div>
-          ) : reviews.length === 0 ? (
-            <p className="text-sm text-[rgb(var(--muted))]">
-              No community reviews yet.
-            </p>
-          ) : (
-            <>
-              {flagResult && (
-                <p className="text-sm text-green-600 dark:text-green-400 mb-3">
-                  Flag submitted.{' '}
-                  <a
-                    href={flagResult}
-                    onClick={(e) => {
-                      if (!flagResult.startsWith('https://')) {
-                        e.preventDefault();
-                      }
-                    }}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline"
-                  >
-                    View admin alert ↗
-                  </a>
-                </p>
-              )}
-              {flagError && (
-                <p className="text-sm text-red-600 dark:text-red-300 mb-3">
-                  {flagError}
-                </p>
-              )}
-              <ul className="space-y-3">
-                {reviews.map((review) => {
-                  const rl = rateLimit;
-                  const disabledFlag = rl && !rl.can_flag;
-                  const resetTime = disabledFlag
-                    ? new Date(
-                        rl.reset_hour_at_unix * 1000,
-                      ).toLocaleString()
-                    : '';
-                  return (
-                    <li
-                      key={review.issue_number}
-                      className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-[rgb(var(--muted))]">
-                          {review.author ?? 'Anonymous'}
-                        </span>
-                        {review.created_at && (
-                          <span className="text-xs text-[rgb(var(--muted))]">
-                            {new Date(review.created_at).toLocaleString()}
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleFlagReview(review)}
-                          disabled={disabledFlag || flaggingId === review.issue_number}
-                          title={disabledFlag ? `Flag limit reached — resets at ${resetTime}` : ''}
-                          className="text-xs text-[rgb(var(--muted))] hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          🚩 Flag
-                        </button>
+          )}
+          {item.body_markdown && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm">About</h3>
+                <span className="text-[10px] uppercase tracking-wide text-[rgb(var(--muted))]">
+                  Source: upstream
+                </span>
+              </div>
+              {/*
+                body_markdown is community-authored content baked into the signed
+                registry.db by the nightly compiler. It is rendered with
+                react-markdown + rehype-raw + rehype-sanitize: rehype-raw parses
+                upstream HTML (e.g. Modrinth <details>/<summary>, tables) into the
+                hast tree, then rehype-sanitize strips <script>, on* handlers,
+                javascript:/data: URLs, <iframe>, and `style` attributes via an
+                allowlist BEFORE React renders — so no unsafe nodes ever reach the
+                DOM. This satisfies the AGENTS.md prohibition on
+                dangerouslySetInnerHTML for community content. Links open in a new
+                tab with safe rel attributes.
+              */}
+              <div className="prose prose-sm dark:prose-invert max-w-none text-[rgb(var(--foreground))]">
+                <ReactMarkdown
+                  rehypePlugins={[[rehypeRaw, { passThrough: ['html'] }], [rehypeSanitize, SANITIZE_SCHEMA]]}
+                  components={{
+                    a: ({ node, ...props }) => (
+                      <a {...props} target="_blank" rel="noopener noreferrer" />
+                    ),
+                    img: ({ node, ...props }) => (
+                      <img {...props} loading="lazy" className="max-w-full h-auto rounded-lg" />
+                    ),
+                  }}
+                >
+                  {item.body_markdown}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+          {!curatorNotes && !item.body_markdown && (
+            <p className="text-sm text-[rgb(var(--muted))]">No information available.</p>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'versions' && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
+          <h3 className="font-semibold text-sm mb-3">Versions</h3>
+
+          {item.modrinth_id ? (
+            versionsLoading ? (
+              <p className="text-sm text-[rgb(var(--muted))]">Loading versions…</p>
+            ) : versionsError ? (
+              <p className="text-sm text-[rgb(var(--muted))]">{versionsError}</p>
+            ) : modrinthVersions.length === 0 ? (
+              <p className="text-sm text-[rgb(var(--muted))]">No versions published.</p>
+            ) : (
+              <div className="flex flex-col lg:flex-row gap-4">
+                {/* Versions table */}
+                <div className="flex-1 overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-200 dark:border-gray-700 text-left text-xs text-[rgb(var(--muted))]">
+                        <th className="py-2 pr-3 font-medium">Version</th>
+                        <th className="py-2 pr-3 font-medium">MC Versions</th>
+                        <th className="py-2 pr-3 font-medium">Loaders</th>
+                        <th className="py-2 pr-3 font-medium">Released</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modrinthVersions.map((v) => {
+                        const isSelected = selectedVersion?.version_id === v.version_id;
+                        return (
+                          <tr
+                            key={v.version_id}
+                            onClick={() => setSelectedVersion(v)}
+                            className={`cursor-pointer border-b border-gray-100 dark:border-gray-800 transition-colors ${
+                              isSelected
+                                ? 'bg-brand-50 dark:bg-brand-900/20'
+                                : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                            }`}
+                          >
+                            <td className="py-2 pr-3 font-medium break-all">{v.name || v.version}</td>
+                            <td className="py-2 pr-3 text-xs text-[rgb(var(--muted))]">{v.mc_versions.join(', ') || '—'}</td>
+                            <td className="py-2 pr-3 text-xs text-[rgb(var(--muted))]">{v.loaders.join(', ') || '—'}</td>
+                            <td className="py-2 pr-3 text-xs text-[rgb(var(--muted))]">{v.release_date ? v.release_date.slice(0, 10) : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Selected version detail panel */}
+                {selectedVersion && (
+                  <div className="lg:w-80 lg:flex-shrink-0 rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+                    <div>
+                      <p className="text-xs text-[rgb(var(--muted))]">Selected version</p>
+                      <p className="font-semibold text-sm break-all">{selectedVersion.name || selectedVersion.version}</p>
+                    </div>
+                    <div className="text-xs text-[rgb(var(--muted))] space-y-1">
+                      <p>Version: {selectedVersion.version}</p>
+                      <p className="break-all">File: {selectedVersion.filename}</p>
+                      <p>MC: {selectedVersion.mc_versions.join(', ') || '—'}</p>
+                      <p>Loaders: {selectedVersion.loaders.join(', ') || '—'}</p>
+                      {selectedVersion.release_date && (
+                        <p>Released: {selectedVersion.release_date.slice(0, 10)}</p>
+                      )}
+                    </div>
+                    {selectedVersion.changelog && (
+                      <div>
+                        <p className="text-xs font-medium mb-1">Changelog</p>
+                        <div className="prose prose-sm dark:prose-invert max-w-none max-h-48 overflow-y-auto text-[rgb(var(--foreground))] text-xs">
+                          <ReactMarkdown
+                            rehypePlugins={[[rehypeRaw, { passThrough: ['html'] }], [rehypeSanitize, SANITIZE_SCHEMA]]}
+                            components={{
+                              a: ({ node, ...props }) => (
+                                <a {...props} target="_blank" rel="noopener noreferrer" />
+                              ),
+                            }}
+                          >
+                            {selectedVersion.changelog}
+                          </ReactMarkdown>
+                        </div>
                       </div>
-                      <p className="text-sm mt-1 whitespace-pre-wrap text-[rgb(var(--foreground))]">
-                        {review.text}
-                      </p>
-                    </li>
-                  );
-                })}
+                    )}
+
+                    {/* Install controls */}
+                    <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <label className="block text-xs font-medium mb-1">Install to instance</label>
+                      <select
+                        value={versionsTabInstanceId ?? ''}
+                        onChange={(e) => setVersionsTabInstanceId(e.target.value || null)}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent px-2 py-1.5 text-xs mb-2"
+                      >
+                        <option value="">Choose an instance…</option>
+                        {versionsTabInstances.map((inst) => (
+                          <option key={inst.instance_id} value={inst.instance_id}>
+                            {inst.name} ({inst.loader} · MC {inst.minecraft_version})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleInstallVersionFromTab}
+                        disabled={!versionsTabInstanceId || versionInstallPhase === 'installing'}
+                        className="w-full rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                      >
+                        {versionInstallPhase === 'installing' ? 'Installing…' : 'Install this version'}
+                      </button>
+                      {versionInstallPhase === 'done' && versionInstallMsg && (
+                        <p className="mt-2 text-xs text-green-600 dark:text-green-400">{versionInstallMsg}</p>
+                      )}
+                      {versionInstallPhase === 'error' && versionInstallMsg && (
+                        <p className="mt-2 text-xs text-red-600 dark:text-red-300">{versionInstallMsg}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          ) : (
+            // Fallback: no modrinth_id; show the curated compatible_versions_json list
+            compatibleVersions.length === 0 ? (
+              <p className="text-sm text-[rgb(var(--muted))]">No version information available.</p>
+            ) : (
+              <ul className="space-y-1.5 text-sm">
+                {compatibleVersions.map((entry, index) => (
+                  <li
+                    key={index}
+                    className="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-1.5 break-words"
+                  >
+                    {renderVersionEntry(entry)}
+                  </li>
+                ))}
               </ul>
-            </>
-          )
-        ) : (
-          <p className="text-sm text-[rgb(var(--muted))]">
-            Reviews are disabled for this mod.
-          </p>
-        )}
-      </section>
+            )
+          )}
+        </section>
+      )}
+
+      {activeTab === 'gallery' && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
+          <h3 className="font-semibold text-sm mb-3">Gallery</h3>
+          {(() => {
+            const urls = galleryUrls.length > 0 ? galleryUrls : runtimeGallery;
+            if (urls.length === 0) {
+              return galleryLoading ? (
+                <p className="text-sm text-[rgb(var(--muted))]">Loading gallery…</p>
+              ) : (
+                <p className="text-sm text-[rgb(var(--muted))]">No gallery images available.</p>
+              );
+            }
+            return (
+              <div className="grid grid-cols-2 gap-3">
+                {urls.map((url, index) => (
+                  <img
+                    key={index}
+                    src={url}
+                    alt={`${item.name} screenshot ${index + 1}`}
+                    className="rounded-lg border border-gray-200 dark:border-gray-700 w-full h-40 object-cover"
+                    loading="lazy"
+                  />
+                ))}
+              </div>
+            );
+          })()}
+        </section>
+      )}
+
+      {activeTab === 'links' && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
+          <h3 className="font-semibold text-sm mb-3">External Links</h3>
+          <ul className="space-y-2 text-sm">
+            {(item.page_url || item.modrinth_id) && (
+              <li>
+                <a
+                  href={item.page_url || `https://modrinth.com/${item.content_type === 'pack' ? 'project' : 'mod'}/${item.modrinth_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-600 hover:underline dark:text-brand-400 flex items-center gap-1"
+                >
+                  View on Modrinth ↗
+                </a>
+              </li>
+            )}
+            {item.download_strategy === 'github_release' && item.source_identifier && !item.source_identifier.includes('://') && item.source_identifier.includes('/') && (
+              <li>
+                <a
+                  href={`https://github.com/${item.source_identifier}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-600 hover:underline dark:text-brand-400 flex items-center gap-1"
+                >
+                  View on GitHub ↗
+                </a>
+              </li>
+            )}
+            {!item.page_url && !item.modrinth_id && !(item.download_strategy === 'github_release' && item.source_identifier && !item.source_identifier.includes('://') && item.source_identifier.includes('/')) && (
+              <p className="text-sm text-[rgb(var(--muted))]">No external links available.</p>
+            )}
+          </ul>
+        </section>
+      )}
+
+      {activeTab === 'reviews' && (
+        <section className="rounded-xl border border-gray-200 dark:border-gray-700 surface p-4">
+          <h3 className="font-semibold text-sm mb-3">Reviews</h3>
+          {item.allow_comments ? (
+            !authed ? (
+              <>
+                <p className="text-sm text-[rgb(var(--muted))] mb-2">
+                  Reviews are disabled for this mod.
+                </p>
+                <p className="text-xs text-[rgb(var(--muted))]">
+                  Sign in to flag reviews.
+                </p>
+              </>
+            ) : reviewsLoading ? (
+              <div className="text-center py-2">
+                <p className="text-sm text-[rgb(var(--muted))]">Loading reviews…</p>
+              </div>
+            ) : reviews.length === 0 ? (
+              <p className="text-sm text-[rgb(var(--muted))]">
+                No community reviews yet.
+              </p>
+            ) : (
+              <>
+                {flagResult && (
+                  <p className="text-sm text-green-600 dark:text-green-400 mb-3">
+                    Flag submitted.{' '}
+                    <a
+                      href={flagResult}
+                      onClick={(e) => {
+                        if (!flagResult.startsWith('https://')) {
+                          e.preventDefault();
+                        }
+                      }}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      View admin alert ↗
+                    </a>
+                  </p>
+                )}
+                {flagError && (
+                  <p className="text-sm text-red-600 dark:text-red-300 mb-3">
+                    {flagError}
+                  </p>
+                )}
+                <ul className="space-y-3">
+                  {reviews.map((review) => {
+                    const rl = rateLimit;
+                    const disabledFlag = rl && !rl.can_flag;
+                    const resetTime = disabledFlag
+                      ? new Date(
+                          rl.reset_hour_at_unix * 1000,
+                        ).toLocaleString()
+                      : '';
+                    return (
+                      <li
+                        key={review.issue_number}
+                        className="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-[rgb(var(--muted))]">
+                            {review.author ?? 'Anonymous'}
+                          </span>
+                          {review.created_at && (
+                            <span className="text-xs text-[rgb(var(--muted))]">
+                              {new Date(review.created_at).toLocaleString()}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleFlagReview(review)}
+                            disabled={disabledFlag || flaggingId === review.issue_number}
+                            title={disabledFlag ? `Flag limit reached — resets at ${resetTime}` : ''}
+                            className="text-xs text-[rgb(var(--muted))] hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            🚩 Flag
+                          </button>
+                        </div>
+                        <p className="text-sm mt-1 whitespace-pre-wrap text-[rgb(var(--foreground))]">
+                          {review.text}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )
+          ) : (
+            <p className="text-sm text-[rgb(var(--muted))]">
+              Reviews are disabled for this mod.
+            </p>
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -68,7 +68,7 @@ export default function App() {
         const m = await getSetting('modrinth_enabled');
         if (!cancelled) setModrinthEnabled(m === true);
         const ai = await getSetting('ai_chat_enabled');
-        if (!cancelled) setAiChatEnabled(ai === 'true');
+        if (!cancelled) setAiChatEnabled(ai === true);
       } catch {
         if (!cancelled) setModrinthEnabled(false);
         if (!cancelled) setAiChatEnabled(false);

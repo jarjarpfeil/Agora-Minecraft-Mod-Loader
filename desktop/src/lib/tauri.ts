@@ -404,6 +404,7 @@ export interface RawModrinthVersionCandidate {
   loaders: string[];
   release_date: string | null;
   primary: boolean;
+  changelog: string | null;
 }
 
 export const isModrinthEnabled = () => invoke<boolean>('is_modrinth_enabled');
@@ -436,6 +437,7 @@ export interface ModrinthProjectFull {
     page_url: string | null;
     license_id: string | null;
     source_updated_at: string | null;
+    gallery_urls: string[];
 }
 
 export const fetchModrinthProject = (projectId: string) =>

@@ -22,7 +22,6 @@
   ],
   "curator_note": "Lightweight client-side minimap with waypoints. A solid vanilla-plus navigation aid; disable for a purist experience.",
   "icon_url": "https://cdn.modrinth.com/data/1bokaNcj/354080f65407e49f486fcf9c4580e82c45ae63b8_96.webp",
-  "gallery_urls": [],
   "governance": {
     "immune": false,
     "override_justification": null,

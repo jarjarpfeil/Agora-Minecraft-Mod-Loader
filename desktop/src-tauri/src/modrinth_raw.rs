@@ -31,11 +31,20 @@ struct ModrinthProjectFullRaw {
     project_type: String,
     license: Option<ModrinthLicenseRaw>,
     updated: Option<String>,
+    #[serde(default)]
+    gallery: Option<Vec<ModrinthGalleryImageRaw>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ModrinthLicenseRaw {
     id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModrinthGalleryImageRaw {
+    url: Option<String>,
+    #[serde(default)]
+    featured: bool,
 }
 
 /// Full project details returned from the Modrinth v2 project endpoint.
@@ -49,6 +58,7 @@ pub struct ModrinthProjectFull {
     pub page_url: Option<String>,
     pub license_id: Option<String>,
     pub source_updated_at: Option<String>,
+    pub gallery_urls: Vec<String>,
 }
 
 /// Read the `modrinth_enabled` boolean setting from `local_state.db`.
@@ -252,6 +262,8 @@ struct ModrinthVersion {
     game_versions: Option<Vec<String>>,
     loaders: Option<Vec<String>>,
     files: Vec<ModrinthVersionFile>,
+    #[serde(default)]
+    changelog: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -312,6 +324,7 @@ pub struct RawModrinthVersionCandidate {
     pub loaders: Vec<String>,
     pub release_date: Option<String>,
     pub primary: bool,
+    pub changelog: Option<String>,
 }
 
 /// Live Modrinth search with facets, sorting and offset pagination.
@@ -589,6 +602,12 @@ pub async fn fetch_project_full(
         page_url,
         license_id: resp.license.and_then(|l| l.id),
         source_updated_at: resp.updated,
+        gallery_urls: resp
+            .gallery
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|g| g.url.filter(|u| u.starts_with("https://")))
+            .collect(),
     })
 }
 
@@ -750,6 +769,7 @@ pub async fn list_raw_modrinth_versions(
                 loaders: v.loaders.unwrap_or_default().into_iter().map(|l| l.to_lowercase()).collect(),
                 release_date: v.date_published,
                 primary: primary_file.map(|f| f.primary).unwrap_or(false),
+                changelog: v.changelog,
             }
         })
         .filter(|c| !c.download_url.is_empty())
