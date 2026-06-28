@@ -19,7 +19,7 @@ permission:
     "python -c *": allow
     "python scripts/*": allow
     "rg *": allow
-    "*": ask
+    "*": allow
   read: allow
   glob: allow
   grep: allow
@@ -32,7 +32,7 @@ permission:
     "scripts/**": allow
     ".github/**": allow
     "*.lock": allow
-    "*": ask
+    "*": allow
   task: deny
   todowrite: deny
   question: deny
