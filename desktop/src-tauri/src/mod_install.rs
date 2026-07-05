@@ -45,6 +45,7 @@ pub(crate) fn available_disk_space_bytes(_path: &std::path::Path) -> Option<u64>
 const MOD_DOWNLOAD_ALLOWLIST: &[&str] = &[
     "github.com",
     "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
     "api.github.com",
     "cdn.modrinth.com",
     "api.modrinth.com",
@@ -299,10 +300,24 @@ async fn resolve_github_releases(
             let mc_empty = mc.is_empty();
             let loader_empty = loader_str.is_empty();
 
+            // Construct the download URL from parts rather than using
+            // `browser_download_url` directly.  The GitHub API percent-encodes
+            // '+' as '%2B' in the asset filename, but the actual release asset
+            // on the CDN uses the literal '+'.  Building the URL ourselves
+            // preserves the correct literal filenames.  The tag name is
+            // percent-encoded so that tags containing '/' or other path-
+            // significant characters stay in a single path segment.
+            let download_url = format!(
+                "https://github.com/{}/releases/download/{}/{}",
+                source,
+                urlencoding::encode(&release.tag_name),
+                asset.name,
+            );
+
             candidates.push(ModVersionCandidate {
                 version: release.tag_name.clone(),
                 filename: asset.name.clone(),
-                download_url: asset.browser_download_url.clone(),
+                download_url,
                 mc_version: if mc_empty { None } else { Some(mc) },
                 loader: if loader_empty { None } else { Some(loader_str) },
                 release_date: release.published_at.clone(),
