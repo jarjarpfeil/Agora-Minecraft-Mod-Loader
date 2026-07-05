@@ -1,21 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { check } from '@tauri-apps/plugin-updater';
 import { invoke } from '@tauri-apps/api/core';
+import { open as openUrl } from '@tauri-apps/plugin-shell';
 import {
   copilotStatus,
   copilotLogout,
   formatError,
+  getAuthStatus,
+  getGithubProfile,
   getMcpSkillContent,
   getMcpStatus,
   getSetting,
+  githubLogin,
+  githubLoginPoll,
+  githubLogout,
   listInstances,
   setMcpApproval,
   setSetting,
   startMcpServer,
   stopMcpServer,
 } from '../lib/tauri';
-import type { CopilotToken, InstanceRow, McpStatus } from '../lib/tauri';
+import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus } from '../lib/tauri';
 import { Privacy } from './Privacy';
 import { useAdvancedMode } from '../components/AdvancedModeContext';
 
@@ -60,6 +66,17 @@ export function Settings() {
   // AI Copilot state
   const [copilotToken, setCopilotToken] = useState<CopilotToken | null>(null);
   const [copilotLoading, setCopilotLoading] = useState(true);
+
+  // GitHub governance auth state
+  const [githubAuth, setGithubAuth] = useState(false);
+  const [githubProfile, setGithubProfile] = useState<GithubProfile | null>(null);
+  const [githubLoading, setGithubLoading] = useState(true);
+  const [ghDevice, setGhDevice] = useState<DeviceFlowResponse | null>(null);
+  const [ghPolling, setGhPolling] = useState(false);
+  const [ghResult, setGhResult] = useState<string | null>(null);
+  const [ghError, setGhError] = useState<string | null>(null);
+  const ghSessionRef = useRef(0);
+
   const { advancedMode, toggleAdvanced } = useAdvancedMode();
   const isWindows = typeof navigator !== 'undefined' && navigator.platform.includes('Win');
 
@@ -150,6 +167,83 @@ export function Settings() {
       cancelled = true;
     };
   }, []);
+
+  // Check GitHub governance auth status on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const isAuth = await getAuthStatus();
+        if (cancelled) return;
+        setGithubAuth(isAuth);
+        if (isAuth) {
+          try {
+            const profile = await getGithubProfile();
+            if (!cancelled) setGithubProfile(profile);
+          } catch {
+            // Profile fetch failed; auth status is still valid
+          }
+        }
+      } catch {
+        if (!cancelled) setGithubAuth(false);
+      } finally {
+        if (!cancelled) setGithubLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleGithubSignIn = async () => {
+    setGhError(null);
+    setGhResult(null);
+    setGhPolling(true);
+    const mySession = ++ghSessionRef.current;
+    const isStale = () => ghSessionRef.current !== mySession;
+    try {
+      const flow = await githubLogin();
+      if (isStale()) return;
+      setGhDevice(flow);
+      try {
+        const p = openUrl(flow.verification_uri);
+        Promise.resolve(p).catch(() => {});
+      } catch {
+        /* best-effort */
+      }
+      const token = await githubLoginPoll(flow.device_code, flow.interval);
+      if (isStale()) return;
+      if (token) {
+        setGhResult('Signed in successfully.');
+        setGithubAuth(true);
+        try {
+          const profile = await getGithubProfile();
+          setGithubProfile(profile);
+        } catch {
+          // Profile fetch failed
+        }
+      } else {
+        setGhResult('Authentication did not complete.');
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : formatError(e);
+      if (!isStale()) setGhError(`Sign-in failed: ${msg}`);
+    } finally {
+      if (!isStale()) setGhPolling(false);
+    }
+  };
+
+  const handleGithubSignOut = async () => {
+    try {
+      await githubLogout();
+      setGithubAuth(false);
+      setGithubProfile(null);
+      setGhDevice(null);
+      setGhResult(null);
+    } catch (e) {
+      alert(formatError(e));
+    }
+  };
 
   const toggleModrinth = async (value: boolean) => {
     setModrinth(value);
@@ -598,6 +692,81 @@ export function Settings() {
                     </div>
                   </div>
                 </details>
+              </div>
+            )}
+          </div>
+
+          {/* GitHub Account */}
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <h3 className="font-semibold">GitHub Account</h3>
+            {githubLoading ? (
+              <p className="text-xs text-muted-foreground">Checking connection…</p>
+            ) : githubAuth ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  {githubProfile?.avatar_url && (
+                    <img
+                      src={githubProfile.avatar_url}
+                      alt=""
+                      className="h-6 w-6 rounded-full"
+                    />
+                  )}
+                  <span className="text-sm text-green-600 dark:text-green-400">
+                    ● Signed in as <strong>{githubProfile?.login ?? 'GitHub user'}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Used for community governance (voting, proposals).
+                </p>
+                <button
+                  onClick={handleGithubSignOut}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Sign in with GitHub to participate in community governance — voting on mod inclusions, proposals, and more. This is optional.
+                </p>
+
+                {ghDevice && (
+                  <div className="rounded-lg border border-border bg-muted p-3 space-y-2">
+                    <p className="text-xs">Opening your browser… If it didn't open, click the button below:</p>
+                    <p className="text-sm font-semibold text-primary dark:text-primary break-all">
+                      {ghDevice.verification_uri}
+                    </p>
+                    <p className="text-sm">
+                      Code:{' '}
+                      <span className="font-mono font-bold tracking-widest">{ghDevice.user_code}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openUrl(ghDevice.verification_uri).catch(() => {});
+                      }}
+                      disabled={ghPolling}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                    >
+                      Open in browser
+                    </button>
+                    {ghPolling && (
+                      <p className="text-xs text-muted-foreground">Waiting for authorization…</p>
+                    )}
+                  </div>
+                )}
+
+                {ghResult && <p className="text-sm text-primary">{ghResult}</p>}
+                {ghError && <p className="text-xs text-destructive">{ghError}</p>}
+
+                <button
+                  onClick={handleGithubSignIn}
+                  disabled={ghPolling}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {ghPolling ? 'Waiting…' : 'Sign in with GitHub'}
+                </button>
               </div>
             )}
           </div>

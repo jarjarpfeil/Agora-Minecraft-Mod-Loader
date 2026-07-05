@@ -240,7 +240,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
     setSelectedCandidate(null);
     try {
       const vers = await listModVersions(instanceId, item.id);
-      setCandidates(vers);
+      setCandidates(vers.items);
     } catch (e) {
       setAddError(formatError(e));
     }
@@ -300,7 +300,11 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
 
       try {
         const candidates = await listModVersions(instanceId, mod.mod_id);
-        const candidate = candidates.find((c) => c.is_compatible) ?? candidates[0];
+        const items = candidates.items;
+        const candidate =
+          items.find((c) => c.version_compat === 'compatible')
+          ?? items.find((c) => c.version_compat === 'major_match')
+          ?? items[0];
         if (!candidate) {
           setPackProgress((prev) =>
             prev?.map((p, idx) =>
@@ -945,7 +949,13 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
                 <p className="text-xs text-muted-foreground">No versions available.</p>
               ) : (
                 <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {candidates.map((cand, idx) => (
+                  {[...candidates].sort((a, b) => {
+                    const tier = (c: ModVersionCandidate) =>
+                      c.version_compat === 'compatible' ? 0
+                      : c.version_compat === 'major_match' ? 1
+                      : 2;
+                    return tier(a) - tier(b);
+                  }).map((cand, idx) => (
                     <button
                       key={idx}
                       onClick={() => setSelectedCandidate(cand)}
@@ -957,8 +967,10 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{cand.version}</span>
-                        {cand.is_compatible ? (
+                        {cand.version_compat === 'compatible' ? (
                           <span className="text-xs text-green-600 dark:text-green-400">✓ compatible</span>
+                        ) : cand.version_compat === 'major_match' ? (
+                          <span className="text-xs text-yellow-600 dark:text-yellow-400">⚠ may not match your exact version</span>
                         ) : (
                           <span className="text-xs text-muted-foreground">may not match</span>
                         )}

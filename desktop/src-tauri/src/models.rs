@@ -91,6 +91,10 @@ pub struct ModVersionCandidate {
     pub is_compatible: bool,
     #[serde(default)]
     pub sha1: Option<String>,
+    /// Compatibility tier: `"compatible"` (exact MC version + loader match),
+    /// `"major_match"` (same major version, different minor), or `""` (incompatible).
+    #[serde(default)]
+    pub version_compat: String,
 }
 
 /// The lightweight JSON manifest that lives in each instance directory.

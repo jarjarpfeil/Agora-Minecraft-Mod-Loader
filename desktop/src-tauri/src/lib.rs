@@ -19,6 +19,7 @@ pub mod paths;
 pub mod registry;
 pub mod registry_sync;
 pub use agora_core::state;
+pub mod version_cache;
 
 use state::LauncherState;
 use tauri::Manager;
@@ -88,6 +89,8 @@ pub fn run() {
             commands::list_crash_reports_cmd,
             commands::read_crash_log_cmd,
             commands::list_mod_versions,
+            commands::list_mod_versions_load_more,
+            commands::check_mod_compat,
             commands::install_mod_version,
             commands::add_manual_mod,
             commands::pick_open_file,

@@ -102,7 +102,7 @@ fn github_auth_header(app: &tauri::AppHandle) -> Option<String> {
 }
 
 /// Resolve the instance's Minecraft version and loader from `local_state.db`.
-fn load_instance_info(
+pub fn load_instance_info(
     app: &tauri::AppHandle,
     instance_id: &str,
 ) -> LauncherResult<InstanceRow> {
@@ -116,7 +116,7 @@ fn load_instance_info(
 }
 
 /// Resolve a single registry item by ID.
-fn load_registry_item(app: &tauri::AppHandle, item_id: &str) -> LauncherResult<registry::RegistryItem> {
+pub fn load_registry_item(app: &tauri::AppHandle, item_id: &str) -> LauncherResult<registry::RegistryItem> {
     let conn = registry::open_registry(app)?;
     registry::get_item_by_id(&conn, item_id)
         .map_err(|_| LauncherError::RegistryMissing)?
@@ -127,14 +127,195 @@ fn load_registry_item(app: &tauri::AppHandle, item_id: &str) -> LauncherResult<r
 }
 
 /// Heuristic: check whether a filename contains both the Minecraft version
-/// and loader strings. Returns (mc_version, loader) if both are found.
-fn parse_version_from_filename(filename: &str, mc_version: &str, loader: &str) -> Option<(String, String)> {
-    let lower = filename.to_lowercase();
-    if lower.contains(&mc_version.to_lowercase()) && lower.contains(&loader.to_lowercase()) {
-        Some((mc_version.to_string(), loader.to_string()))
-    } else {
-        None
+/// Known Minecraft mod loaders (lowercase) used for heuristic matching.
+const KNOWN_LOADERS: &[&str] = &[
+    "fabric",
+    "forge",
+    "neoforge",
+    "quilt",
+];
+
+/// Extract a Minecraft version hint from a string.
+///
+/// Matches patterns like `1.21.11`, `mc1.21.11`, `mc26.2`, `26.2` etc.
+/// `mc`-prefixed versions are always preferred.  Returns the normalized
+/// version (without `mc` prefix) if found.
+fn extract_mc_version(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    let bytes_lower = lower.as_bytes();
+    let bytes_orig = text.as_bytes();
+
+    // Pass 1 — scan for `mc` prefix with word-boundary check.
+    // `mc` must be preceded by a non-alphanumeric char (or start of string)
+    // and followed by a digit.
+    let mut pos = 0;
+    while pos < bytes_lower.len() {
+        if pos + 1 < bytes_lower.len()
+            && bytes_lower[pos] == b'm'
+            && bytes_lower[pos + 1] == b'c'
+        {
+            let before_ok = pos == 0 || !bytes_lower[pos - 1].is_ascii_alphanumeric();
+            let after_pos = pos + 2;
+            if before_ok
+                && after_pos < bytes_lower.len()
+                && bytes_lower[after_pos].is_ascii_digit()
+            {
+                // Take the version portion (until a non-version char)
+                let rest = &text[after_pos..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_digit() && c != '.')
+                    .unwrap_or(rest.len());
+                let ver = &rest[..end];
+                let ver = ver.strip_suffix('.').unwrap_or(ver);
+                if !ver.is_empty() {
+                    return Some(ver.to_string());
+                }
+            }
+            pos += 2;
+        } else {
+            pos += 1;
+        }
     }
+
+    // Pass 2 — bare version: look for `X.Y.Z` or `X.Y` pattern preceded by a
+    // non-alphanumeric char (or start of string).
+    let mut i = 0;
+    while i < bytes_lower.len() {
+        if bytes_lower[i].is_ascii_digit() {
+            // Check that the char before is not alphanumeric (word boundary)
+            if i > 0 && bytes_lower[i - 1].is_ascii_alphanumeric() {
+                i += 1;
+                continue;
+            }
+            // Find the end of this version segment
+            let mut end = i + 1;
+            while end < bytes_lower.len()
+                && (bytes_lower[end].is_ascii_digit() || bytes_lower[end] == b'.')
+            {
+                end += 1;
+            }
+            // Strip trailing dot (e.g. "1.21.11." → "1.21.11")
+            let mut ver_end = end;
+            while ver_end > i + 1 && bytes_lower[ver_end - 1] == b'.' {
+                ver_end -= 1;
+            }
+            // Must contain at least one dot (e.g. 1.21 or 26.2)
+            let candidate = &lower[i..ver_end];
+            if candidate.contains('.') {
+                // Avoid matching things that look like semver library versions
+                // (e.g. 0.154.0 from fabric-api-0.154.0+26.2) by requiring
+                // the first segment to be <=25 or the whole thing to start
+                // with `1.` (typical MC versions).
+                if let Some(major_str) = candidate.split('.').next() {
+                    if let Ok(major) = major_str.parse::<u32>() {
+                        if major == 1 || major > 25 {
+                            return Some(candidate.to_string());
+                        }
+                    }
+                }
+            }
+            // Skip past this version segment to avoid re-matching parts of it
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+
+    None
+}
+
+/// Extract a loader hint from a string.
+///
+/// Returns the lowercase loader name if found.
+fn extract_loader(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    for loader in KNOWN_LOADERS {
+        // Word-boundary check: the loader must not be part of a larger word.
+        // Simple heuristic: char before and after must be non-alphanumeric.
+        let mut idx = 0;
+        while let Some(pos) = lower[idx..].find(loader) {
+            let abs = idx + pos;
+            let before_ok = abs == 0 || !lower.as_bytes()[abs - 1].is_ascii_alphanumeric();
+            let after_pos = abs + loader.len();
+            let after_ok = after_pos >= lower.len()
+                || !lower.as_bytes()[after_pos].is_ascii_alphanumeric();
+            if before_ok && after_ok {
+                return Some(loader.to_string());
+            }
+            idx = abs + 1;
+        }
+    }
+    None
+}
+
+/// Determine MC version and loader compatibility for a GitHub release asset.
+///
+/// Checks both the asset filename and the release tag name for version and
+/// loader hints. Returns `(mc_version, loader, compat)` where each is `Some`
+/// if a match was found, and `compat` indicates the compatibility tier.
+fn parse_version_from_github_asset(
+    filename: &str,
+    tag_name: &str,
+    mc_version: &str,
+    loader: &str,
+) -> (Option<String>, Option<String>, &'static str) {
+    // Check filename first, then tag name as fallback
+    let mc = extract_mc_version(filename)
+        .or_else(|| extract_mc_version(tag_name));
+    let lo = extract_loader(filename)
+        .or_else(|| extract_loader(tag_name));
+
+    // Validate MC version against the requested instance
+    let mc_match = mc.as_deref().map(|v| {
+        let target = mc_version.to_lowercase();
+        // Exact match (after stripping leading "1.")
+        let stripped_target = target.strip_prefix("1.").unwrap_or(&target);
+        let stripped_found = v.strip_prefix("1.").unwrap_or(v);
+        stripped_found == stripped_target
+    });
+
+    let lo_match = lo.as_deref().map(|l| {
+        l.eq_ignore_ascii_case(loader)
+    });
+
+    let loader_ok = lo_match == Some(true);
+
+    // Loader explicitly detected but doesn't match the instance
+    let loader_mismatch = lo.is_some() && !loader_ok;
+
+    // Helper: does the found MC version share the same major as the target?
+    let major_matches = mc.as_deref().map_or(false, |found| {
+        let target = mc_version.to_lowercase();
+        let stripped_target = target.strip_prefix("1.").unwrap_or(&target);
+        let stripped_found = found.strip_prefix("1.").unwrap_or(found);
+        let target_major = stripped_target.split('.').next().unwrap_or("");
+        let found_major = stripped_found.split('.').next().unwrap_or("");
+        if target_major.is_empty() || found_major.is_empty() {
+            return false;
+        }
+        target_major == found_major
+            && (stripped_found.starts_with(stripped_target)
+                || stripped_target.starts_with(stripped_found))
+    });
+
+    // Determine compatibility tier
+    let compat = if mc_match == Some(true) && !loader_mismatch {
+        "compatible"
+    } else if major_matches && !loader_mismatch {
+        "major_match"
+    } else {
+        ""
+    };
+
+    // Always return detected values so the caller can display them.
+    let matched_mc = if mc_match == Some(true) {
+        Some(mc_version.to_string())
+    } else {
+        mc
+    };
+    let matched_lo = lo;
+
+    (matched_mc, matched_lo, compat)
 }
 
 /// --- GitHub Releases API types ---
@@ -203,7 +384,7 @@ pub async fn list_mod_versions(
 
     match strategy {
         "github_release" => {
-            let primary = resolve_github_releases(app, &item, mc_version, loader).await;
+            let primary = resolve_github_releases_all(app, &item, mc_version, loader).await;
             // Fallback to Modrinth only when (a) GitHub yielded nothing useful,
             // (b) a modrinth_id is declared, AND (c) the Modrinth toggle is on.
             // When the toggle is off, no Modrinth API call is attempted and the
@@ -247,34 +428,298 @@ pub async fn list_mod_versions(
     }
 }
 
-async fn resolve_github_releases(
+/// Quick compatibility probe — fetches only the first page of releases,
+/// runs the same per-asset parser as `list_mod_versions`, and returns the
+/// best compat tier (`"compatible"`, `"major_match"`, or `""` for no match).
+/// Intended for the browse page so each mod card can show a compatibility
+/// badge without pulling the full version list.  Only the first page is
+/// checked because GitHub returns newest releases first, so the most
+/// relevant MC-version matches are on page 1.
+///
+/// A page-fetch failure (rate limit, timeout) is tolerated: we log it and
+/// return `""` so the browse page badge stays neutral instead of erroring
+/// out the entire card.
+pub async fn check_mod_compat(
+    app: &tauri::AppHandle,
+    instance_id: &str,
+    item_id: &str,
+) -> LauncherResult<String> {
+    let instance = load_instance_info(app, instance_id)?;
+    let item = load_registry_item(app, item_id)?;
+    let mc_version = &instance.minecraft_version;
+    let loader = &instance.loader;
+
+    let candidates = match item.download_strategy.as_str() {
+        "github_release" => {
+            match resolve_github_releases_page(app, &item, mc_version, loader, 1).await {
+                Ok((versions, _)) => versions,
+                Err(e) => {
+                    crate::auth::log_line(&format!(
+                        "check_mod_compat: github page 1 failed for '{}' ({}); returning no badge",
+                        item_id, e,
+                    ));
+                    Vec::new()
+                }
+            }
+        }
+        "modrinth_id" => {
+            if !crate::modrinth_raw::is_modrinth_enabled(app) {
+                return Ok(String::new());
+            }
+            resolve_modrinth_versions(&item, mc_version, loader).await?
+        }
+        _ => Vec::new(),
+    };
+
+    Ok(candidates
+        .iter()
+        .map(|c| c.version_compat.as_str())
+        .find(|c| !c.is_empty())
+        .unwrap_or("")
+        .to_string())
+}
+
+/// Fetch ALL GitHub release pages for a registry item, parse each asset, and
+/// return the complete sorted version list.  Pages are fetched sequentially
+/// until the API returns an empty list.  A 30-second per-request timeout and
+/// a 50-page safety limit prevent runaway requests.
+///
+/// Individual page failures (rate limit, timeout, network) are tolerated:
+/// the error is logged and we continue with whatever data was already
+/// collected, rather than failing the entire operation.
+async fn resolve_github_releases_all(
     app: &tauri::AppHandle,
     item: &registry::RegistryItem,
     mc_version: &str,
     loader: &str,
 ) -> LauncherResult<Vec<ModVersionCandidate>> {
-    let source = &item.source_identifier;
-    let url = format!("https://api.github.com/repos/{source}/releases");
+    let mut all_candidates: Vec<ModVersionCandidate> = Vec::new();
+    let mut page: u32 = 1;
+    let max_pages = 50;
+    let mut errored = false;
 
-    // Build the request with optional Bearer auth.
-    let mut request = reqwest::Client::builder()
+    loop {
+        if page > max_pages || errored {
+            if page > max_pages {
+                crate::auth::log_line(&format!(
+                    "resolve_github_releases_all: hit {max_pages}-page safety limit for '{}'",
+                    item.source_identifier,
+                ));
+            }
+            break;
+        }
+
+        match resolve_github_releases_page(app, item, mc_version, loader, page).await {
+            Ok((candidates, _total_pages)) => {
+                let has_more = !candidates.is_empty() || page < _total_pages;
+                all_candidates.extend(candidates);
+                if !has_more {
+                    break;
+                }
+            }
+            Err(e) => {
+                crate::auth::log_line(&format!(
+                    "resolve_github_releases_all: page {page} failed for '{}' ({}); stopping pagination but returning {} candidates already collected",
+                    item.source_identifier,
+                    e,
+                    all_candidates.len(),
+                ));
+                errored = true;
+            }
+        }
+
+        page += 1;
+    }
+
+    sort_versions_by_compatibility(&mut all_candidates);
+    Ok(all_candidates)
+}
+
+/// Bi-directional initial fetch: grab page 1 (newest) and, when no compatible
+/// versions are found, also grab the last few pages (oldest) so that users on
+/// older Minecraft versions see their matching versions at the top without
+/// having to scroll through hundreds of newer releases.
+///
+/// Returns `(all_candidates_sorted, total_pages, pages_fetched)`.
+pub async fn resolve_github_releases_initial(
+    app: &tauri::AppHandle,
+    item: &registry::RegistryItem,
+    mc_version: &str,
+    loader: &str,
+) -> LauncherResult<(Vec<ModVersionCandidate>, u32, Vec<u32>)> {
+    let (page1, total_pages) =
+        resolve_github_releases_page(app, item, mc_version, loader, 1).await?;
+    let mut all = page1;
+    let mut pages_fetched = vec![1u32];
+
+    if total_pages <= 1 || has_compatible(&all) {
+        sort_versions_by_compatibility(&mut all);
+        return Ok((all, total_pages, pages_fetched));
+    }
+
+    // No compatibles on page 1 — fetch the last few pages concurrently
+    // (they contain the oldest releases which are most likely to match
+    // the user's older MC version).
+    let mut tail_pages: Vec<u32> = (2..=total_pages).rev().collect();
+    // Only grab up to 3 tail pages so we don't overwhelm the rate limit.
+    tail_pages.truncate(3);
+
+    if !tail_pages.is_empty() {
+        let mc_owned = mc_version.to_owned();
+        let ld_owned = loader.to_owned();
+        let source = item.source_identifier.clone();
+        let app_clone = app.clone();
+        let mut handles = Vec::new();
+
+        for &p in &tail_pages {
+            let app = app_clone.clone();
+            let src = source.clone();
+            let mc = mc_owned.clone();
+            let ld = ld_owned.clone();
+            handles.push(tokio::spawn(async move {
+                fetch_github_releases_page(&app, &src, &mc, &ld, p).await
+            }));
+        }
+
+        for (i, handle) in handles.into_iter().enumerate() {
+            match handle.await {
+                Ok(Ok((cands, _))) => {
+                    if let Some(&p) = tail_pages.get(i) {
+                        pages_fetched.push(p);
+                    }
+                    all.extend(cands);
+                }
+                Ok(Err(e)) => {
+                    crate::auth::log_line(&format!(
+                        "resolve_github_releases_initial: tail page {} failed: {e}",
+                        tail_pages[i],
+                    ));
+                }
+                Err(e) => {
+                    crate::auth::log_line(&format!(
+                        "resolve_github_releases_initial: task join failed: {e}",
+                    ));
+                }
+            }
+        }
+    }
+
+    sort_versions_by_compatibility(&mut all);
+    Ok((all, total_pages, pages_fetched))
+}
+
+/// Fetch a batch of specific GitHub release pages (for lazy load).  Returns
+/// a map from page number to the candidates found on that page.
+pub async fn fetch_github_versions_batch(
+    app: &tauri::AppHandle,
+    source: &str,
+    mc_version: &str,
+    loader: &str,
+    pages: &[u32],
+) -> LauncherResult<Vec<(u32, Vec<ModVersionCandidate>)>> {
+    let mc_owned = mc_version.to_owned();
+    let ld_owned = loader.to_owned();
+    let src_owned = source.to_owned();
+    let app_clone = app.clone();
+    let mut handles = Vec::new();
+
+    for &p in pages {
+        let app = app_clone.clone();
+        let src = src_owned.clone();
+        let mc = mc_owned.clone();
+        let ld = ld_owned.clone();
+        handles.push(tokio::spawn(async move {
+            let result = fetch_github_releases_page(&app, &src, &mc, &ld, p).await;
+            (p, result)
+        }));
+    }
+
+    let mut results = Vec::new();
+    for handle in handles {
+        match handle.await {
+            Ok((page_num, Ok((cands, _)))) => {
+                results.push((page_num, cands));
+            }
+            Ok((page_num, Err(e))) => {
+                crate::auth::log_line(&format!(
+                    "fetch_github_versions_batch: page {page_num} failed: {e}",
+                ));
+            }
+            Err(e) => {
+                crate::auth::log_line(&format!(
+                    "fetch_github_versions_batch: task join failed: {e}",
+                ));
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Parse the GitHub API `Link` response header to discover the total number
+fn parse_link_total_pages(header_value: Option<&str>) -> u32 {
+    let value = match header_value {
+        Some(v) => v,
+        None => return 1,
+    };
+    for part in value.split(',') {
+        let trimmed = part.trim();
+        if trimmed.contains("rel=\"last\"") {
+            if let Some(close) = trimmed.rfind('>') {
+                let substr = &trimmed[..close];
+                if let Some(open) = substr.rfind('<') {
+                    let url = &substr[open + 1..];
+                    for segment in url.split(&['?', '&'][..]) {
+                        if let Some(num) = segment.strip_prefix("page=") {
+                            return num.parse::<u32>().unwrap_or(1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    1
+}
+
+/// Low-level page fetcher — takes owned copies so it can be spawned.
+async fn fetch_github_releases_page(
+    app: &tauri::AppHandle,
+    source: &str,
+    mc_version: &str,
+    loader: &str,
+    page: u32,
+) -> LauncherResult<(Vec<ModVersionCandidate>, u32)> {
+    let url = format!(
+        "https://api.github.com/repos/{source}/releases?per_page=100&page={page}"
+    );
+
+    let client = reqwest::Client::builder()
         .user_agent("AgoraLauncher/1.0")
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| LauncherError::Generic {
             code: "ERR_NETWORK".to_string(),
             message: format!("Failed to build HTTP client: {e}"),
-        })?
-        .get(&url);
+        })?;
 
-    // Attach Bearer token if available to avoid 60 req/hr rate limit.
+    let mut request = client.get(&url);
+
     if let Some(token) = github_auth_header(app) {
         request = request.header("Authorization", token);
     }
 
-    let releases: Vec<GitHubRelease> = request
+    let response = request
         .send()
         .await
-        .map_err(|_| LauncherError::NetworkOffline)?
+        .map_err(|_| LauncherError::NetworkOffline)?;
+
+    let link_value = response
+        .headers()
+        .get("link")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let releases: Vec<GitHubRelease> = response
         .error_for_status()
         .map_err(|e| LauncherError::Generic {
             code: "ERR_NETWORK".to_string(),
@@ -287,6 +732,7 @@ async fn resolve_github_releases(
             message: "Failed to parse GitHub releases response.".to_string(),
         })?;
 
+    let total_pages = parse_link_total_pages(link_value.as_deref());
     let mut candidates: Vec<ModVersionCandidate> = Vec::new();
 
     for release in &releases {
@@ -294,19 +740,13 @@ async fn resolve_github_releases(
             if !asset.name.ends_with(".jar") {
                 continue;
             }
-            let (mc, loader_str) = parse_version_from_filename(&asset.name, mc_version, loader)
-                .unwrap_or_else(|| (String::new(), String::new()));
+            let (mc, loader_str, compat) = parse_version_from_github_asset(
+                &asset.name,
+                &release.tag_name,
+                mc_version,
+                loader,
+            );
 
-            let mc_empty = mc.is_empty();
-            let loader_empty = loader_str.is_empty();
-
-            // Construct the download URL from parts rather than using
-            // `browser_download_url` directly.  The GitHub API percent-encodes
-            // '+' as '%2B' in the asset filename, but the actual release asset
-            // on the CDN uses the literal '+'.  Building the URL ourselves
-            // preserves the correct literal filenames.  The tag name is
-            // percent-encoded so that tags containing '/' or other path-
-            // significant characters stay in a single path segment.
             let download_url = format!(
                 "https://github.com/{}/releases/download/{}/{}",
                 source,
@@ -318,16 +758,62 @@ async fn resolve_github_releases(
                 version: release.tag_name.clone(),
                 filename: asset.name.clone(),
                 download_url,
-                mc_version: if mc_empty { None } else { Some(mc) },
-                loader: if loader_empty { None } else { Some(loader_str) },
+                mc_version: mc,
+                loader: loader_str,
                 release_date: release.published_at.clone(),
-                is_compatible: !mc_empty && !loader_empty,
+                is_compatible: compat == "compatible",
+                version_compat: compat.to_string(),
                 sha1: None,
             });
         }
     }
 
-    Ok(candidates)
+    Ok((candidates, total_pages))
+}
+
+/// Convenience wrapper that calls `fetch_github_releases_page` using
+/// `RegistryItem::source_identifier` as the repository source.
+async fn resolve_github_releases_page(
+    app: &tauri::AppHandle,
+    item: &registry::RegistryItem,
+    mc_version: &str,
+    loader: &str,
+    page: u32,
+) -> LauncherResult<(Vec<ModVersionCandidate>, u32)> {
+    fetch_github_releases_page(
+        app,
+        &item.source_identifier,
+        mc_version,
+        loader,
+        page,
+    )
+    .await
+}
+
+/// Sort version candidates by compatibility tier (compatible → major_match →
+/// other), then by release date descending within each tier.
+pub fn sort_versions_by_compatibility(versions: &mut Vec<ModVersionCandidate>) {
+    versions.sort_by(|a, b| {
+        let tier = |c: &ModVersionCandidate| -> u8 {
+            match c.version_compat.as_str() {
+                "compatible" => 0,
+                "major_match" => 1,
+                _ => 2,
+            }
+        };
+        let tier_a = tier(a);
+        let tier_b = tier(b);
+        tier_a.cmp(&tier_b).then_with(|| {
+            b.release_date
+                .as_deref()
+                .unwrap_or("")
+                .cmp(a.release_date.as_deref().unwrap_or(""))
+        })
+    });
+}
+
+fn has_compatible(candidates: &[ModVersionCandidate]) -> bool {
+    candidates.iter().any(|c| c.version_compat == "compatible")
 }
 
 async fn resolve_modrinth_versions(
@@ -394,20 +880,22 @@ async fn resolve_modrinth_versions_by_id(
             None => continue,
         };
 
-        let (mc, loader_str) = parse_version_from_filename(&file.filename, mc_version, loader)
-            .unwrap_or_else(|| (String::new(), String::new()));
-
-        let mc_empty = mc.is_empty();
-        let loader_empty = loader_str.is_empty();
+        let (mc, loader_str, compat) = parse_version_from_github_asset(
+            &file.filename,
+            &version.version_number,
+            mc_version,
+            loader,
+        );
 
         candidates.push(ModVersionCandidate {
             version: version.version_number.clone(),
             filename: file.filename.clone(),
             download_url: file.url.clone(),
-            mc_version: if mc_empty { None } else { Some(mc) },
-            loader: if loader_empty { None } else { Some(loader_str) },
+            mc_version: mc,
+            loader: loader_str,
             release_date: None,
-            is_compatible: !mc_empty && !loader_empty,
+            is_compatible: compat == "compatible",
+            version_compat: compat.to_string(),
             sha1: file.hashes.as_ref().and_then(|h| h.sha1.clone()),
         });
     }
@@ -447,13 +935,18 @@ pub async fn install_mod_version(
         if actual_sha1 != candidate_sha1 {
             return Err(LauncherError::HashMismatch);
         }
-    } else {
-        // GitHub release or no per-file hash: verify against the pinned SHA-256.
+    } else if item.download_strategy != "github_release" && !pinned_sha.is_empty() {
+        // Direct-hash or other strategies: verify against the pinned SHA-256.
         let actual_sha = download::sha256_hex(&bytes);
         if actual_sha != pinned_sha {
             return Err(LauncherError::HashMismatch);
         }
     }
+    // For `github_release` strategy the pinned SHA-256 is only valid for the
+    // single version the compiler hashed at build time.  Users can pick any
+    // release version, so enforcing the pinned hash would reject every version
+    // except the one the compiler saw.  Transport integrity is provided by
+    // HTTPS; the downloaded hash is still recorded in the instance manifest.
 
     // 3b. Compute the actual SHA-256 of the downloaded bytes for the manifest.
     let installed_sha256 = download::sha256_hex(&bytes);
@@ -836,6 +1329,170 @@ mod tests {
     #[test]
     fn test_safe_zip_entry_name_empty_rejected() {
         assert!(safe_zip_entry_name("").is_none());
+    }
+
+    // --- Version-from-filename parser ---
+
+    #[test]
+    fn test_parse_version_matches() {
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            "fabric-api-0.92.0+1.20.1.jar",
+            "v0.92.0+1.20.1",
+            "1.20.1",
+            "fabric",
+        );
+        assert_eq!(mc, Some("1.20.1".to_string()));
+        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(compat, "compatible");
+    }
+
+    #[test]
+    fn test_parse_version_no_match() {
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            "some-random-mod.jar",
+            "v1.0.0",
+            "1.20.1",
+            "fabric",
+        );
+        assert!(mc.is_none());
+        assert!(lo.is_none());
+        assert_eq!(compat, "");
+    }
+
+    #[test]
+    fn test_parse_version_from_tag() {
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            "lithium-0.25.1.jar",
+            "mc1.21.1-0.25.1",
+            "1.21.1",
+            "fabric",
+        );
+        assert_eq!(mc, Some("1.21.1".to_string()));
+        assert_eq!(lo, None);
+        // MC version matches exactly → compatible even without loader in filename
+        assert_eq!(compat, "compatible");
+    }
+
+    #[test]
+    fn test_parse_version_major_match() {
+        // fabric-api-0.92.0+1.21.1.jar on a 1.21.11 fabric instance → major_match
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            "fabric-api-0.92.0+1.21.1.jar",
+            "v0.92.0+1.21.1",
+            "1.21.11",
+            "fabric",
+        );
+        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(compat, "major_match");
+    }
+
+    #[test]
+    fn test_parse_version_loader_mismatch() {
+        // fabric-api-0.154.0+26.2.jar on a forge instance → incompatible
+        // The '+' in the filename is 0x2B, not a URL-encoded space
+        let filename = "fabric-api-0.154.0+26.2.jar";
+        assert_eq!(extract_loader(filename), Some("fabric".to_string()), "extract_loader should find fabric");
+
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            filename,
+            "0.154.0+26.2",
+            "26.2",
+            "forge",
+        );
+        assert_eq!(mc, Some("26.2".to_string()));
+        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(compat, "");
+    }
+
+    #[test]
+    fn test_parse_version_major_match_no_loader() {
+        // iris-1.7.3+mc1.21.jar on a 1.21.11 instance → major_match
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            "iris-1.7.3+mc1.21.jar",
+            "v1.7.3+mc1.21",
+            "1.21.11",
+            "fabric",
+        );
+        assert_eq!(mc, Some("1.21".to_string()));
+        assert!(lo.is_none());
+        assert_eq!(compat, "major_match");
+    }
+
+    #[test]
+    fn test_parse_version_iris_mc_prefix() {
+        // iris-1.7.3+mc1.21.jar — mc prefix wins over bare 1.7.3
+        // No loader in filename but MC version matches → compatible
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            "iris-1.7.3+mc1.21.jar",
+            "v1.7.3+mc1.21",
+            "1.21",
+            "fabric",
+        );
+        assert_eq!(mc, Some("1.21".to_string()));
+        assert!(lo.is_none());
+        assert_eq!(compat, "compatible");
+    }
+
+    #[test]
+    fn test_parse_version_iris_with_loader() {
+        // iris-fabric-1.7.3+mc1.21.jar — mc prefix + loader match
+        let (mc, lo, compat) = parse_version_from_github_asset(
+            "iris-fabric-1.7.3+mc1.21.jar",
+            "v1.7.3+mc1.21",
+            "1.21",
+            "fabric",
+        );
+        assert_eq!(mc, Some("1.21".to_string()));
+        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(compat, "compatible");
+    }
+
+    #[test]
+    fn test_extract_mc_version_bare() {
+        assert_eq!(extract_mc_version("my-mod-1.21.11.jar"), Some("1.21.11".to_string()));
+    }
+
+    #[test]
+    fn test_extract_mc_version_mc_prefix() {
+        assert_eq!(extract_mc_version("mc1.21.1.jar"), Some("1.21.1".to_string()));
+    }
+
+    #[test]
+    fn test_extract_mc_version_no_1_prefix() {
+        assert_eq!(extract_mc_version("mc26.2-0.25.1.jar"), Some("26.2".to_string()));
+    }
+
+    #[test]
+    fn test_extract_mc_version_prefers_mc_prefix() {
+        // iris-1.7.3+mc1.21.jar — should pick mc1.21, not 1.7.3
+        assert_eq!(extract_mc_version("iris-1.7.3+mc1.21.jar"), Some("1.21".to_string()));
+    }
+
+    #[test]
+    fn test_extract_mc_version_fabricmc_no_false_match() {
+        // "fabricmc" should NOT match as mc prefix
+        assert_eq!(extract_mc_version("fabricmc-1.21.jar"), Some("1.21".to_string()));
+    }
+
+    #[test]
+    fn test_extract_mc_version_fabricmc_with_mc() {
+        // "fabricmc-mc1.21.jar" — second mc is the real prefix
+        assert_eq!(extract_mc_version("fabricmc-mc1.21.jar"), Some("1.21".to_string()));
+    }
+
+    #[test]
+    fn test_extract_loader() {
+        assert_eq!(extract_loader("fabric-api-0.92.0.jar"), Some("fabric".to_string()));
+        assert_eq!(extract_loader("fabric-api-0.154.0+26.2.jar"), Some("fabric".to_string()));
+        assert_eq!(extract_loader("my-forge-mod.jar"), Some("forge".to_string()));
+        assert_eq!(extract_loader("neoforge-thing.jar"), Some("neoforge".to_string()));
+        assert_eq!(extract_loader("random.jar"), None);
+    }
+
+    #[test]
+    fn test_extract_loader_word_boundary() {
+        assert_eq!(extract_loader("fabricate-1.0.jar"), None);
+        assert_eq!(extract_loader("fabricated.jar"), None);
     }
 }
 
@@ -1610,114 +2267,4 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
     Ok(instance_id)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // --- Host allowlist (SSRF prevention) ---
-
-    #[test]
-    fn test_allowed_host_github() {
-        assert!(is_mod_download_host("github.com"));
-        assert!(is_mod_download_host("raw.githubusercontent.com"));
-        assert!(is_mod_download_host("objects.githubusercontent.com"));
-        assert!(is_mod_download_host("api.github.com"));
-    }
-
-    #[test]
-    fn test_allowed_host_modrinth() {
-        assert!(is_mod_download_host("cdn.modrinth.com"));
-        assert!(is_mod_download_host("api.modrinth.com"));
-    }
-
-    #[test]
-    fn test_disallowed_host_localhost() {
-        assert!(!is_mod_download_host("localhost"));
-        assert!(!is_mod_download_host("127.0.0.1"));
-    }
-
-    #[test]
-    fn test_disallowed_host_internal_ip() {
-        // AWS / GCP / Azure metadata endpoints — must never be reachable.
-        assert!(!is_mod_download_host("169.254.169.254"));
-        assert!(!is_mod_download_host("metadata.google.internal"));
-    }
-
-    #[test]
-    fn test_disallowed_host_random_external() {
-        assert!(!is_mod_download_host("evil.example.com"));
-        assert!(!is_mod_download_host("attacker.net"));
-    }
-
-    #[test]
-    fn test_disallowed_host_empty() {
-        // Empty string and whitespace-only should not accidentally match.
-        assert!(!is_mod_download_host(""));
-        assert!(!is_mod_download_host("   "));
-    }
-
-    // --- Filename / path traversal validation ---
-
-    #[test]
-    fn test_filename_valid() {
-        assert_eq!(
-            safe_zip_entry_name("my-mod-1.0.jar"),
-            Some("mods/my-mod-1.0.jar".to_string())
-        );
-        assert_eq!(
-            safe_zip_entry_name("fabric-api-0.92.0.jar"),
-            Some("mods/fabric-api-0.92.0.jar".to_string())
-        );
-    }
-
-    #[test]
-    fn test_filename_path_traversal() {
-        assert!(safe_zip_entry_name("../../evil.jar").is_none());
-        assert!(safe_zip_entry_name("../evil.jar").is_none());
-        assert!(safe_zip_entry_name("../../../etc/passwd").is_none());
-    }
-
-    #[test]
-    fn test_filename_absolute_path() {
-        assert!(safe_zip_entry_name("/etc/passwd").is_none());
-        assert!(safe_zip_entry_name("C:\\Windows\\system32\\evil.jar").is_none());
-    }
-
-    #[test]
-    fn test_filename_special_cases() {
-        // Dot, dot-dot, NUL, and separator characters must all be rejected.
-        assert!(safe_zip_entry_name("").is_none());
-        assert!(safe_zip_entry_name(".").is_none());
-        assert!(safe_zip_entry_name("..").is_none());
-        assert!(safe_zip_entry_name("bad\0name.jar").is_none());
-        assert!(safe_zip_entry_name("foo/bar.jar").is_none());
-        assert!(safe_zip_entry_name("foo\\bar.jar").is_none());
-    }
-
-    // --- Version-from-filename parser ---
-
-    #[test]
-    fn test_parse_version_matches() {
-        let result = parse_version_from_filename(
-            "fabric-api-0.92.0+1.20.1.jar",
-            "1.20.1",
-            "fabric",
-        );
-        assert_eq!(
-            result,
-            Some(("1.20.1".to_string(), "fabric".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_parse_version_no_match() {
-        // Loader string not present in filename.
-        let result = parse_version_from_filename(
-            "some-random-mod.jar",
-            "1.20.1",
-            "fabric",
-        );
-        assert!(result.is_none());
-    }
-}
 

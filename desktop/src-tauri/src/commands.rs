@@ -13,11 +13,14 @@ use crate::models::{InstanceManifest, InstanceRow, InstalledMod, ModVersionCandi
 use crate::modrinth_raw;
 use crate::paths;
 use crate::registry::{self, AuditLogEntry, CategoryInfo, CuratedAnnotation, ModReview, PackModRow, RegistryItem, SortOption, UnderReviewItem};
+use crate::version_cache::{self, ModVersionPage, SharedVersionCache};
 use agora_core::browse_cache::{self, BrowseFilters, BrowsePage};
 use agora_core::modrinth::{ModrinthSearchParams, ModrinthSort};
 use crate::state::LauncherState;
 use agora_core::pack_install;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use tauri::Manager;
 
 /// Current status of the MCP server.
@@ -26,6 +29,9 @@ pub struct McpStatus {
     pub running: bool,
     pub url: String,
 }
+
+/// Global version list cache for paginated mod version resolution.
+static VERSION_CACHE: LazyLock<SharedVersionCache> = LazyLock::new(version_cache::new_cache);
 
 #[tauri::command]
 pub async fn greet(name: String) -> String {
@@ -768,15 +774,180 @@ pub async fn read_crash_log_cmd(
 }
 
 /// List available mod versions for a registry item, resolving live data from
-/// the upstream source (GitHub Releases or Modrinth).
+/// the upstream source (GitHub Releases or Modrinth).  Uses a bi-directional
+/// initial fetch: page 1 (newest) first, then tail pages (oldest) when the
+/// user's MC version isn't found on the first page, so older-version users
+/// see compatible versions at the top without scrolling through hundreds of
+/// newer releases.
+///
+/// The result is cached and the first page is returned immediately.  Remaining
+/// pages are fetched lazily via `list_mod_versions_load_more`.
 #[tauri::command]
 pub async fn list_mod_versions(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
     item_id: String,
-) -> LauncherResult<Vec<ModVersionCandidate>> {
-    mod_install::list_mod_versions(&app, &instance_id, &item_id).await
+) -> LauncherResult<ModVersionPage> {
+    let instance = mod_install::load_instance_info(&app, &instance_id)?;
+    let item = mod_install::load_registry_item(&app, &item_id)?;
+
+    match item.download_strategy.as_str() {
+        "github_release" => {
+            let (all_versions, total_pages, pages_fetched) =
+                mod_install::resolve_github_releases_initial(&app, &item, &instance.minecraft_version, &instance.loader).await?;
+            let pages_set: BTreeSet<u32> = pages_fetched.into_iter().collect();
+            let total = all_versions.len();
+            version_cache::load_versions(
+                &VERSION_CACHE,
+                &item_id,
+                &instance.minecraft_version,
+                &instance.loader,
+                &item.source_identifier,
+                &item.download_strategy,
+                all_versions,
+                total_pages,
+                pages_set,
+            )
+            .await;
+            let page = version_cache::get_page(&VERSION_CACHE, &item_id, &instance.minecraft_version, &instance.loader, 0)
+                .await
+                .unwrap_or_else(|| ModVersionPage { items: Vec::new(), has_more: false, total });
+            Ok(page)
+        }
+        // For Modrinth strategy, fetch all versions (no pagination needed)
+        _ => {
+            let all_versions = mod_install::list_mod_versions(&app, &instance_id, &item_id).await?;
+            let total = all_versions.len();
+            let pages_set: BTreeSet<u32> = [1].into_iter().collect();
+            version_cache::load_versions(
+                &VERSION_CACHE,
+                &item_id,
+                &instance.minecraft_version,
+                &instance.loader,
+                &item.source_identifier,
+                &item.download_strategy,
+                all_versions,
+                1,
+                pages_set,
+            )
+            .await;
+            let page = version_cache::get_page(&VERSION_CACHE, &item_id, &instance.minecraft_version, &instance.loader, 0)
+                .await
+                .unwrap_or_else(|| ModVersionPage { items: Vec::new(), has_more: false, total });
+            Ok(page)
+        }
+    }
+}
+
+/// Load the next page of mod versions from the cache.  If the cache doesn't
+/// have enough data yet, it fetches the next batch of GitHub pages lazily
+/// and extends the cache before returning.
+#[tauri::command]
+pub async fn list_mod_versions_load_more(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    item_id: String,
+    page: usize,
+) -> LauncherResult<ModVersionPage> {
+    let instance = mod_install::load_instance_info(&app, &instance_id)?;
+
+    // Check if the cache already has enough data for this page.
+    if let Some(page_data) = version_cache::get_page(&VERSION_CACHE, &item_id, &instance.minecraft_version, &instance.loader, page).await {
+        // We have the data — return it.
+        // If the page was empty but we know there are more GitHub pages,
+        // we should try to fetch more before returning.
+        let need_more = page_data.items.is_empty()
+            && page_data.has_more;
+        if !need_more {
+            return Ok(page_data);
+        }
+    }
+
+    // Cache miss or empty page — fetch more GitHub pages.
+    let item = mod_install::load_registry_item(&app, &item_id)?;
+
+    let mc_ver = &instance.minecraft_version;
+    let loader = &instance.loader;
+
+    // Figure out which pages are still missing.
+    let entry = version_cache::get_entry(&VERSION_CACHE, &item_id, mc_ver, loader).await;
+    let (pages_fetched, total_pages) = match &entry {
+        Some(e) => (e.pages_fetched.clone(), e.total_pages),
+        None => {
+            // Shouldn't happen if list_mod_versions was called first,
+            // but guard against it.
+            return Err(LauncherError::Generic {
+                code: "ERR_VERSION_CACHE_MISS".to_string(),
+                message: "Version cache is empty. Call list_mod_versions first.".to_string(),
+            });
+        }
+    };
+
+    // Build the set of unfetched page numbers.
+    let to_fetch: Vec<u32> = (2..=total_pages)
+        .filter(|p| !pages_fetched.contains(p))
+        .collect();
+
+    if to_fetch.is_empty() {
+        // All pages already fetched — nothing more to load.
+        return version_cache::get_page(&VERSION_CACHE, &item_id, mc_ver, loader, page)
+            .await
+            .ok_or_else(|| LauncherError::Generic {
+                code: "ERR_VERSION_CACHE_MISS".to_string(),
+                message: "Cache entry vanished.".to_string(),
+            });
+    }
+
+    // Fetch the next up-to-3 unfetched pages concurrently.
+    let batch: Vec<u32> = to_fetch.into_iter().take(3).collect();
+
+    let results = mod_install::fetch_github_versions_batch(
+        &app,
+        &item.source_identifier,
+        mc_ver,
+        loader,
+        &batch,
+    )
+    .await?;
+
+    let page_nums: Vec<u32> = results.iter().map(|(p, _)| *p).collect();
+    let mut all_more: Vec<ModVersionCandidate> = Vec::new();
+    for (_p, cands) in results {
+        all_more.extend(cands);
+    }
+
+    version_cache::extend_versions(
+        &VERSION_CACHE,
+        &item_id,
+        mc_ver,
+        loader,
+        all_more,
+        &page_nums,
+    )
+    .await;
+
+    // Now try again for the requested page.
+    version_cache::get_page(&VERSION_CACHE, &item_id, mc_ver, loader, page)
+        .await
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_VERSION_CACHE_MISS".to_string(),
+            message: "Cache entry vanished after extend.".to_string(),
+        })
+}
+
+/// Quick compatibility check: does this mod have at least one release
+/// matching the given MC version + loader?  Used by the browse page to
+/// show a compatibility indicator without fetching the full version list.
+#[tauri::command]
+pub async fn check_mod_compat(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    item_id: String,
+) -> LauncherResult<String> {
+    mod_install::check_mod_compat(&app, &instance_id, &item_id).await
 }
 
 /// Install a specific mod version into an instance's `mods/` directory.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
@@ -7,6 +7,7 @@ import {
   getRegistryItem,
   listInstances,
   listModVersions,
+  listModVersionsLoadMore,
   installModVersion,
   listLoaderVersions,
   listManifestLoaders,
@@ -124,6 +125,12 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   const [selectedModrinthCandidate, setSelectedModrinthCandidate] = useState<RawModrinthVersionCandidate | null>(null);
   const [phase, setPhase] = useState<'idle' | 'loadingVersions' | 'pickingVersion' | 'installing' | 'done' | 'error'>('idle');
   const [installMsg, setInstallMsg] = useState<string | null>(null);
+
+  // Version pagination state
+  const [versionPage, setVersionPage] = useState(1);
+  const [hasMoreVersions, setHasMoreVersions] = useState(false);
+  const [loadingMoreVersions, setLoadingMoreVersions] = useState(false);
+  const versionSentinelRef = useRef<HTMLDivElement>(null);
 
   // v1 informational dependency preview (no auto-batch-install yet)
   const [depPlan, setDepPlan] = useState<InstallPlan | null>(null);
@@ -433,6 +440,47 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     return () => { cancelled = true; };
   }, []);
 
+  // ═══════════════════════════════════════════════════════════════
+  // Hooks (useCallback, useEffect) MUST be called every render.
+  // They are placed here — BEFORE any early returns — to keep hook
+  // order stable across all render paths.
+  // ═══════════════════════════════════════════════════════════════
+
+  // item may still be null during loading renders; fall back to false.
+  const isModrinthInstall = !!(item?.modrinth_id && modrinthProject);
+
+  const loadMoreVersions = useCallback(async () => {
+    if (!selectedInstanceId || loadingMoreVersions || !hasMoreVersions) return;
+    if (isModrinthInstall) return;
+    setLoadingMoreVersions(true);
+    try {
+      const nextPage = await listModVersionsLoadMore(selectedInstanceId, itemId, versionPage);
+      setCandidates((prev) => [...prev, ...nextPage.items]);
+      setHasMoreVersions(nextPage.hasMore);
+      setVersionPage((prev) => prev + 1);
+    } catch {
+      // Silently stop loading on error
+    } finally {
+      setLoadingMoreVersions(false);
+    }
+  }, [selectedInstanceId, itemId, versionPage, loadingMoreVersions, hasMoreVersions, isModrinthInstall]);
+
+  // Infinite scroll for version picker
+  useEffect(() => {
+    const sentinel = versionSentinelRef.current;
+    if (!sentinel || !hasMoreVersions || loadingMoreVersions || isModrinthInstall) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMoreVersions && !loadingMoreVersions) {
+          loadMoreVersions();
+        }
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreVersions, loadingMoreVersions, isModrinthInstall, loadMoreVersions]);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -473,8 +521,6 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   const velocityLabel =
     item.velocity > 0 ? `▲ ${item.velocity.toFixed(1)}` : item.velocity < 0 ? `▼ ${item.velocity.toFixed(1)}` : '0.0';
 
-  const isModrinthInstall = !!(item.modrinth_id && modrinthProject);
-
   const handleInstall = async () => {
     setShowInstallFlow(true);
     setPhase('idle');
@@ -503,13 +549,17 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     setSelectedCandidate(null);
     setSelectedModrinthCandidate(null);
     setInstallMsg(null);
+    setVersionPage(1);
+    setHasMoreVersions(false);
+    setLoadingMoreVersions(false);
     try {
       if (isModrinthInstall) {
         const vers = await listRawModrinthVersions(selectedInstanceId, item.modrinth_id!);
         setModrinthCandidates(vers);
       } else {
-        const vers = await listModVersions(selectedInstanceId, itemId);
-        setCandidates(vers);
+        const page = await listModVersions(selectedInstanceId, itemId);
+        setCandidates(page.items);
+        setHasMoreVersions(page.hasMore);
       }
       setPhase('pickingVersion');
     } catch (e) {
@@ -989,7 +1039,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                     <p className="text-xs text-muted-foreground mt-2">Loading versions…</p>
                   </div>
                 ) : isModrinthInstall ? (
-                  <ul className="space-y-2 max-h-48 overflow-y-auto">
+                  <ul className="space-y-2 max-h-80 overflow-y-auto">
                     {modrinthCandidates.map((cand) => (
                       <li
                         key={cand.version_id}
@@ -1026,7 +1076,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                     ))}
                   </ul>
                 ) : (
-                  <ul className="space-y-2 max-h-48 overflow-y-auto">
+                  <ul className="space-y-2 max-h-80 overflow-y-auto">
                     {candidates.map((cand, idx) => (
                       <li
                         key={idx}
@@ -1039,8 +1089,10 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-medium">{cand.version}</span>
-                          {cand.is_compatible ? (
+                          {cand.version_compat === 'compatible' ? (
                             <span className="text-xs text-green-600 dark:text-green-400">✓ compatible</span>
+                          ) : cand.version_compat === 'major_match' ? (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">⚠ may not match your exact version</span>
                           ) : (
                             <span className="text-xs text-muted-foreground">may not match your instance</span>
                           )}
@@ -1053,6 +1105,11 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                       </li>
                     ))}
                   </ul>
+                )}
+                {hasMoreVersions && !isModrinthInstall && (
+                  <div ref={versionSentinelRef} className="py-3 text-center text-xs text-muted-foreground">
+                    {loadingMoreVersions ? 'Loading more versions…' : ''}
+                  </div>
                 )}
                 {(selectedCandidate || selectedModrinthCandidate) && (
                   <button

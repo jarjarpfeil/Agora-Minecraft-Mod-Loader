@@ -340,10 +340,25 @@ export interface ModVersionCandidate {
   release_date: string | null;
   is_compatible: boolean;
   sha1?: string | null;
+  version_compat?: string;
+}
+
+export interface ModVersionPage {
+  items: ModVersionCandidate[];
+  hasMore: boolean;
+  total: number;
 }
 
 export const listModVersions = (instanceId: string, itemId: string) =>
-  invoke<ModVersionCandidate[]>('list_mod_versions', { instanceId, itemId });
+  invoke<ModVersionPage>('list_mod_versions', { instanceId, itemId });
+
+export const listModVersionsLoadMore = (instanceId: string, itemId: string, page: number) =>
+  invoke<ModVersionPage>('list_mod_versions_load_more', { instanceId, itemId, page });
+
+/// Quick compat probe for the browse page — returns
+/// `"compatible"`, `"major_match"`, or `""` (incompatible).
+export const checkModCompat = (instanceId: string, itemId: string) =>
+  invoke<string>('check_mod_compat', { instanceId, itemId });
 
 export const installModVersion = (
   instanceId: string,
