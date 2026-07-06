@@ -682,6 +682,8 @@ fn parse_link_total_pages(header_value: Option<&str>) -> u32 {
 }
 
 /// Low-level page fetcher — takes owned copies so it can be spawned.
+/// Uses the shared GitHub client, global concurrency semaphore, and
+/// cooldown-aware rate limiting.
 async fn fetch_github_releases_page(
     app: &tauri::AppHandle,
     source: &str,
@@ -693,25 +695,30 @@ async fn fetch_github_releases_page(
         "https://api.github.com/repos/{source}/releases?per_page=100&page={page}"
     );
 
-    let client = reqwest::Client::builder()
-        .user_agent("AgoraLauncher/1.0")
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| LauncherError::Generic {
-            code: "ERR_NETWORK".to_string(),
-            message: format!("Failed to build HTTP client: {e}"),
-        })?;
+    let _permit = agora_core::github_ratelimit::acquire_github_permit().await;
 
-    let mut request = client.get(&url);
+    let mut req = agora_core::github_ratelimit::github_client().get(&url);
 
     if let Some(token) = github_auth_header(app) {
-        request = request.header("Authorization", token);
+        req = req.header("Authorization", token);
     }
 
-    let response = request
+    let response = req
         .send()
         .await
         .map_err(|_| LauncherError::NetworkOffline)?;
+
+    // Check for rate limit BEFORE consuming the body.
+    if agora_core::github_ratelimit::is_rate_limit_response(&response) {
+        let retry = agora_core::github_ratelimit::parse_retry_after(&response);
+        agora_core::github_ratelimit::report_rate_limit(retry).await;
+        return Err(LauncherError::Generic {
+            code: "ERR_RATE_LIMITED".to_string(),
+            message: format!(
+                "GitHub rate limit hit while fetching releases for {source}."
+            ),
+        });
+    }
 
     let link_value = response
         .headers()

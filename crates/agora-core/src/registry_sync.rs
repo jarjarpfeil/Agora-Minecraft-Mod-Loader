@@ -69,6 +69,7 @@ pub async fn check_and_download_update(
     app_data_dir: &std::path::PathBuf,
     local_state_path: &std::path::PathBuf,
     force: bool,
+    github_token: Option<String>,
 ) -> LauncherResult<RegistryStatus> {
     let conn = db::local_state_connection(local_state_path)
         .map_err(|e| LauncherError::Generic { code: "ERR_DB".into(), message: e.to_string() })?;
@@ -107,7 +108,7 @@ pub async fn check_and_download_update(
         }
     }
 
-    let latest = match query_latest_release().await {
+    let latest = match query_latest_release(github_token.as_deref()).await {
         Ok(release) => release,
         Err(e) => {
             return Ok(RegistryStatus {
@@ -159,8 +160,8 @@ pub async fn check_and_download_update(
         REGISTRY_REPO, sig_id
     );
 
-    let db_bytes = download_file(&db_url).await?;
-    let sig_bytes = download_file(&sig_url).await?;
+    let db_bytes = download_file(&db_url, github_token.as_deref()).await?;
+    let sig_bytes = download_file(&sig_url, github_token.as_deref()).await?;
 
     verify_signature(&db_bytes, &sig_bytes)?;
 
@@ -348,20 +349,22 @@ impl GitHubRelease {
     }
 }
 
-async fn query_latest_release() -> Result<GitHubRelease, String> {
+async fn query_latest_release(token: Option<&str>) -> Result<GitHubRelease, String> {
     let url = format!(
         "https://api.github.com/repos/{}/releases/latest",
         REGISTRY_REPO
     );
-    let client = reqwest::Client::builder()
-        .user_agent("AgoraLauncher/1.0")
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let _permit = crate::github_ratelimit::acquire_github_permit().await;
+    let mut req = crate::github_ratelimit::github_client().get(&url);
+    if let Some(t) = token {
+        req = req.header("Authorization", format!("Bearer {t}"));
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if crate::github_ratelimit::is_rate_limit_response(&resp) {
+        let retry = crate::github_ratelimit::parse_retry_after(&resp);
+        crate::github_ratelimit::report_rate_limit(retry).await;
+        return Err(format!("GitHub rate limited (HTTP {})", resp.status()));
+    }
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -370,20 +373,26 @@ async fn query_latest_release() -> Result<GitHubRelease, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn download_file(url: &str) -> LauncherResult<Vec<u8>> {
-    let client = reqwest::Client::builder()
-        .user_agent("AgoraLauncher/1.0")
-        .build()
-        .map_err(|e| LauncherError::Generic {
-            code: "ERR_NETWORK".to_string(),
-            message: format!("Failed to build HTTP client: {e}"),
-        })?;
-    let resp = client
+async fn download_file(url: &str, token: Option<&str>) -> LauncherResult<Vec<u8>> {
+    let _permit = crate::github_ratelimit::acquire_github_permit().await;
+    let mut req = crate::github_ratelimit::github_client()
         .get(url)
-        .header("Accept", "application/octet-stream")
+        .header("Accept", "application/octet-stream");
+    if let Some(t) = token {
+        req = req.header("Authorization", format!("Bearer {t}"));
+    }
+    let resp = req
         .send()
         .await
         .map_err(|_| LauncherError::NetworkOffline)?;
+    if crate::github_ratelimit::is_rate_limit_response(&resp) {
+        let retry = crate::github_ratelimit::parse_retry_after(&resp);
+        crate::github_ratelimit::report_rate_limit(retry).await;
+        return Err(LauncherError::Generic {
+            code: "ERR_RATE_LIMITED".to_string(),
+            message: "GitHub rate limit hit during registry download.".to_string(),
+        });
+    }
     if !resp.status().is_success() {
         return Err(LauncherError::RegistryDownloadFailed);
     }

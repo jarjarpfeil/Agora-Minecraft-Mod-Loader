@@ -40,3 +40,4 @@ pub mod loadout;
 pub mod browse_cache;
 pub mod pack_install;
 pub mod server_export;
+pub mod github_ratelimit;

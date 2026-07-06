@@ -21,7 +21,8 @@ pub async fn check_and_download_update<R: tauri::Runtime>(
             code: "ERR_LOCAL_STATE_PATH".to_string(),
             message: e.to_string(),
         })?;
-    agora_core::registry_sync::check_and_download_update(&base, &ls_path, force).await
+    let token = crate::auth::get_token(app);
+    agora_core::registry_sync::check_and_download_update(&base, &ls_path, force, token).await
 }
 
 /// Return the current registry status without performing a network check.

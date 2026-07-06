@@ -23,13 +23,7 @@ use tauri::AppHandle;
 pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResult<TriagePoll> {
     let token = auth::get_token(app).ok_or(LauncherError::AuthRequired)?;
 
-    let client = reqwest::Client::builder()
-        .user_agent("agora-launcher")
-        .build()
-        .map_err(|_| LauncherError::Generic {
-            code: "ERR_TRIAGE_POLL".to_string(),
-            message: "Failed to build HTTP client.".to_string(),
-        })?;
+    let _permit = agora_core::github_ratelimit::acquire_github_permit().await;
 
     // Step 1: search for the triage discussion by title pattern.
     let search_query = format!(
@@ -56,7 +50,7 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
         "variables": { "q": search_query },
     });
 
-    let resp = client
+    let resp = agora_core::github_ratelimit::github_client()
         .post("https://api.github.com/graphql")
         .header("Authorization", format!("Bearer {}", token))
         .header("User-Agent", "agora-launcher")
@@ -69,6 +63,14 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Err(LauncherError::AuthExpired);
     }
+    if agora_core::github_ratelimit::is_rate_limit_response(&resp) {
+        let retry = agora_core::github_ratelimit::parse_retry_after(&resp);
+        agora_core::github_ratelimit::report_rate_limit(retry).await;
+        return Err(LauncherError::Generic {
+            code: "ERR_RATE_LIMITED".to_string(),
+            message: format!("GitHub rate limited triage poll for {mod_id}."),
+        });
+    }
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
@@ -77,6 +79,7 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
             message: format!("Triage poll search failed (status {status}): {body}"),
         });
     }
+
 
     #[derive(Debug, serde::Deserialize)]
     struct SearchResponse {
@@ -137,7 +140,7 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
         "variables": { "id": discussion.id },
     });
 
-    let resp2 = client
+    let resp2 = agora_core::github_ratelimit::github_client()
         .post("https://api.github.com/graphql")
         .header("Authorization", format!("Bearer {}", token))
         .header("User-Agent", "agora-launcher")
@@ -149,6 +152,14 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
 
     if resp2.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Err(LauncherError::AuthExpired);
+    }
+    if agora_core::github_ratelimit::is_rate_limit_response(&resp2) {
+        let retry = agora_core::github_ratelimit::parse_retry_after(&resp2);
+        agora_core::github_ratelimit::report_rate_limit(retry).await;
+        return Err(LauncherError::Generic {
+            code: "ERR_RATE_LIMITED".to_string(),
+            message: format!("GitHub rate limited triage poll reactions for {mod_id}."),
+        });
     }
     if !resp2.status().is_success() {
         let status = resp2.status();
@@ -258,13 +269,7 @@ pub async fn flag_review(
         });
     }
 
-    let client = reqwest::Client::builder()
-        .user_agent("agora-launcher")
-        .build()
-        .map_err(|_| LauncherError::Generic {
-            code: "ERR_FLAG_REVIEW".to_string(),
-            message: "Failed to build HTTP client.".to_string(),
-        })?;
+    let _permit = agora_core::github_ratelimit::acquire_github_permit().await;
 
     let tracking_url = format!(
         "https://github.com/{owner}/{repo}/issues/{num}",
@@ -295,7 +300,7 @@ pub async fn flag_review(
         repo = AGORA_ADMIN_ALERTS_REPO.split('/').nth(1).unwrap_or(""),
     );
 
-    let resp = client
+    let resp = agora_core::github_ratelimit::github_client()
         .post(&issues_url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github+json")
@@ -309,12 +314,12 @@ pub async fn flag_review(
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Err(LauncherError::AuthExpired);
     }
-
-    if resp.status() == reqwest::StatusCode::FORBIDDEN || resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        let body = resp.text().await.unwrap_or_default();
+    if agora_core::github_ratelimit::is_rate_limit_response(&resp) {
+        let retry = agora_core::github_ratelimit::parse_retry_after(&resp);
+        agora_core::github_ratelimit::report_rate_limit(retry).await;
         return Err(LauncherError::Generic {
             code: "ERR_RATE_LIMITED".to_string(),
-            message: format!("GitHub rate limited the flag submission: {body}"),
+            message: format!("GitHub rate limited the flag submission."),
         });
     }
 
