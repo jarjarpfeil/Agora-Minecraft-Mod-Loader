@@ -196,106 +196,61 @@
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:42.562014+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:05.895599+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:43.759084+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:07.118430+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:44.971688+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:08.464776+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:46.219767+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:09.794792+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:47.420381+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:11.134024+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:48.683629+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:12.337399+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:49.900413+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:13.509673+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:51.129681+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:14.694622+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:52.357254+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:15.864347+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:53.581288+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:17.049368+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:54.793607+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:18.245651+00:00",
->>>>>>> Stashed changes
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     },
     {
-<<<<<<< Updated upstream
       "timestamp": "2026-06-24T04:28:56.062619+00:00",
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
@@ -352,9 +307,16 @@
     },
     {
       "timestamp": "2026-06-27T22:37:13.473705+00:00",
-=======
-      "timestamp": "2026-06-24T04:20:19.486092+00:00",
->>>>>>> Stashed changes
+      "action": "compile",
+      "details": "Compiled registry with 7 items, 4 crash signatures"
+    },
+    {
+      "timestamp": "2026-07-06T00:13:50.716040+00:00",
+      "action": "compile",
+      "details": "Compiled registry with 7 items, 4 crash signatures"
+    },
+    {
+      "timestamp": "2026-07-06T00:14:30.271658+00:00",
       "action": "compile",
       "details": "Compiled registry with 7 items, 4 crash signatures"
     }
