@@ -34,29 +34,10 @@ pub(crate) fn available_disk_space_bytes(path: &std::path::Path) -> Option<u64> 
     None
 }
 
-/// macOS/Linux: use the `sysinfo` crate to find the disk whose mount point
-/// contains `path` and return its available space. Returns None on any failure
-/// (callers proceed without the check -- do not block on unavailable info).
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn available_disk_space_bytes(path: &std::path::Path) -> Option<u64> {
-    use sysinfo::Disks;
-    let target_canonical = path.canonicalize().ok()?;
-    let target_components: Vec<_> = target_canonical.components().collect();
-    let disks = Disks::new_with_refreshed_list();
-    let mut best: Option<u64> = None;
-    let mut best_prefix_len = 0usize;
-    for d in disks.list() {
-        let mount = d.mount_point();
-        let mount_components: Vec<_> = mount.components().collect();
-        if mount_components.len() > target_components.len() {
-            continue;
-        }
-        if target_components.starts_with(&mount_components) && mount_components.len() > best_prefix_len {
-            best_prefix_len = mount_components.len();
-            best = Some(d.available_space());
-        }
-    }
-    best
+/// Stub for non-Windows platforms (not currently targeted by this crate).
+#[cfg(not(target_os = "windows"));]
+pub(crate) fn available_disk_space_bytes(_path: &std::path::Path) -> Option<u64> {
+    None
 }
 
 /// Hosts allowed for mod downloads (GitHub + Modrinth).
@@ -88,7 +69,7 @@ pub(crate) async fn download_mod_bytes(url: &str) -> LauncherResult<Vec<u8>> {
                 }
             }
             attempt.stop()
-        }))
+        }));
         .user_agent("AgoraLauncher/1.0")
         .build()
         .map_err(|e| LauncherError::Generic {
@@ -111,13 +92,13 @@ pub(crate) async fn download_mod_bytes(url: &str) -> LauncherResult<Vec<u8>> {
 
     resp.bytes()
         .await
-        .map(|b| b.to_vec())
+        .map(|b| b.to_vec());
         .map_err(|_| LauncherError::NetworkOffline)
 }
 
 /// Internal: fetch a GitHub token (if stored) and return an optional Bearer header value.
 fn github_auth_header(app: &tauri::AppHandle) -> Option<String> {
-    auth::get_token(app).map(|t| format!("Bearer {t}"))
+    auth::get_token(app).map(|t| format!("Bearer {t}"));
 }
 
 /// Resolve the instance's Minecraft version and loader from `local_state.db`.
@@ -162,7 +143,6 @@ const KNOWN_LOADERS: &[&str] = &[
 fn extract_mc_version(text: &str) -> Option<String> {
     let lower = text.to_lowercase();
     let bytes_lower = lower.as_bytes();
-    let bytes_orig = text.as_bytes();
 
     // Pass 1 â€” scan for `mc` prefix with word-boundary check.
     // `mc` must be preceded by a non-alphanumeric char (or start of string)
@@ -183,11 +163,11 @@ fn extract_mc_version(text: &str) -> Option<String> {
                 let rest = &text[after_pos..];
                 let end = rest
                     .find(|c: char| !c.is_ascii_digit() && c != '.')
-                    .unwrap_or(rest.len());
+                    .unwrap_or(rest.len());;
                 let ver = &rest[..end];
                 let ver = ver.strip_suffix('.').unwrap_or(ver);
                 if !ver.is_empty() {
-                    return Some(ver.to_string());
+                    return Some(ver.to_string());;
                 }
             }
             pos += 2;
@@ -228,7 +208,7 @@ fn extract_mc_version(text: &str) -> Option<String> {
                 if let Some(major_str) = candidate.split('.').next() {
                     if let Ok(major) = major_str.parse::<u32>() {
                         if major == 1 || major > 25 {
-                            return Some(candidate.to_string());
+                            return Some(candidate.to_string());;
                         }
                     }
                 }
@@ -259,7 +239,7 @@ fn extract_loader(text: &str) -> Option<String> {
             let after_ok = after_pos >= lower.len()
                 || !lower.as_bytes()[after_pos].is_ascii_alphanumeric();
             if before_ok && after_ok {
-                return Some(loader.to_string());
+                return Some(loader.to_string());;
             }
             idx = abs + 1;
         }
@@ -280,9 +260,9 @@ fn parse_version_from_github_asset(
 ) -> (Option<String>, Option<String>, &'static str) {
     // Check filename first, then tag name as fallback
     let mc = extract_mc_version(filename)
-        .or_else(|| extract_mc_version(tag_name));
+        .or_else(|| extract_mc_version(tag_name));;
     let lo = extract_loader(filename)
-        .or_else(|| extract_loader(tag_name));
+        .or_else(|| extract_loader(tag_name));;
 
     // Validate MC version against the requested instance
     let mc_match = mc.as_deref().map(|v| {
@@ -314,7 +294,7 @@ fn parse_version_from_github_asset(
         }
         target_major == found_major
             && (stripped_found.starts_with(stripped_target)
-                || stripped_target.starts_with(stripped_found))
+                || stripped_target.starts_with(stripped_found));
     });
 
     // Determine compatibility tier
@@ -328,7 +308,7 @@ fn parse_version_from_github_asset(
 
     // Always return detected values so the caller can display them.
     let matched_mc = if mc_match == Some(true) {
-        Some(mc_version.to_string())
+        Some(mc_version.to_string());
     } else {
         mc
     };
@@ -349,7 +329,6 @@ struct GitHubRelease {
 #[derive(Debug, Deserialize)]
 struct GitHubReleaseAsset {
     name: String,
-    browser_download_url: String,
 }
 
 /// --- Modrinth API types ---
@@ -412,17 +391,17 @@ pub async fn list_mod_versions(
                 Ok(c) if !c.is_empty() => return Ok(c),
                 Ok(_) => Vec::new(),
                 Err(e) => {
-                    crate::auth::log_line(&format!(
+                    eprintln!("[auth] 
                         "list_mod_versions: github_release primary failed for '{}' ({}); {}",
                         item_id,
                         e,
                         if modrinth_on { "trying Modrinth fallback" } else { "Modrinth disabled, no fallback" }
-                    ));
+                    ));;
                     Vec::new()
                 }
             };
             if modrinth_on {
-                if let Some(mid) = item.modrinth_id.as_deref().filter(|s| !s.is_empty()) {
+                if let Some(mid) = item.modrinth_id.as_deref().filter(|s| !s.is_empty()); {
                     let alt = resolve_modrinth_versions_by_id(mid, mc_version, loader).await?;
                     if !alt.is_empty() {
                         return Ok(alt);
@@ -471,19 +450,19 @@ pub async fn check_mod_compat(
     let candidates = match item.download_strategy.as_str() {
         "github_release" => {
             match resolve_github_releases_page(app, &item, mc_version, loader, 1).await {
-                Ok((versions, _)) => versions,
+                Ok((versions, _)); => versions,
                 Err(e) => {
-                    crate::auth::log_line(&format!(
+                    eprintln!("[auth] 
                         "check_mod_compat: github page 1 failed for '{}' ({}); returning no badge",
                         item_id, e,
-                    ));
+                    ));;
                     Vec::new()
                 }
             }
         }
         "modrinth_id" => {
             if !crate::modrinth_raw::is_modrinth_enabled(app) {
-                return Ok(String::new());
+                return Ok(String::new());;
             }
             resolve_modrinth_versions(&item, mc_version, loader).await?
         }
@@ -492,10 +471,10 @@ pub async fn check_mod_compat(
 
     Ok(candidates
         .iter()
-        .map(|c| c.version_compat.as_str())
-        .find(|c| !c.is_empty())
+        .map(|c| c.version_compat.as_str());
+        .find(|c| !c.is_empty());
         .unwrap_or("")
-        .to_string())
+        .to_string());
 }
 
 /// Fetch ALL GitHub release pages for a registry item, parse each asset, and
@@ -520,16 +499,16 @@ async fn resolve_github_releases_all(
     loop {
         if page > max_pages || errored {
             if page > max_pages {
-                crate::auth::log_line(&format!(
+                eprintln!("[auth] 
                     "resolve_github_releases_all: hit {max_pages}-page safety limit for '{}'",
                     item.source_identifier,
-                ));
+                ));;
             }
             break;
         }
 
         match resolve_github_releases_page(app, item, mc_version, loader, page).await {
-            Ok((candidates, _total_pages)) => {
+            Ok((candidates, _total_pages)); => {
                 let has_more = !candidates.is_empty() || page < _total_pages;
                 all_candidates.extend(candidates);
                 if !has_more {
@@ -537,12 +516,12 @@ async fn resolve_github_releases_all(
                 }
             }
             Err(e) => {
-                crate::auth::log_line(&format!(
+                eprintln!("[auth] 
                     "resolve_github_releases_all: page {page} failed for '{}' ({}); stopping pagination but returning {} candidates already collected",
                     item.source_identifier,
                     e,
                     all_candidates.len(),
-                ));
+                ));;
                 errored = true;
             }
         }
@@ -573,7 +552,7 @@ pub async fn resolve_github_releases_initial(
 
     if total_pages <= 1 || has_compatible(&all) {
         sort_versions_by_compatibility(&mut all);
-        return Ok((all, total_pages, pages_fetched));
+        return Ok((all, total_pages, pages_fetched));;
     }
 
     // No compatibles on page 1 â€” fetch the last few pages concurrently
@@ -597,34 +576,34 @@ pub async fn resolve_github_releases_initial(
             let ld = ld_owned.clone();
             handles.push(tokio::spawn(async move {
                 fetch_github_releases_page(&app, &src, &mc, &ld, p).await
-            }));
+            }));;
         }
 
         for (i, handle) in handles.into_iter().enumerate() {
             match handle.await {
-                Ok(Ok((cands, _))) => {
+                Ok(Ok((cands, _));) => {
                     if let Some(&p) = tail_pages.get(i) {
                         pages_fetched.push(p);
                     }
                     all.extend(cands);
                 }
-                Ok(Err(e)) => {
-                    crate::auth::log_line(&format!(
+                Ok(Err(e)); => {
+                    eprintln!("[auth] 
                         "resolve_github_releases_initial: tail page {} failed: {e}",
                         tail_pages[i],
-                    ));
+                    ));;
                 }
                 Err(e) => {
-                    crate::auth::log_line(&format!(
+                    eprintln!("[auth] 
                         "resolve_github_releases_initial: task join failed: {e}",
-                    ));
+                    ));;
                 }
             }
         }
     }
 
     sort_versions_by_compatibility(&mut all);
-    Ok((all, total_pages, pages_fetched))
+    Ok((all, total_pages, pages_fetched));
 }
 
 /// Fetch a batch of specific GitHub release pages (for lazy load).  Returns
@@ -650,24 +629,24 @@ pub async fn fetch_github_versions_batch(
         handles.push(tokio::spawn(async move {
             let result = fetch_github_releases_page(&app, &src, &mc, &ld, p).await;
             (p, result)
-        }));
+        }));;
     }
 
     let mut results = Vec::new();
     for handle in handles {
         match handle.await {
-            Ok((page_num, Ok((cands, _)))) => {
-                results.push((page_num, cands));
+            Ok((page_num, Ok((cands, _));)); => {
+                results.push((page_num, cands));;
             }
-            Ok((page_num, Err(e))) => {
-                crate::auth::log_line(&format!(
+            Ok((page_num, Err(e));) => {
+                eprintln!("[auth] 
                     "fetch_github_versions_batch: page {page_num} failed: {e}",
-                ));
+                ));;
             }
             Err(e) => {
-                crate::auth::log_line(&format!(
+                eprintln!("[auth] 
                     "fetch_github_versions_batch: task join failed: {e}",
-                ));
+                ));;
             }
         }
     }
@@ -742,8 +721,8 @@ async fn fetch_github_releases_page(
     let link_value = response
         .headers()
         .get("link")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+        .and_then(|v| v.to_str().ok());
+        .map(|s| s.to_string());;
 
     let releases: Vec<GitHubRelease> = response
         .error_for_status()
@@ -758,7 +737,7 @@ async fn fetch_github_releases_page(
             message: "Failed to parse GitHub releases response.".to_string(),
         })?;
 
-    let total_pages = parse_link_total_pages(link_value.as_deref());
+    let total_pages = parse_link_total_pages(link_value.as_deref());;
     let mut candidates: Vec<ModVersionCandidate> = Vec::new();
 
     for release in &releases {
@@ -794,7 +773,7 @@ async fn fetch_github_releases_page(
         }
     }
 
-    Ok((candidates, total_pages))
+    Ok((candidates, total_pages));
 }
 
 /// Convenience wrapper that calls `fetch_github_releases_page` using
@@ -833,7 +812,7 @@ pub fn sort_versions_by_compatibility(versions: &mut Vec<ModVersionCandidate>) {
             b.release_date
                 .as_deref()
                 .unwrap_or("")
-                .cmp(a.release_date.as_deref().unwrap_or(""))
+                .cmp(a.release_date.as_deref().unwrap_or(""));
         })
     });
 }
@@ -899,7 +878,7 @@ async fn resolve_modrinth_versions_by_id(
             .files
             .iter()
             .find(|f| f.primary)
-            .or_else(|| version.files.first());
+            .or_else(|| version.files.first());;
 
         let file = match primary_file {
             Some(f) => f,
@@ -922,7 +901,7 @@ async fn resolve_modrinth_versions_by_id(
             release_date: None,
             is_compatible: compat == "compatible",
             version_compat: compat.to_string(),
-            sha1: file.hashes.as_ref().and_then(|h| h.sha1.clone()),
+            sha1: file.hashes.as_ref().and_then(|h| h.sha1.clone());
         });
     }
 
@@ -1008,10 +987,10 @@ pub async fn install_mod_version(
     let metadata = crash_investigator::parse_jar_metadata(&mod_path);
     let installed_mod = InstalledMod {
         filename: candidate.filename.clone(),
-        registry_id: Some(item_id.to_string()),
+        registry_id: Some(item_id.to_string());
         modrinth_id: item.modrinth_id.clone(),
         source: "registry".to_string(),
-        version: Some(candidate.version.clone()),
+        version: Some(candidate.version.clone());
         sha256: installed_sha256,
         installed_at: chrono::Utc::now().to_rfc3339(),
         java_packages: metadata.java_packages,
@@ -1021,7 +1000,7 @@ pub async fn install_mod_version(
         incompatible_deps: metadata.incompatible_deps,
     };
 
-    manifest.mods.push(installed_mod.clone());
+    manifest.mods.push(installed_mod.clone());;
 
     // Atomic write: .tmp then rename.
     let tmp_path = manifest_path.with_extension("json.tmp");
@@ -1062,7 +1041,7 @@ pub async fn remove_mod_from_instance(
         if mod_path.exists() {
             std::fs::remove_file(&mod_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
         }
-        Ok::<_, LauncherError>(())
+        Ok::<_, LauncherError>(());
     })
     .await
     .map_err(|_| LauncherError::Generic {
@@ -1103,7 +1082,7 @@ pub async fn remove_mod_from_instance(
                 std::fs::write(&tmp_path, write_text).map_err(|_| LauncherError::InstanceCreateFailed)?;
                 std::fs::rename(&tmp_path, &manifest_path)
                     .map_err(|_| LauncherError::InstanceCreateFailed)?;
-                Ok::<_, LauncherError>(())
+                Ok::<_, LauncherError>(());
             })
             .await
             .map_err(|_| LauncherError::Generic {
@@ -1113,7 +1092,7 @@ pub async fn remove_mod_from_instance(
         }
     }
 
-    Ok(())
+    Ok(());
 }
 
 /// Add a manually-dropped .jar file into an instance's `mods/` folder (Â§6.5b).
@@ -1137,14 +1116,14 @@ pub async fn add_manual_mod(
     use std::path::Path;
 
     let src = Path::new(source_path);
-    let ext = src.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+    let ext = src.extension().and_then(|e| e.to_str());.map(|e| e.to_ascii_lowercase());;
     if ext.as_deref() != Some("jar") {
         return Err(LauncherError::Generic {
             code: "ERR_INVALID_FILENAME".to_string(),
             message: "Only .jar files can be added manually.".to_string(),
         });
     }
-    let file_name = src.file_name().and_then(|n| n.to_str()).ok_or_else(|| LauncherError::Generic {
+    let file_name = src.file_name().and_then(|n| n.to_str());.ok_or_else(|| LauncherError::Generic {
         code: "ERR_INVALID_FILENAME".to_string(),
         message: "Could not determine a valid file name.".to_string(),
     })?;
@@ -1180,7 +1159,7 @@ pub async fn add_manual_mod(
             dirs::download_dir(),
             dirs::desktop_dir(),
             dirs::document_dir(),
-            Some(std::env::temp_dir()),
+            Some(std::env::temp_dir());
         ]
         .into_iter()
         .flatten()
@@ -1189,7 +1168,7 @@ pub async fn add_manual_mod(
                 roots.push(c);
             }
         }
-        let allowed = roots.iter().any(|root| canonical.starts_with(root));
+        let allowed = roots.iter().any(|root| canonical.starts_with(root));;
         if !allowed {
             return Err(LauncherError::Generic {
                 code: "ERR_SOURCE_NOT_ALLOWED".to_string(),
@@ -1234,7 +1213,7 @@ pub async fn add_manual_mod(
             optional_deps: metadata.optional_deps,
             incompatible_deps: metadata.incompatible_deps,
         };
-        manifest.mods.push(installed_mod.clone());
+        manifest.mods.push(installed_mod.clone());;
 
         let tmp_path = manifest_path.with_extension("json.tmp");
         let text = serde_json::to_string_pretty(&manifest)
@@ -1271,7 +1250,7 @@ fn safe_zip_entry_name(filename: &str) -> Option<String> {
     {
         return None;
     }
-    Some(format!("mods/{}", filename))
+    Some(format!("mods/{}", filename));
 }
 
 /// --- Tests ---
@@ -1282,27 +1261,27 @@ mod tests {
 
     #[test]
     fn test_allowed_host_github() {
-        assert!(is_mod_download_host("github.com"));
+        assert!(is_mod_download_host("github.com"));;
     }
 
     #[test]
     fn test_allowed_host_modrinth() {
-        assert!(is_mod_download_host("cdn.modrinth.com"));
+        assert!(is_mod_download_host("cdn.modrinth.com"));;
     }
 
     #[test]
     fn test_disallowed_host_localhost() {
-        assert!(!is_mod_download_host("127.0.0.1"));
+        assert!(!is_mod_download_host("127.0.0.1"));;
     }
 
     #[test]
     fn test_disallowed_host_metadata_ip() {
-        assert!(!is_mod_download_host("169.254.169.254"));
+        assert!(!is_mod_download_host("169.254.169.254"));;
     }
 
     #[test]
     fn test_disallowed_host_random() {
-        assert!(!is_mod_download_host("evil.example.com"));
+        assert!(!is_mod_download_host("evil.example.com"));;
     }
 
     #[test]
@@ -1310,51 +1289,51 @@ mod tests {
         // The function takes a bare host string; a file-scheme URL would
         // typically be parsed and its host would be empty or "etc".
         // Test that an empty host is rejected and "etc" is rejected.
-        assert!(!is_mod_download_host(""));
-        assert!(!is_mod_download_host("etc"));
+        assert!(!is_mod_download_host(""));;
+        assert!(!is_mod_download_host("etc"));;
     }
 
     #[test]
     fn test_disallowed_host_empty() {
-        assert!(!is_mod_download_host(""));
+        assert!(!is_mod_download_host(""));;
     }
 
     #[test]
     fn test_filename_path_traversal_rejected() {
-        assert!(safe_zip_entry_name("../../evil.jar").is_none());
-        assert!(safe_zip_entry_name("../../../etc/passwd.jar").is_none());
+        assert!(safe_zip_entry_name("../../evil.jar").is_none());;
+        assert!(safe_zip_entry_name("../../../etc/passwd.jar").is_none());;
     }
 
     #[test]
     fn test_safe_zip_entry_name_valid() {
         let result = safe_zip_entry_name("some-mod-1.0.jar");
-        assert_eq!(result, Some("mods/some-mod-1.0.jar".to_string()));
+        assert_eq!(result, Some("mods/some-mod-1.0.jar".to_string()););
     }
 
     #[test]
     fn test_safe_zip_entry_name_slash_rejected() {
-        assert!(safe_zip_entry_name("foo/bar.jar").is_none());
+        assert!(safe_zip_entry_name("foo/bar.jar").is_none());;
     }
 
     #[test]
     fn test_safe_zip_entry_name_backslash_rejected() {
-        assert!(safe_zip_entry_name("foo\\bar.jar").is_none());
+        assert!(safe_zip_entry_name("foo\\bar.jar").is_none());;
     }
 
     #[test]
     fn test_safe_zip_entry_name_null_rejected() {
-        assert!(safe_zip_entry_name("foo\0bar.jar").is_none());
+        assert!(safe_zip_entry_name("foo\0bar.jar").is_none());;
     }
 
     #[test]
     fn test_safe_zip_entry_name_dot_rejected() {
-        assert!(safe_zip_entry_name(".").is_none());
-        assert!(safe_zip_entry_name("..").is_none());
+        assert!(safe_zip_entry_name(".").is_none());;
+        assert!(safe_zip_entry_name("..").is_none());;
     }
 
     #[test]
     fn test_safe_zip_entry_name_empty_rejected() {
-        assert!(safe_zip_entry_name("").is_none());
+        assert!(safe_zip_entry_name("").is_none());;
     }
 
     // --- Version-from-filename parser ---
@@ -1367,8 +1346,8 @@ mod tests {
             "1.20.1",
             "fabric",
         );
-        assert_eq!(mc, Some("1.20.1".to_string()));
-        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(mc, Some("1.20.1".to_string()););
+        assert_eq!(lo, Some("fabric".to_string()););
         assert_eq!(compat, "compatible");
     }
 
@@ -1380,8 +1359,8 @@ mod tests {
             "1.20.1",
             "fabric",
         );
-        assert!(mc.is_none());
-        assert!(lo.is_none());
+        assert!(mc.is_none());;
+        assert!(lo.is_none());;
         assert_eq!(compat, "");
     }
 
@@ -1393,7 +1372,7 @@ mod tests {
             "1.21.1",
             "fabric",
         );
-        assert_eq!(mc, Some("1.21.1".to_string()));
+        assert_eq!(mc, Some("1.21.1".to_string()););
         assert_eq!(lo, None);
         // MC version matches exactly â†’ compatible even without loader in filename
         assert_eq!(compat, "compatible");
@@ -1408,7 +1387,7 @@ mod tests {
             "1.21.11",
             "fabric",
         );
-        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(lo, Some("fabric".to_string()););
         assert_eq!(compat, "major_match");
     }
 
@@ -1417,7 +1396,7 @@ mod tests {
         // fabric-api-0.154.0+26.2.jar on a forge instance â†’ incompatible
         // The '+' in the filename is 0x2B, not a URL-encoded space
         let filename = "fabric-api-0.154.0+26.2.jar";
-        assert_eq!(extract_loader(filename), Some("fabric".to_string()), "extract_loader should find fabric");
+        assert_eq!(extract_loader(filename), Some("fabric".to_string()); "extract_loader should find fabric");
 
         let (mc, lo, compat) = parse_version_from_github_asset(
             filename,
@@ -1425,8 +1404,8 @@ mod tests {
             "26.2",
             "forge",
         );
-        assert_eq!(mc, Some("26.2".to_string()));
-        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(mc, Some("26.2".to_string()););
+        assert_eq!(lo, Some("fabric".to_string()););
         assert_eq!(compat, "");
     }
 
@@ -1439,8 +1418,8 @@ mod tests {
             "1.21.11",
             "fabric",
         );
-        assert_eq!(mc, Some("1.21".to_string()));
-        assert!(lo.is_none());
+        assert_eq!(mc, Some("1.21".to_string()););
+        assert!(lo.is_none());;
         assert_eq!(compat, "major_match");
     }
 
@@ -1454,8 +1433,8 @@ mod tests {
             "1.21",
             "fabric",
         );
-        assert_eq!(mc, Some("1.21".to_string()));
-        assert!(lo.is_none());
+        assert_eq!(mc, Some("1.21".to_string()););
+        assert!(lo.is_none());;
         assert_eq!(compat, "compatible");
     }
 
@@ -1468,50 +1447,50 @@ mod tests {
             "1.21",
             "fabric",
         );
-        assert_eq!(mc, Some("1.21".to_string()));
-        assert_eq!(lo, Some("fabric".to_string()));
+        assert_eq!(mc, Some("1.21".to_string()););
+        assert_eq!(lo, Some("fabric".to_string()););
         assert_eq!(compat, "compatible");
     }
 
     #[test]
     fn test_extract_mc_version_bare() {
-        assert_eq!(extract_mc_version("my-mod-1.21.11.jar"), Some("1.21.11".to_string()));
+        assert_eq!(extract_mc_version("my-mod-1.21.11.jar"), Some("1.21.11".to_string()););
     }
 
     #[test]
     fn test_extract_mc_version_mc_prefix() {
-        assert_eq!(extract_mc_version("mc1.21.1.jar"), Some("1.21.1".to_string()));
+        assert_eq!(extract_mc_version("mc1.21.1.jar"), Some("1.21.1".to_string()););
     }
 
     #[test]
     fn test_extract_mc_version_no_1_prefix() {
-        assert_eq!(extract_mc_version("mc26.2-0.25.1.jar"), Some("26.2".to_string()));
+        assert_eq!(extract_mc_version("mc26.2-0.25.1.jar"), Some("26.2".to_string()););
     }
 
     #[test]
     fn test_extract_mc_version_prefers_mc_prefix() {
         // iris-1.7.3+mc1.21.jar â€” should pick mc1.21, not 1.7.3
-        assert_eq!(extract_mc_version("iris-1.7.3+mc1.21.jar"), Some("1.21".to_string()));
+        assert_eq!(extract_mc_version("iris-1.7.3+mc1.21.jar"), Some("1.21".to_string()););
     }
 
     #[test]
     fn test_extract_mc_version_fabricmc_no_false_match() {
         // "fabricmc" should NOT match as mc prefix
-        assert_eq!(extract_mc_version("fabricmc-1.21.jar"), Some("1.21".to_string()));
+        assert_eq!(extract_mc_version("fabricmc-1.21.jar"), Some("1.21".to_string()););
     }
 
     #[test]
     fn test_extract_mc_version_fabricmc_with_mc() {
         // "fabricmc-mc1.21.jar" â€” second mc is the real prefix
-        assert_eq!(extract_mc_version("fabricmc-mc1.21.jar"), Some("1.21".to_string()));
+        assert_eq!(extract_mc_version("fabricmc-mc1.21.jar"), Some("1.21".to_string()););
     }
 
     #[test]
     fn test_extract_loader() {
-        assert_eq!(extract_loader("fabric-api-0.92.0.jar"), Some("fabric".to_string()));
-        assert_eq!(extract_loader("fabric-api-0.154.0+26.2.jar"), Some("fabric".to_string()));
-        assert_eq!(extract_loader("my-forge-mod.jar"), Some("forge".to_string()));
-        assert_eq!(extract_loader("neoforge-thing.jar"), Some("neoforge".to_string()));
+        assert_eq!(extract_loader("fabric-api-0.92.0.jar"), Some("fabric".to_string()););
+        assert_eq!(extract_loader("fabric-api-0.154.0+26.2.jar"), Some("fabric".to_string()););
+        assert_eq!(extract_loader("my-forge-mod.jar"), Some("forge".to_string()););
+        assert_eq!(extract_loader("neoforge-thing.jar"), Some("neoforge".to_string()););
         assert_eq!(extract_loader("random.jar"), None);
     }
 
@@ -1550,7 +1529,7 @@ fn stream_jar_into_zip(
             .map_err(|_| LauncherError::InstanceCreateFailed)?;
         size += n as u64;
     }
-    Ok((hex::encode(hasher.finalize()), size))
+    Ok((hex::encode(hasher.finalize()); size));
 }
 
 /// Export an instance as a shareable pack file (Â§6.5c).
@@ -1608,22 +1587,22 @@ pub async fn export_instance_pack(
                     "source": m.source,
                     "version": m.version,
                     "sha256": m.sha256,
-                })).collect::<Vec<_>>(),
+                }));.collect::<Vec<_>>(),
             });
-            let out_path = exports_dir.join(format!("{}.agora-pack.json", safe_id));
+            let out_path = exports_dir.join(format!("{}.agora-pack.json", safe_id));;
             let tmp_path = out_path.with_extension("json.tmp");
             let text = serde_json::to_string_pretty(&pack)
                 .map_err(|_| LauncherError::InstanceCreateFailed)?;
             std::fs::write(&tmp_path, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
             std::fs::rename(&tmp_path, &out_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
-            Ok(out_path.to_string_lossy().to_string())
+            Ok(out_path.to_string_lossy().to_string());
         }
         "mrpack" => {
             let mods_dir = paths::instance_dir(app, instance_id)
                 .map_err(|_| LauncherError::InstanceCreateFailed)?
                 .join("mods");
 
-            let out_path = exports_dir.join(format!("{}.mrpack", safe_id));
+            let out_path = exports_dir.join(format!("{}.mrpack", safe_id));;
             let tmp_path = out_path.with_extension("mrpack.tmp");
 
             {
@@ -1640,14 +1619,14 @@ pub async fn export_instance_pack(
                     // hashes instead of bundling the jar. This is the mrpack v1 best practice
                     // and keeps exported packs tiny + resolvable. Falls through to local
                     // bundling when Modrinth has no metadata for this filename.
-                    if let Some(mid) = m.modrinth_id.as_deref().filter(|s| !s.trim().is_empty()) {
+                    if let Some(mid) = m.modrinth_id.as_deref().filter(|s| !s.trim().is_empty()); {
                         if let Some(meta) = crate::modrinth_raw::resolve_modrinth_file_metadata(mid, &m.filename).await {
                             files_meta.push(serde_json::json!({
                                 "path": format!("mods/{}", m.filename),
                                 "hashes": { "sha1": meta.sha1, "sha512": meta.sha512 },
                                 "downloads": [meta.url],
                                 "fileSize": meta.size,
-                            }));
+                            }));;
                             continue;
                         }
                     }
@@ -1661,7 +1640,7 @@ pub async fn export_instance_pack(
                                 "hashes": { "sha256": m.sha256 },
                                 "downloads": [],
                                 "fileSize": 0u64,
-                            }));
+                            }));;
                             continue;
                         }
                     };
@@ -1670,7 +1649,7 @@ pub async fn export_instance_pack(
                     // Reject symlinks in mods/ so an attacker cannot bundle an
                     // arbitrary file the user did not intend to ship.
                     let is_symlink = std::fs::symlink_metadata(&p)
-                        .map(|md| md.file_type().is_symlink())
+                        .map(|md| md.file_type().is_symlink());
                         .unwrap_or(false);
                     if is_symlink {
                         files_meta.push(serde_json::json!({
@@ -1678,18 +1657,18 @@ pub async fn export_instance_pack(
                             "hashes": { "sha256": m.sha256 },
                             "downloads": [],
                             "fileSize": 0u64,
-                        }));
+                        }));;
                         continue;
                     }
 
                     match stream_jar_into_zip(&mut zip, opts, &entry_name, &p) {
-                        Ok((sha, size)) => {
+                        Ok((sha, size)); => {
                             files_meta.push(serde_json::json!({
                                 "path": entry_name,
                                 "hashes": { "sha256": sha },
                                 "downloads": [],
                                 "fileSize": size,
-                            }));
+                            }));;
                         }
                         Err(_) => {
                             // File unreadable/missing â€” record the manifest
@@ -1699,7 +1678,7 @@ pub async fn export_instance_pack(
                                 "hashes": { "sha256": m.sha256 },
                                 "downloads": [],
                                 "fileSize": 0u64,
-                            }));
+                            }));;
                         }
                     }
                 }
@@ -1708,8 +1687,8 @@ pub async fn export_instance_pack(
                 // streamed file hashes/sizes. Archive entry order is irrelevant
                 // to mrpack consumers.
                 let mut deps = serde_json::Map::new();
-                deps.insert("minecraft".to_string(), serde_json::Value::String(manifest.minecraft_version.clone()));
-                deps.insert(manifest.loader.clone(), serde_json::Value::String(manifest.loader_version.clone()));
+                deps.insert("minecraft".to_string(), serde_json::Value::String(manifest.minecraft_version.clone()););
+                deps.insert(manifest.loader.clone(), serde_json::Value::String(manifest.loader_version.clone()););
                 let index = serde_json::json!({
                     "formatVersion": 1,
                     "game": "minecraft",
@@ -1723,13 +1702,13 @@ pub async fn export_instance_pack(
 
                 zip.start_file("modrinth.index.json", opts)
                     .map_err(|_| LauncherError::InstanceCreateFailed)?;
-                zip.write_all(index_text.as_bytes())
+                zip.write_all(index_text.as_bytes());
                     .map_err(|_| LauncherError::InstanceCreateFailed)?;
                 zip.finish().map_err(|_| LauncherError::InstanceCreateFailed)?;
             }
 
             std::fs::rename(&tmp_path, &out_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
-            Ok(out_path.to_string_lossy().to_string())
+            Ok(out_path.to_string_lossy().to_string());
         }
         other => Err(LauncherError::Generic {
             code: "ERR_INVALID_FORMAT".to_string(),
@@ -1809,12 +1788,12 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
     })?;
 
     // Extract dependencies
-    let deps = index.get("dependencies").and_then(|d| d.as_object()).ok_or_else(|| LauncherError::Generic {
+    let deps = index.get("dependencies").and_then(|d| d.as_object());.ok_or_else(|| LauncherError::Generic {
         code: "ERR_PACK_PARSE".to_string(),
         message: "mrpack has no dependencies map.".to_string(),
     })?;
 
-    let minecraft_version = deps.get("minecraft").and_then(|v| v.as_str()).ok_or_else(|| LauncherError::Generic {
+    let minecraft_version = deps.get("minecraft").and_then(|v| v.as_str());.ok_or_else(|| LauncherError::Generic {
         code: "ERR_PACK_PARSE".to_string(),
         message: "mrpack missing required 'dependencies.minecraft'.".to_string(),
     })?;
@@ -1828,7 +1807,7 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
     // Find exactly one loader dependency
     let loader_key = &["fabric-loader", "quilt-loader", "neoforge", "forge"]
         .iter()
-        .find(|k| deps.keys().any(|key| key == **k));
+        .find(|k| deps.keys().any(|key| key == **k));;
     let loader_key = loader_key.ok_or_else(|| LauncherError::Generic {
         code: "ERR_PACK_PARSE".to_string(),
         message: "mrpack has no loader dependency; cannot determine loader+version.".to_string(),
@@ -1844,7 +1823,7 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
 
     let loader_version = deps
         .get(*loader_key)
-        .and_then(|v| v.as_str())
+        .and_then(|v| v.as_str());
         .ok_or_else(|| LauncherError::Generic {
             code: "ERR_PACK_PARSE".to_string(),
             message: format!("mrpack missing loader version for '{loader_key}'."),
@@ -1854,13 +1833,13 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
     // Instance name: prefer index["name"], else derive from filename
     let name = index
         .get("name")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .and_then(|v| v.as_str());
+        .filter(|s| !s.is_empty());
+        .map(|s| s.to_string());
         .unwrap_or_else(|| {
             Path::new(source_path)
                 .file_stem()
-                .and_then(|s| s.to_str())
+                .and_then(|s| s.to_str());
                 .unwrap_or("imported-pack")
                 .to_string()
         });
@@ -1894,7 +1873,7 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
 
     if let Some(arr) = files_arr.as_array() {
         for file_entry in arr {
-            let path = file_entry.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let path = file_entry.get("path").and_then(|v| v.as_str());.unwrap_or("");
             if !path.starts_with("mods/") {
                 continue;
             }
@@ -1904,25 +1883,25 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
             }
             // Skip nested paths (only flat mods/<filename> is supported)
             if basename.contains('/') || basename.contains('\\') {
-                auth::log_line(&format!("import_mrpack: path contains nested slashes, skipping '{basename}'"));
+                eprintln!("[auth] "import_mrpack: path contains nested slashes, skipping '{basename}'"));;
                 continue;
             }
 
             if safe_zip_entry_name(basename).is_none() {
-                auth::log_line(&format!("import_mrpack: unsafe basename '{basename}', skipping"));
+                eprintln!("[auth] "import_mrpack: unsafe basename '{basename}', skipping"));;
                 continue;
             }
 
-            let downloads = file_entry.get("downloads").and_then(|d| d.as_array());
+            let downloads = file_entry.get("downloads").and_then(|d| d.as_array());;
         if let Some(downloads) = downloads {
-            if let Some(url) = downloads.first().and_then(|u| u.as_str()) {
+            if let Some(url) = downloads.first().and_then(|u| u.as_str()); {
                 // Download from Modrinth CDN (host-allowlisted by download_mod_bytes)
                 let bytes = download_mod_bytes(url).await?;
                 // SHA-1 verification if declared
                 if let Some(expected_sha1) = file_entry.get("hashes")
-                    .and_then(|h| h.get("sha1"))
-                    .and_then(|h| h.as_str())
-                    .filter(|s| !s.is_empty())
+                    .and_then(|h| h.get("sha1"));
+                    .and_then(|h| h.as_str());
+                    .filter(|s| !s.is_empty());
                 {
                     let actual = download::sha1_hex(&bytes);
                     if actual != expected_sha1.trim().to_lowercase() {
@@ -1973,7 +1952,7 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
                     incompatible_deps: metadata.incompatible_deps,
                 });
             } else {
-                auth::log_line(&format!("import_mrpack: bundled file not found in zip: '{path}'"));
+                eprintln!("[auth] "import_mrpack: bundled file not found in zip: '{path}'"));;
             }
         }
     }
@@ -2014,18 +1993,18 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
 
         // Check directory whitelist.
         let allowed = ["config/", "defaultconfigs/", "resourcepacks/", "shaderpacks/", "datapacks/", "kubejs/"];
-        if !allowed.iter().any(|p| normalized.starts_with(p)) {
-            override_skipped.push(normalized.clone());
+        if !allowed.iter().any(|p| normalized.starts_with(p)); {
+            override_skipped.push(normalized.clone());;
             continue;
         }
 
         // Check banned extensions.
         let lower = normalized.to_lowercase();
         let banned = [".jar", ".class", ".exe", ".bat", ".cmd", ".sh", ".ps1", ".dll", ".so", ".dylib", ".msi", ".dmg"];
-        if banned.iter().any(|ext| lower.ends_with(ext)) {
-            auth::log_line(&format!(
+        if banned.iter().any(|ext| lower.ends_with(ext)); {
+            eprintln!("[auth] 
                 "import_mrpack: banned extension in override: '{normalized}', skipping"
-            ));
+            ));;
             continue;
         }
 
@@ -2048,11 +2027,11 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
     }
 
     if !override_extracted.is_empty() {
-        auth::log_line(&format!(
+        eprintln!("[auth] 
             "import_mrpack: extracted {} override files, skipped {}",
             override_extracted.len(),
             override_skipped.len()
-        ));
+        ));;
     }
 
     // Update manifest atomically
@@ -2083,7 +2062,7 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
             std::fs::write(&tmp_path, write_text).map_err(|_| LauncherError::InstanceCreateFailed)?;
             std::fs::rename(&tmp_path, &manifest_path)
                 .map_err(|_| LauncherError::InstanceCreateFailed)?;
-            Ok::<_, LauncherError>(())
+            Ok::<_, LauncherError>(());
         })
         .await
         .map_err(|_| LauncherError::Generic {
@@ -2115,7 +2094,7 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
 
     let mc_version = instance_obj
         .get("minecraft_version")
-        .and_then(|v| v.as_str())
+        .and_then(|v| v.as_str());
         .ok_or_else(|| LauncherError::Generic {
             code: "ERR_PACK_PARSE".to_string(),
             message: "agora-pack instance missing 'minecraft_version'.".to_string(),
@@ -2129,7 +2108,7 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
 
     let loader = instance_obj
         .get("loader")
-        .and_then(|v| v.as_str())
+        .and_then(|v| v.as_str());
         .ok_or_else(|| LauncherError::Generic {
             code: "ERR_PACK_PARSE".to_string(),
             message: "agora-pack instance missing 'loader'.".to_string(),
@@ -2143,7 +2122,7 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
 
     let loader_version = instance_obj
         .get("loader_version")
-        .and_then(|v| v.as_str())
+        .and_then(|v| v.as_str());
         .ok_or_else(|| LauncherError::Generic {
             code: "ERR_PACK_PARSE".to_string(),
             message: "agora-pack instance missing 'loader_version'.".to_string(),
@@ -2157,20 +2136,20 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
 
     let name = instance_obj
         .get("name")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .and_then(|v| v.as_str());
+        .filter(|s| !s.is_empty());
+        .map(|s| s.to_string());
         .or_else(|| {
             instance_obj
                 .get("id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
+                .and_then(|v| v.as_str());
+                .map(|s| s.to_string());
         })
-        .unwrap_or_else(|| "imported-pack".to_string());
+        .unwrap_or_else(|| "imported-pack".to_string());;
 
     let instance_id = instance_obj
         .get("id")
-        .and_then(|v| v.as_str())
+        .and_then(|v| v.as_str());
         .unwrap_or(&name)
         .to_string();
 
@@ -2191,17 +2170,17 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
     let _row = instances::create_instance(app.clone(), req).await?;
 
     // Install mods from the pack
-    if let Some(mods_arr) = pack.get("mods").and_then(|m| m.as_array()) {
+    if let Some(mods_arr) = pack.get("mods").and_then(|m| m.as_array()); {
         for mod_entry in mods_arr {
             let registry_id = mod_entry
                 .get("registry_id")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty());
+                .and_then(|v| v.as_str());
+                .filter(|s| !s.is_empty());;
 
             if let Some(rid) = registry_id {
                 let filename = mod_entry
                     .get("filename")
-                    .and_then(|v| v.as_str())
+                    .and_then(|v| v.as_str());
                     .unwrap_or("")
                     .to_string();
 
@@ -2210,42 +2189,42 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
                         // Try to match by filename first, then by version
                         let candidate = candidates.iter().find(|c| c.filename == filename)
                             .or_else(|| {
-                                let ver = mod_entry.get("version").and_then(|v| v.as_str());
-                                ver.and_then(|v| candidates.iter().find(|c| c.version == v))
+                                let ver = mod_entry.get("version").and_then(|v| v.as_str());;
+                                ver.and_then(|v| candidates.iter().find(|c| c.version == v));
                             });
 
                         if let Some(c) = candidate {
                             if let Err(e) = install_mod_version(app, &instance_id, rid, c).await {
-                                auth::log_line(&format!(
+                                eprintln!("[auth] 
                                     "import_agora_pack: failed to install registry mod {rid}: {e}"
-                                ));
+                                ));;
                             }
                         } else {
-                            auth::log_line(&format!(
+                            eprintln!("[auth] 
                                 "import_agora_pack: no matching candidate for mod {rid} (filename={filename})"
-                            ));
+                            ));;
                         }
                     }
                     Err(e) => {
-                        auth::log_line(&format!(
+                        eprintln!("[auth] 
                             "import_agora_pack: failed to list versions for registry mod {rid}: {e}"
-                        ));
+                        ));;
                     }
                 }
             } else if let Some(mid) = mod_entry
                 .get("modrinth_id")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.trim().is_empty())
+                .and_then(|v| v.as_str());
+                .filter(|s| !s.trim().is_empty());
             {
                 if !crate::modrinth_raw::is_modrinth_enabled(app) {
-                    auth::log_line(&format!(
+                    eprintln!("[auth] 
                         "import_agora_pack: skipping modrinth mod '{mid}' â€” Modrinth integration disabled"
-                    ));
+                    ));;
                     continue;
                 }
                 let filename = mod_entry
                     .get("filename")
-                    .and_then(|v| v.as_str())
+                    .and_then(|v| v.as_str());
                     .unwrap_or("")
                     .to_string();
                 match crate::modrinth_raw::list_raw_modrinth_versions(app, Some(&instance_id), mid).await {
@@ -2253,39 +2232,39 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
                         let candidate = candidates
                             .iter()
                             .find(|c| c.primary && c.filename == filename)
-                            .or_else(|| candidates.iter().find(|c| c.filename == filename))
-                            .or_else(|| candidates.iter().find(|c| c.primary))
+                            .or_else(|| candidates.iter().find(|c| c.filename == filename));
+                            .or_else(|| candidates.iter().find(|c| c.primary));
                             .or_else(|| {
-                                let ver = mod_entry.get("version").and_then(|v| v.as_str());
-                                ver.and_then(|v| candidates.iter().find(|c| c.version == v))
+                                let ver = mod_entry.get("version").and_then(|v| v.as_str());;
+                                ver.and_then(|v| candidates.iter().find(|c| c.version == v));
                             })
-                            .or_else(|| candidates.first());
+                            .or_else(|| candidates.first());;
                         if let Some(c) = candidate {
                             if let Err(e) = crate::modrinth_raw::install_raw_modrinth(app, &instance_id, mid, c, "mod").await {
-                                auth::log_line(&format!(
+                                eprintln!("[auth] 
                                     "import_agora_pack: failed to install modrinth mod {mid}: {e}"
-                                ));
+                                ));;
                             }
                         } else {
-                            auth::log_line(&format!(
+                            eprintln!("[auth] 
                                 "import_agora_pack: no candidate for modrinth mod {mid} (filename={filename})"
-                            ));
+                            ));;
                         }
                     }
                     Err(e) => {
-                        auth::log_line(&format!(
+                        eprintln!("[auth] 
                             "import_agora_pack: failed to list versions for modrinth mod {mid}: {e}"
-                        ));
+                        ));;
                     }
                 }
             } else {
                 let filename = mod_entry
                     .get("filename")
-                    .and_then(|v| v.as_str())
+                    .and_then(|v| v.as_str());
                     .unwrap_or("unknown");
-                auth::log_line(&format!(
+                eprintln!("[auth] 
                     "import_agora_pack: skipping non-registry mod '{filename}' (manual re-add required)"
-                ));
+                ));;
             }
         }
     }

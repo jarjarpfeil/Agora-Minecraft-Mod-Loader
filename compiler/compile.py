@@ -41,7 +41,7 @@ CRASH_SIGNATURES_DIR = REPO_ROOT / "crash-signatures"
 LOADER_MANIFESTS_DIR = REPO_ROOT / "loader-manifests"
 
 # ---------------------------------------------------------------------------
-# Regex DoS protection (§2.4.1)
+# Regex DoS protection (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§2.4.1)
 # ---------------------------------------------------------------------------
 
 # 100 KB corpus for catastrophic-backtracking detection.
@@ -69,7 +69,7 @@ def _test_regex_timeout(pattern: re.Pattern[str], timeout_secs: float = 1.0) -> 
             signal.setitimer(signal.ITIMER_REAL, 0)  # cancel the alarm
             signal.signal(signal.SIGALRM, old_handler)
     else:
-        # Windows: no signal.alarm — use subprocess with timeout.
+        # Windows: no signal.alarm ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â use subprocess with timeout.
         # Embed the corpus in the code string to avoid CLI length limits.
         code = (
             "import re, sys; "
@@ -114,7 +114,7 @@ def _load_dotenv(path: Path) -> None:
 _load_dotenv(REPO_ROOT / ".env")
 
 # ---------------------------------------------------------------------------
-# GitHub social metrics (§3.1 steps 3-9)
+# GitHub social metrics (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 steps 3-9)
 # ---------------------------------------------------------------------------
 #
 # The governance repo (owner/repo) whose Issue tracker hosts mod reviews / vote
@@ -123,7 +123,7 @@ _load_dotenv(REPO_ROOT / ".env")
 # layout (### Mod Registry ID heading + value) and aggregates reactions on the
 # issue + its comments to produce per-mod upvotes/downvotes.
 #
-# The governance repo IS the registry repo itself — issues are filed on the
+# The governance repo IS the registry repo itself ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â issues are filed on the
 # main repository, not a separate governance repo. Override locally via
 # the AGORA_REGISTRY_REPO env var ("owner/repo" form). In GitHub Actions,
 # GITHUB_REPOSITORY is auto-set to "owner/repo" and used as fallback.
@@ -150,18 +150,18 @@ MOD_ID_FIELD_RE = re.compile(
     re.IGNORECASE,
 )
 
-# --- §3.1 step 5/6/8 + §3.2 Raid Shield circuit-breaker response ---
+# --- ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5/6/8 + ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2 Raid Shield circuit-breaker response ---
 #
 # When the velocity circuit breaker fires (Pass 2 set m.status='under_review' +
 # m.anomaly_window_start), the compiler performs beyond-just-status-flip:
-#   - §3.2 Raid Shield: programmatically enable "existing users only"
+#   - ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2 Raid Shield: programmatically enable "existing users only"
 #     interaction limits on the governance repo (covers ALL items, not just
-#     the offending one — GitHub interaction-limits are repo-wide).
-#   - §3.1 step 6: DELETE the offending reactions from GitHub via the REST
+#     the offending one ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â GitHub interaction-limits are repo-wide).
+#   - ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 6: DELETE the offending reactions from GitHub via the REST
 #     API (their data is captured pre-DELETE in the audit log entry below).
-#   - §3.1 step 8 (create): create a 7-day triage poll in Discussions under
+#   - ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 8 (create): create a 7-day triage poll in Discussions under
 #     a "Triage" category if it exists (soft-fail with a warning if the
-#     category isn't present — discussion creation is OPTIONAL, status flip
+#     category isn't present ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â discussion creation is OPTIONAL, status flip
 #     is the hard requirement).
 #   - Admin-alert issue: file a high-priority confidential issue in the
 #     governance repo (private repos are out of scope; we file as a
@@ -172,7 +172,7 @@ MOD_ID_FIELD_RE = re.compile(
 # (no offending burst to delete) and WITHOUT Raid Shield (interaction limit
 # is only for burst-attack defense).
 TRIAGE_POLL_DURATION_DAYS = 7
-ORGANIC_UNDER_REVIEW_THRESHOLD = -10  # §5.3: net_score drops below -10 organically
+ORGANIC_UNDER_REVIEW_THRESHOLD = -10  # ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§5.3: net_score drops below -10 organically
 TRIAGE_DISCUSSION_CATEGORY_CANDIDATES = ("Triage", "Mod Reviews", "Community Triage")
 
 
@@ -183,7 +183,7 @@ class UserReaction:
     `comment_id` is None when the reaction was placed directly on the issue
     itself (rather than on a comment). `is_upvote` is True for +1 / thumbs_up
     emoji, False for -1 / thumbs_down, None for neutral emoji (laugh, hooray,
-    confused, heart, rocket, eyes) — those are still tracked because user
+    confused, heart, rocket, eyes) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â those are still tracked because user
     participation in ANY reaction on the mod's tracking issue counts toward
     diversity (Sybil resistance, Pass 2).
     """
@@ -199,12 +199,12 @@ class ModSocialMetrics:
 
     Populated in Pass 1 by `_hydrate_github_social_metrics`. Pass 2 will consume
     these to compute final upvotes/downvotes/net_score/velocity after applying
-    the trust + Sybil + velocity circuit-breaker rules from §3.1 steps 4, 5, 9.
+    the trust + Sybil + velocity circuit-breaker rules from ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 steps 4, 5, 9.
     """
     mod_id: str
     issue_number: int
     reactions: list[UserReaction] = field(default_factory=list)
-    # Pass 2 (computed by _apply_trust_velocity_pass — not populated by Pass 1):
+    # Pass 2 (computed by _apply_trust_velocity_pass ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â not populated by Pass 1):
     upvotes: int = 0
     downvotes: int = 0
     net_score: int = 0
@@ -218,6 +218,7 @@ class ModSocialMetrics:
     # filters via _scrub_review_text and feeds the survivors into
     # curator_reviews.top_reviews_json.
     scrubbed_reviews: list[dict[str, Any]] = field(default_factory=list)
+    immunity_cooldown_until: str | None = None
 
 
 def _load_github_token() -> str | None:
@@ -335,13 +336,13 @@ def _github_graphql(
 
 
 def _user_org_interaction_count(login: str, org: str, *, token: str) -> int:
-    """Spec §3.1 step 4 (strict): count a user's interactions across the agora-mc org.
+    """Spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 4 (strict): count a user's interactions across the agora-mc org.
 
     Uses the GraphQL `user.contributionsCollection` resolver scoped to the
     org via `organization` argument. Returns the sum of totalIssuesContributedTo,
     totalPullRequestContributions, totalIssueCommentsContributionsForContributor
-    within the scoped org. On any error: returns 0 (treated as untrusted —
-    fail-safe). NEVER cache this method on its own — callers cache via a
+    within the scoped org. On any error: returns 0 (treated as untrusted ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â
+    fail-safe). NEVER cache this method on its own ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â callers cache via a
     dict[str, int] passed in to amortize across mods.
     """
     query = """
@@ -453,7 +454,7 @@ def _fetch_reactions_for_issue(
 ) -> list[UserReaction]:
     """Fetch all reactions on an issue + each of its comments (paginated).
 
-    Pass 1 ignores blacklist — that's applied at aggregation time in Pass 2.
+    Pass 1 ignores blacklist ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â that's applied at aggregation time in Pass 2.
     """
     out: list[UserReaction] = []
     issue_reactions = _github_paginate(
@@ -491,9 +492,9 @@ def _hydrate_github_social_metrics(
 
     Mutates `items` in-place (mirrors the `_hydrate_modrinth_metadata` pattern).
     On any error (no token, network failure, malformed data): silently leave
-    items untouched — Pass 2 will treat missing `_social_metrics` as zeros.
+    items untouched ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Pass 2 will treat missing `_social_metrics` as zeros.
 
-    §3.1 Step 3 (Pass 1): enumerate governance-repo issues, extract mod_id
+    ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 Step 3 (Pass 1): enumerate governance-repo issues, extract mod_id
     from each review-form body, fetch reactions (issue-level + per-comment),
     attach a ModSocialMetrics obj to the corresponding item dict.
     """
@@ -577,7 +578,7 @@ def _hydrate_github_social_metrics(
 
 
 def _sybil_diversity_weight(login: str, mod_ids_voted_on_by_user: list[str]) -> float:
-    """Reduced weight for users who only participated on a SINGLE mod (Sybil defence, §3.1 step 4).
+    """Reduced weight for users who only participated on a SINGLE mod (Sybil defence, ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 4).
 
     Spec: "Vote weight receives a small multiplier if the account has a
     demonstrated history of participating in *different* issues/repositories."
@@ -599,7 +600,7 @@ def _user_interaction_counts(
 ) -> dict[str, int]:
     """Populate per-user interaction counts across the agora-mc org via GraphQL.
 
-    Spec §3.1 step 4: trust activity threshold is "at least 3 interactions
+    Spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 4: trust activity threshold is "at least 3 interactions
     (issues opened, comments, PRs, or reactions) across repositories owned by
     the agora-mc organization." Cached per session to amortize across items.
     """
@@ -623,12 +624,12 @@ def _is_user_trusted(
     age_threshold_days: int = 30,
     activity_threshold: int = 3,
 ) -> bool:
-    """Apply §3.1 step 4 trust gating to one user.
+    """Apply ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 4 trust gating to one user.
 
     Trust = (account age >= 30 days) AND (interaction_count >= 3 in this repo).
     `cache` prevents refetching the same user's profile across mods. On any API
     failure (rate limit exhausted, 404, etc.) the user is treated as UNtrusted
-    (fail-safe — bad actors waste time, no false-positive trust grants).
+    (fail-safe ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bad actors waste time, no false-positive trust grants).
     """
     cached = cache.get(login)
     if cached is not None:
@@ -657,12 +658,12 @@ def _compute_velocity(
     downvote_timestamps: list[datetime],
     now: datetime,
 ) -> tuple[float, bool, datetime | None]:
-    """§3.1 step 5: compute velocity (trending metric) and anomaly flag.
+    """ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5: compute velocity (trending metric) and anomaly flag.
 
     Returns (velocity_float, is_anomaly, anomaly_window_start).
 
     The `velocity` column is used for the Browse sort to surface trending
-    items (desktop renders "▲ X.X" / "▼ X.X"). We define:
+    items (desktop renders "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“Ãƒâ€šÃ‚Â² X.X" / "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“Ãƒâ€šÃ‚Â¼ X.X"). We define:
         - historical_avg_per_6h = count_in_7d / 28     (7-day window / 6-hour windows)
         - recent_6h_total = upvotes_last_6h + downvotes_last_6h
         - velocity = (recent_6h_total - historical_avg_per_6h) / max(historical_avg_per_6h, 0.5)
@@ -671,7 +672,7 @@ def _compute_velocity(
     The circuit-breaker (separate from velocity) fires when:
         (recent_downvotes_6h / max(historical_downvotes_7d_avg_per_6h, 1.0)) > 5.0
         AND recent_downvotes_6h > 20
-    When it fires, anomaly_window_start = (now - 6h) — the caller uses this to
+    When it fires, anomaly_window_start = (now - 6h) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â the caller uses this to
     freeze vote counts at pre-spike values by excluding reactions in the
     window [anomaly_window_start, now].
     """
@@ -693,7 +694,7 @@ def _compute_velocity(
         velocity = (recent_6h_total - historical_avg_per_6h) / historical_avg_per_6h
     velocity = max(-10.0, min(10.0, velocity))
 
-    # Circuit breaker — DOWNVOTES only (raid signature per spec §3.1 step 5).
+    # Circuit breaker ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â DOWNVOTES only (raid signature per spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5).
     historical_downvotes_per_6h = len(down_7d) / 28.0
     recent_downvotes_6h = len(down_6h)
     ratio = recent_downvotes_6h / max(historical_downvotes_per_6h, 1.0)
@@ -708,19 +709,19 @@ def _apply_trust_velocity_pass(
     token: str,
     blacklist: set[str],
 ) -> None:
-    """Pass 2: apply §3.1 steps 4 (trust), Sybil weighting, 5 (velocity breaker), 9 (immune).
+    """Pass 2: apply ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 steps 4 (trust), Sybil weighting, 5 (velocity breaker), 9 (immune).
 
     Walks each item's attached `_social_metrics` (added by Pass 1), filters
     reactions by user trust + diversity, computes final upvotes/downvotes/
     net_score/velocity/status. Mutates each ModSocialMetrics in place.
 
-    Items with `governance.immune == true` skip ALL score evaluation per §3.1
+    Items with `governance.immune == true` skip ALL score evaluation per ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1
     step 9: their metrics stay at default (0, 0, 0, 0.0, "active") regardless
-    of reactions — and the attached `_social_metrics` is REMOVED from the
+    of reactions ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â and the attached `_social_metrics` is REMOVED from the
     item dict so the immune-passthrough in `insert_registry_item` can detect
     the immune case cleanly.
 
-    When GITHUB_TOKEN is absent (local dev) this is a no-op — items keep
+    When GITHUB_TOKEN is absent (local dev) this is a no-op ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â items keep
     their defaults and the DB shows zeros (same as before Pass 2).
     """
     if not token:
@@ -783,12 +784,12 @@ def _apply_trust_velocity_pass(
         interaction_counts = _user_interaction_counts(by_mod, token=token, org=gov_org, cache=trust_interaction_cache)
         for r in m.reactions:
             if r.is_upvote is None:
-                continue  # neutral reaction (laugh, hooray, etc.) — not a vote
+                continue  # neutral reaction (laugh, hooray, etc.) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â not a vote
             # Freeze-at-pre-spike: if anomaly fired, drop reactions inside
             # the 6h anomaly window before counting.
             if is_anomaly and anomaly_start is not None and r.timestamp >= anomaly_start:
                 continue
-            # Trust gate (§3.1 step 4).
+            # Trust gate (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 4).
             interaction_count = interaction_counts.get(r.user, 0)
             if not _is_user_trusted(
                 r.user,
@@ -798,7 +799,7 @@ def _apply_trust_velocity_pass(
                 cache=trust_cache,
             ):
                 continue
-            # Sybil diversity weighting (§3.1 step 4 Sybil resistance).
+            # Sybil diversity weighting (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 4 Sybil resistance).
             diversity = _sybil_diversity_weight(r.user, user_mods.get(r.user, []))
             if diversity < 0.99:
                 # v1: drop low-weight votes entirely (proportional weighting
@@ -812,7 +813,7 @@ def _apply_trust_velocity_pass(
         m.downvotes = accepted_down
         m.net_score = accepted_up - accepted_down
 
-        # Spec §3.1 step 7: sentiment + spam scrubbing of review comments.
+        # Spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 7: sentiment + spam scrubbing of review comments.
         # Survivors are attached as `m.scrubbed_reviews`. `insert_registry_item`
         # will write them into curator_reviews.top_reviews_json as JSON.
         scrubbed: list[dict[str, Any]] = []
@@ -835,10 +836,10 @@ def _apply_trust_velocity_pass(
         m.scrubbed_reviews = scrubbed[:10]
 
 
-# --- §3.2 Raid Shield (interaction-limits toggle) ---
+# --- ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2 Raid Shield (interaction-limits toggle) ---
 
 def _enable_raid_shield(owner: str, repo: str, *, token: str) -> bool:
-    """§3.2: programmatically enable "existing users only" interaction limits.
+    """ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2: programmatically enable "existing users only" interaction limits.
 
     Sets `limit: existing_users` on the repo via
     `PUT /repos/{owner}/{repo}/interaction-limits`. Returns True on success,
@@ -853,14 +854,14 @@ def _enable_raid_shield(owner: str, repo: str, *, token: str) -> bool:
             token=token,
             body={"limit": "existing_users", "expiry": "24h"},
         )
-        logger.warning("Raid Shield ENABLED on %s/%s — only existing users can interact for 24h.", owner, repo)
+        logger.warning("Raid Shield ENABLED on %s/%s ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â only existing users can interact for 24h.", owner, repo)
         return True
     except Exception as exc:
         logger.warning("Failed to enable Raid Shield on %s/%s: %s", owner, repo, exc)
         return False
 
 
-# --- §3.1 step 6 (DELETE offending reactions + admin-alert issue) ---
+# --- ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 6 (DELETE offending reactions + admin-alert issue) ---
 
 def _gather_offending_reactions(
     owner: str,
@@ -936,7 +937,7 @@ def _delete_reaction(
     """DELETE a single reaction from GitHub via REST. Returns True on success.
 
     Routes to the issue-level OR comment-level delete endpoint based on
-    `comment_id`. Per §3.1 step 6, this requires `issues:write` permission
+    `comment_id`. Per ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 6, this requires `issues:write` permission
     on the GitHub token, which `compile.yml` already grants.
     """
     try:
@@ -959,12 +960,15 @@ def _delete_reaction(
         return False
 
 
-def _append_audit_entry(action: str, details: str) -> None:
+def _append_audit_entry(action: str, details: str, *, actor: str | None = None, target_type: str | None = None, target_id: str | None = None, reason: str | None = None) -> None:
     """Append an entry to registry/governance/audit_log.json BEFORE risky
     operations (DELETE reactions, enable Raid Shield). Captures intent even
     when the subsequent API call fails.
 
-    Reuses the rotation-at-1000 logic from main()'s trailing audit append.
+    Per Ã‚Â§4.6: each entry carries timestamp, action, actor, target_type,
+    target_id, reason, and details. The root object includes log_format_version.
+    Rotation archives the oldest 2,000 entries to an archive file when the log
+    exceeds 10,000 entries, keeping the most recent 8,000.
     """
     path = REGISTRY_DIR / "governance" / "audit_log.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -973,28 +977,49 @@ def _append_audit_entry(action: str, details: str) -> None:
             with path.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
         else:
-            data = {"entries": []}
+            data = {"log_format_version": 1, "entries": []}
     except (OSError, json.JSONDecodeError):
-        data = {"entries": []}
+        data = {"log_format_version": 1, "entries": []}
+    if "log_format_version" not in data:
+        data["log_format_version"] = 1
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": action,
         "details": details,
     }
+    if actor is not None:
+        entry["actor"] = actor
+    if target_type is not None:
+        entry["target_type"] = target_type
+    if target_id is not None:
+        entry["target_id"] = target_id
+    if reason is not None:
+        entry["reason"] = reason
     data["entries"].append(entry)
-    if len(data["entries"]) > 1000:
-        data["entries"] = data["entries"][-1000:]
+    if len(data["entries"]) > 10000:
+        archive_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+        archive_path = REGISTRY_DIR / "governance" / f"audit_log_archive.{archive_date}.json"
+        oldest_2000 = data["entries"][:2000]
+        data["entries"] = data["entries"][-8000:]
+        if archive_path.exists():
+            with archive_path.open("r", encoding="utf-8") as fh:
+                archive_data = json.load(fh)
+            archive_data.extend(oldest_2000)
+        else:
+            archive_data = oldest_2000
+        with archive_path.open("w", encoding="utf-8") as fh:
+            json.dump(archive_data, fh, indent=2)
     with path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
 
 
-# --- §3.2 Discord webhook alert (real-time push to curator alerts channel) ---
+# --- ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2 Discord webhook alert (real-time push to curator alerts channel) ---
 
 def _load_discord_webhook_url() -> str | None:
     """Read DISCORD_WEBHOOK_URL from env. Returns None when unset.
 
-    The webhook URL is a Discord channel-level integration (Settings →
-    Integrations → Webhooks → New Webhook). No bot account required — just
+    The webhook URL is a Discord channel-level integration (Settings ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢
+    Integrations ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Webhooks ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ New Webhook). No bot account required ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â just
     a webhook URL. When absent, all Discord notifications are silently skipped
     (curator alerts only via the audit trail + admin-alert issue). When Discord
     returns 4xx/5xx, the warning is logged but the compile continues.
@@ -1024,7 +1049,7 @@ def _post_discord_alert(
 
     # Pick embed color by severity.
     color = 0xED4245 if severity == "spike" else 0xEE8430
-    title = f"🚨 Coordinated Attack: `{mod_id}`" if severity == "spike" else f"⚠️ Mod under review: `{mod_id}`"
+    title = f"ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¨ Coordinated Attack: `{mod_id}`" if severity == "spike" else f"ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â Mod under review: `{mod_id}`"
 
     fields: list[dict[str, Any]] = [
         {"name": "Reason", "value": reason, "inline": False},
@@ -1078,7 +1103,7 @@ def _create_admin_alert_issue(
     offending_reactions: list[dict[str, Any]],
     token: str,
 ) -> None:
-    """§3.1 step 6: file a high-priority issue in the governance repo for
+    """ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 6: file a high-priority issue in the governance repo for
     curator review. Title format: `[ALERT] Coordinated Attack Detected: <mod_id>`.
 
     The body summarizes offending users (lowercased), the reaction contents,
@@ -1086,7 +1111,7 @@ def _create_admin_alert_issue(
     Failure is logged but does not abort the broader compile loop.
     """
     user_summary = "\n".join(
-        f"- @{r['user']} — {r['content']} on {r['created_at']} (issue #{r['issue_number']}, comment_id={r['comment_id']})"
+        f"- @{r['user']} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â {r['content']} on {r['created_at']} (issue #{r['issue_number']}, comment_id={r['comment_id']})"
         for r in offending_reactions if r.get("user")
     )
     body = (
@@ -1096,7 +1121,7 @@ def _create_admin_alert_issue(
         f"identified in the 6-hour anomaly window and DELETED from GitHub.\n\n"
         f"### Offending Reactions (captured pre-DELETE)\n\n{user_summary}\n\n"
         f"### Action Taken\n\n"
-        f"- [x] Velocity circuit breaker fired (status → under_review)\n"
+        f"- [x] Velocity circuit breaker fired (status ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ under_review)\n"
         f"- [x] Reaction counts frozen at pre-spike values\n"
         f"- [x] Raid Shield interaction-limits enabled (existing users only, 24h)\n"
         f"- [x] Offending reactions DELETEd from GitHub\n"
@@ -1122,14 +1147,14 @@ def _create_admin_alert_issue(
         logger.warning("Failed to file admin-alert issue for mod '%s': %s", mod_id, exc)
 
 
-# --- §3.1 step 8 (create triage poll) ---
+# --- ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 8 (create triage poll) ---
 
 def _find_triage_discussion_category(owner: str, repo: str, *, token: str) -> int | None:
     """Discover a Discussions category id matching one of the candidate names.
 
     Returns None when Discussions aren't enabled on the repo OR no matching
-    category exists. Soft-fails — poll creation is OPTIONAL; the status flip
-    is the hard requirement of §3.1 step 5.
+    category exists. Soft-fails ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â poll creation is OPTIONAL; the status flip
+    is the hard requirement of ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5.
     """
     try:
         for cat_name in TRIAGE_DISCUSSION_CATEGORY_CANDIDATES:
@@ -1165,7 +1190,7 @@ def _create_triage_poll(
     reason: str,
     token: str,
 ) -> str | None:
-    """§3.1 step 5 / §5.3: open a 7-day triage discussion poll.
+    """ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5 / ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§5.3: open a 7-day triage discussion poll.
 
     Title: "[Community Triage] Should '<mod_id>' be removed from the registry?"
     Body explains the reason (velocity spike OR organic net_score < -10).
@@ -1190,9 +1215,9 @@ def _create_triage_poll(
         f"**Reason:** {reason}\n\n"
         f"**Duration:** {TRIAGE_POLL_DURATION_DAYS} days.\n\n"
         f"### Vote\n\n"
-        f"- 👍 Keep `{mod_id}` in the registry (status restored to 'active', "
+        f"- ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“Ãƒâ€šÃ‚Â Keep `{mod_id}` in the registry (status restored to 'active', "
         f"30-day immunity cooldown granted).\n"
-        f"- 👎 Remove `{mod_id}` — JSON file moved to `registry/archived/`, "
+        f"- ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“Ãƒâ€¦Ã‚Â½ Remove `{mod_id}` ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â JSON file moved to `registry/archived/`, "
         f"item removed from all future builds.\n\n"
         f"### Notes\n\n"
         f"- Reactions from users listed in `registry/governance/poll_blacklist.json` "
@@ -1222,7 +1247,7 @@ def _create_triage_poll(
         return None
 
 
-# --- §3.1 step 8 (resolve expired triage polls) ---
+# --- ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 8 (resolve expired triage polls) ---
 
 def _resolve_expired_triage_polls(
     owner: str,
@@ -1231,7 +1256,7 @@ def _resolve_expired_triage_polls(
     items: list[dict[str, Any]],
     token: str,
 ) -> None:
-    """§3.1 step 5/8: for items currently 'under_review', look up associated
+    """ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5/8: for items currently 'under_review', look up associated
     triage discussions; if the 7-day window has expired, tally votes from
     poll_blacklist-free users and either archive the item (Remove wins) or
     restore it (Keep wins).
@@ -1298,6 +1323,7 @@ def _resolve_expired_triage_polls(
                     keep_votes += 1
                 elif content in ("THUMBS_DOWN", "-1"):
                     remove_votes += 1
+            total_votes = keep_votes + remove_votes
             if remove_votes > keep_votes:
                 item_id = social.mod_id
                 content_type = item.get("content_type", "mod")
@@ -1312,15 +1338,26 @@ def _resolve_expired_triage_polls(
                         "Triage result: REMOVE won for '%s' (%d vs %d votes). Manifest archived to %s.",
                         item_id, remove_votes, keep_votes, dest_path,
                     )
-                    _append_audit_entry("triage_archive", f"Mod '{item_id}' archived: Remove {remove_votes} vs Keep {keep_votes}.")
+                    _append_audit_entry("triage_archive", f"Mod '{item_id}' archived: Remove {remove_votes} vs Keep {keep_votes}.", actor="compiler-bot", target_type="mod", target_id=item_id, reason="poll_result_remove")
                 social.status = "archived"
+            elif keep_votes == 0 and remove_votes == 0:
+                _append_audit_entry("triage_zero_votes", f"Triage poll for '{social.mod_id}' expired with zero votes; remaining under_review.", actor="compiler-bot", target_type="mod", target_id=social.mod_id, reason="community_triage")
             else:
                 social.status = "active"
-                logger.info(
-                    "Triage result: KEEP won for '%s' (%d vs %d votes). Status restored to 'active'; 30-day immunity cooldown will be set on next manifest refresh.",
-                    social.mod_id, keep_votes, remove_votes,
-                )
-                _append_audit_entry("triage_keep", f"Mod '{social.mod_id}' kept: Keep {keep_votes} vs Remove {remove_votes}.")
+                cooldown_until = (now + timedelta(days=30)).isoformat()
+                social.immunity_cooldown_until = cooldown_until
+                if keep_votes == remove_votes:
+                    logger.info(
+                        "Triage result: TIE for '%s' (%d vs %d votes). Resolved as KEEP per tie-break rule; 30-day immunity cooldown set.",
+                        social.mod_id, keep_votes, remove_votes,
+                    )
+                    _append_audit_entry("triage_tie_keep", f"Tie resolved as KEEP for '{social.mod_id}': Keep {keep_votes} vs Remove {remove_votes} (tie-break).", actor="compiler-bot", target_type="mod", target_id=social.mod_id, reason="community_triage")
+                else:
+                    logger.info(
+                        "Triage result: KEEP won for '%s' (%d vs %d votes). Status restored to 'active'; 30-day immunity cooldown set.",
+                        social.mod_id, keep_votes, remove_votes,
+                    )
+                    _append_audit_entry("triage_keep", f"Mod '{social.mod_id}' kept: Keep {keep_votes} vs Remove {remove_votes}.", actor="compiler-bot", target_type="mod", target_id=social.mod_id, reason="community_triage")
         except Exception as exc:
             logger.warning("Failed to resolve triage for '%s': %s", social.mod_id, exc)
 
@@ -1334,11 +1371,11 @@ def _respond_to_circuit_breaker(
     owner: str,
     repo: str,
 ) -> None:
-    """Execute §3.2 Raid Shield + §3.1 steps 5 organic-trigger, 6 DELETE +
+    """Execute ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2 Raid Shield + ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 steps 5 organic-trigger, 6 DELETE +
     admin-alert, 8 create triage poll for every mod whose Pass 2 set
     `status='under_review'`.
 
-    Also handles the §3.1 step 5 ORGANIC trigger path (net_score <
+    Also handles the ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5 ORGANIC trigger path (net_score <
     ORGANIC_UNDER_REVIEW_THRESHOLD without a circuit-breaker spike) by
     flipping status to 'under_review' + creating a triage poll WITHOUT
     Raid Shield / DELETE / admin-alert (those responses are spike-only).
@@ -1349,18 +1386,22 @@ def _respond_to_circuit_breaker(
         social = item.get("_social_metrics")
         if social is None:
             continue
-        # §3.1 step 5 ORGANIC path (no spike, but net_score too low).
-        if social.status == "active" and social.net_score < ORGANIC_UNDER_REVIEW_THRESHOLD:
-            social.status = "under_review"
-            social.anomaly_window_start = now
-            logger.warning(
-                "Organic under_review trigger for mod '%s': net_score=%d (threshold=%d).",
-                social.mod_id, social.net_score, ORGANIC_UNDER_REVIEW_THRESHOLD,
-            )
-            _append_audit_entry(
-                "organic_under_review",
-                f"Mod '{social.mod_id}' net_score={social.net_score} (< {ORGANIC_UNDER_REVIEW_THRESHOLD}). Status → under_review.",
-            )
+        # ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 5 ORGANIC path (no spike, but net_score too low).
+        # \u00a73.1 step 5 ORGANIC path (no spike, but net_score too low).
+            if social.status == "active" and social.net_score < ORGANIC_UNDER_REVIEW_THRESHOLD:
+                if social.anomaly_window_start is None:
+                    social.anomaly_window_start = now
+                if social.status != "under_review":
+                    social.status = "under_review"
+                logger.warning(
+                    "Organic under_review trigger for mod \u0027%s\u0027: net_score=%d (threshold=%d).",
+                    social.mod_id, social.net_score, ORGANIC_UNDER_REVIEW_THRESHOLD,
+                )
+                _append_audit_entry(
+                    "organic_under_review",
+                    f"Mod \u0027{social.mod_id}\u0027 net_score={social.net_score} (< {ORGANIC_UNDER_REVIEW_THRESHOLD}). Status \u2192 under_review.",
+                    actor="compiler-bot", target_type="mod", target_id=social.mod_id, reason="velocity_anomaly",
+                )
             _create_triage_poll(
                 owner, repo,
                 mod_id=social.mod_id,
@@ -1390,6 +1431,7 @@ def _respond_to_circuit_breaker(
                     f"Mod '{social.mod_id}' (issue #{social.issue_number}): gathered "
                     f"{len(offending)} offending reactions for DELETE. Users: " +
                     ", ".join(sorted({r.get("user") or "?" for r in offending})),
+                    actor="compiler-bot", target_type="mod", target_id=social.mod_id, reason="velocity_anomaly",
                 )
                 for r in offending:
                     _delete_reaction(
@@ -1403,7 +1445,7 @@ def _respond_to_circuit_breaker(
                 owner, repo,
                 mod_id=social.mod_id,
                 issue_number=social.issue_number,
-                reason="Velocity circuit breaker: coordinated downvote spike detected (>5× historical, >20 in 6h).",
+                reason="Velocity circuit breaker: coordinated downvote spike detected (>5ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â historical, >20 in 6h).",
                 token=token,
             )
             _create_admin_alert_issue(
@@ -1412,17 +1454,17 @@ def _respond_to_circuit_breaker(
                 offending_reactions=offending,
                 token=token,
             )
-            # Discord webhook — real-time push to curator alerts channel
+            # Discord webhook ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â real-time push to curator alerts channel
             # (silent no-op when DISCORD_WEBHOOK_URL env var is absent).
             _post_discord_alert(
                 mod_id=social.mod_id,
-                reason="Velocity circuit breaker: coordinated downvote spike detected (>5× historical, >20 in 6h).",
+                reason="Velocity circuit breaker: coordinated downvote spike detected (>5ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â historical, >20 in 6h).",
                 severity="spike",
                 offending_reactions=offending,
             )
 
 
-# --- §3.1 step 7: sentiment + spam scrubbing ---
+# --- ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 7: sentiment + spam scrubbing ---
 
 # Regex patterns exported for reuse by tests.
 VERSION_BEGGING_RE = re.compile(
@@ -1434,7 +1476,7 @@ EMPTY_PRAISE_RE = re.compile(
 
 
 def _regex_filter_comment(text: str) -> tuple[bool, str]:
-    """Apply §3.1 step 7 regex filters. Returns (passed, reason_if_dropped)."""
+    """Apply ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 7 regex filters. Returns (passed, reason_if_dropped)."""
     if not text or not text.strip():
         return False, "empty"
     if VERSION_BEGGING_RE.search(text):
@@ -1445,11 +1487,11 @@ def _regex_filter_comment(text: str) -> tuple[bool, str]:
 
 
 def _nlp_filter_comment(text: str) -> tuple[bool, str]:
-    """Apply §3.1 step 7 NLP filters. Returns (passed, reason_if_dropped).
+    """Apply ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 7 NLP filters. Returns (passed, reason_if_dropped).
 
     Lazy-imports profanity_check + vaderSentiment so the compiler runs cleanly
     in local dev (without those deps) when the NLP path isn't reached (no
-    GITHUB_TOKEN → no review text to scrub). On import failure: log warning,
+    GITHUB_TOKEN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ no review text to scrub). On import failure: log warning,
     treat as passed (fail-OPEN for benign content rather than dropping legit
     reviews because the runner didn't `pip install -r requirements.txt`).
     """
@@ -1483,7 +1525,7 @@ def _nlp_filter_comment(text: str) -> tuple[bool, str]:
 
 
 def _scrub_review_text(text: str) -> tuple[bool, str, str]:
-    """Full §3.1 step 7 scrub pipeline. Returns (passed, cleaned_text, drop_reason)."""
+    """Full ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 7 scrub pipeline. Returns (passed, cleaned_text, drop_reason)."""
     passed, reason = _regex_filter_comment(text)
     if not passed:
         return False, text, reason
@@ -1575,8 +1617,8 @@ def create_tables(conn: sqlite3.Connection) -> None:
             compatible_versions_json TEXT,
             -- Supplementary metadata hydrated by the nightly compiler from the
             -- upstream source (e.g. Modrinth bulk project API). Stored as TEXT
-            -- only — image *URLs* are kept, never binary image data — so the
-            -- signed registry.db stays compact (§6.3 / §4.2 "media strategy").
+            -- only ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â image *URLs* are kept, never binary image data ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â so the
+            -- signed registry.db stays compact (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§6.3 / ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§4.2 "media strategy").
             -- Manifest/curator-provided values always take precedence over
             -- API-fetched values for these fields.
             description TEXT,
@@ -1754,7 +1796,7 @@ def link_item_category(conn: sqlite3.Connection, item_id: str, category_id: str)
 def validate_sha256(raw: Any) -> str:
     """Ensure *raw* is a valid 64-char hex string. Reject None/empty.
 
-    Per §2.1, sha256 is required for all download strategies. The compiler
+    Per ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§2.1, sha256 is required for all download strategies. The compiler
     must either populate it (from GitHub/Modrinth API) or fail loudly.
     """
     if raw is None or raw == "":
@@ -1834,7 +1876,7 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
     )
 
     # Pass 2: pull computed social metrics when present. Immune items
-    # (§3.1 step 9) bypass score evaluation — upvotes/downvotes/net_score
+    # (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 9) bypass score evaluation ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â upvotes/downvotes/net_score
     # are zero, status is "active", immunity_cooldown_until stays None.
     if is_immune:
         _upvotes = 0
@@ -1887,9 +1929,8 @@ def insert_registry_item(conn: sqlite3.Connection, item: dict[str, Any], path: P
             int(is_immune),
             immunity_reason,
             int(allow_comments),
-            None,
-            item.get("icon_url"),
-            json.dumps(gallery, separators=(",", ":")),
+            social.immunity_cooldown_until if not is_immune and social is not None else None,
+            item.get("icon_url"), json.dumps(gallery, separators=(",", ":")),
             manifest_date_added(path),
             json.dumps(compatible_versions, separators=(",", ":")),
             item.get("description"),
@@ -1954,7 +1995,7 @@ _MODRINTH_USER_AGENT = "AgoraCompiler/1.0"
 _MODRINTH_BATCH_SIZE = 100
 _MODRINTH_PAGE_BASE = "https://modrinth.com"
 
-# Modrinth `project_type` → canonical site URL path segment.
+# Modrinth `project_type` ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ canonical site URL path segment.
 _PROJECT_TYPE_URL_PATH = {
     "mod": "mod",
     "modpack": "modpack",
@@ -2000,7 +2041,7 @@ def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
     endpoint (up to 100 projects per request), in addition to the icon and
     gallery URLs. This bakes rich, instant-on metadata into the signed
     ``registry.db`` so the client never has to hit Modrinth's API at browse
-    time (§6.3 / §4.2 "media strategy": text + image *URLs* only, no binary).
+    time (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§6.3 / ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§4.2 "media strategy": text + image *URLs* only, no binary).
 
     Hydration is decoupled from the download strategy: ``github_release`` /
     ``direct_hash`` mods may also hydrate display metadata from Modrinth by
@@ -2041,7 +2082,7 @@ def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
         #
         # ID resolution:
         #   - ``modrinth_id`` strategy: ``modrinth_id`` field, falling back to
-        #     ``source_identifier`` (which IS the Modrinth ID — keeps the
+        #     ``source_identifier`` (which IS the Modrinth ID ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â keeps the
         #     minimal 5-line manifest working where source_identifier doubles).
         #   - any other strategy: ONLY an explicit ``modrinth_id`` field is
         #     used. ``source_identifier`` is a GitHub repo / direct URL here,
@@ -2145,7 +2186,7 @@ def _hydrate_modrinth_metadata(items: list[dict[str, Any]]) -> None:
             if updated:
                 item["source_updated_at"] = updated
 
-        # Upstream categories — captured as a *fallback only*. Linked later
+        # Upstream categories ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â captured as a *fallback only*. Linked later
         # (in insert_registry_item) exclusively when the manifest sets neither
         # base_categories nor community_categories. Loader-ish category names
         # are filtered out since loaders live in compatible_versions_json.
@@ -2274,7 +2315,7 @@ def insert_crash_signature(
 ) -> None:
     """Insert a crash signature after validating its regex pattern.
 
-    Validation per §2.4.1:
+    Validation per ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§2.4.1:
     - Reject patterns longer than 256 characters.
     - Test each pattern against a 100 KB corpus with a 1 s timeout to catch
       catastrophic backtracking.
@@ -2615,7 +2656,7 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
     # Content-type directories: each subdirectory contains JSON manifests with
     # the same shape as mod manifests (id, name, content_type, download_strategy,
     # source_identifier, sha256, etc.).  The manifest's own content_type field
-    # determines the row type — we do NOT derive it from the directory name.
+    # determines the row type ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â we do NOT derive it from the directory name.
     CONTENT_DIRS = [
         "mods",
         "packs",
@@ -2639,13 +2680,13 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
     # lack it in the manifest (in-place, with manifest/override precedence).
     _hydrate_modrinth_versions([item for _, item in all_items])
 
-    # Hydrate GitHub social metrics (§3.1 step 3; Pass 1: raw reactions only
-    # — trust filter, Sybil weighting, velocity circuit breaker, immune
+    # Hydrate GitHub social metrics (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 step 3; Pass 1: raw reactions only
+    # ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â trust filter, Sybil weighting, velocity circuit breaker, immune
     # passthrough, and DB INSERT update arrive in Pass 2). On missing
-    # GITHUB_TOKEN this is a silent no-op (items stay metric-free → zeros).
+    # GITHUB_TOKEN this is a silent no-op (items stay metric-free ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ zeros).
     _hydrate_github_social_metrics([item for _, item in all_items])
 
-    # Pass 2: apply §3.1 steps 4 (trust + Sybil), 5 (velocity circuit breaker),
+    # Pass 2: apply ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 steps 4 (trust + Sybil), 5 (velocity circuit breaker),
     # and 9 (immune passthrough) to compute final upvotes / downvotes /
     # net_score / velocity / status from the raw reactions Pass 1 attached.
     # When GITHUB_TOKEN is unset this is a no-op (metrics stay at defaults).
@@ -2658,10 +2699,10 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
             blacklist=_blacklist,
         )
     # Immune items have their `_social_metrics` removed by Pass 2; non-immune
-    # items with no matching governance issue also have no metrics — both
+    # items with no matching governance issue also have no metrics ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â both
     # fall through to the default (0, 0, 0, 0.0, "active") path in insert_registry_item.
 
-    # Pass 3 (§3.2 Raid Shield + §3.1 steps 5 organic-trigger, 6 DELETE +
+    # Pass 3 (ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2 Raid Shield + ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.1 steps 5 organic-trigger, 6 DELETE +
     # admin-alert, 8 create triage poll + resolve expired polls). Runs only
     # when GITHUB_TOKEN is present.
     if _gh_token:
@@ -2748,7 +2789,7 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
 
     logger.info("Wrote database to %s", output_path)
 
-    # --- Audit log (§4.6) ---
+    #     # --- Audit log (§4.6) ---
     audit_log_path = REGISTRY_DIR / "governance" / "audit_log.json"
     audit_log_path.parent.mkdir(parents=True, exist_ok=True)
     total_items = mod_count + pack_count + other_count
@@ -2756,17 +2797,33 @@ def compile_registry(output_path: Path, skip_sign: bool) -> None:
     new_entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": "compile",
+        "actor": "compiler-bot",
+        "target_type": "registry",
+        "reason": "nightly_compile",
         "details": f"Compiled registry with {total_items} items, {total_crash_sigs} crash signatures",
     }
     if audit_log_path.exists():
         with audit_log_path.open("r", encoding="utf-8") as fh:
             audit_data = json.load(fh)
     else:
-        audit_data = {"entries": []}
+        audit_data = {"log_format_version": 1, "entries": []}
+    if "log_format_version" not in audit_data:
+        audit_data["log_format_version"] = 1
     audit_data["entries"].append(new_entry)
-    # Rotation: keep last 1000 entries.
-    if len(audit_data["entries"]) > 1000:
-        audit_data["entries"] = audit_data["entries"][-1000:]
+    # Rotation (§4.6): when > 10 000 entries, archive oldest 2 000.
+    if len(audit_data["entries"]) > 10000:
+        archive_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+        archive_path = REGISTRY_DIR / "governance" / f"audit_log_archive.{archive_date}.json"
+        oldest_2000 = audit_data["entries"][:2000]
+        audit_data["entries"] = audit_data["entries"][-8000:]
+        if archive_path.exists():
+            with archive_path.open("r", encoding="utf-8") as fh:
+                archive_data = json.load(fh)
+            archive_data.extend(oldest_2000)
+        else:
+            archive_data = oldest_2000
+        with archive_path.open("w", encoding="utf-8") as fh:
+            json.dump(archive_data, fh, indent=2)
     with audit_log_path.open("w", encoding="utf-8") as fh:
         json.dump(audit_data, fh, indent=2)
     logger.info("Wrote audit log to %s", audit_log_path)

@@ -270,21 +270,16 @@ A JSON array of mod-pair conflicts. Used by the crash investigator (signal G in 
 ```json
 [
   {
-    "a": "optifine",
-    "b": "sodium",
+    "a": "example-renderer-mod",
+    "b": "example-shader-mod",
     "severity": "hard",
-    "mitigated_by": [],
-    "notes": "OptiFine and Sodium both replace the vanilla renderer; running both causes startup/crash conflicts."
-  },
-  {
-    "a": "optifine",
-    "b": "rubidium",
-    "severity": "hard",
-    "mitigated_by": [],
-    "notes": "Rubidium (Forge Sodium port) conflicts with OptiFine for the same renderer-replacement reason."
+    "mitigated_by": ["example-compat-shim"],
+    "notes": "Hypothetical example -- both mods replace the same rendering pipeline and conflict at startup. Remove when you add real entries."
   }
 ]
 ```
+
+> The current `registry/governance/known_conflicts.json` is `[]` -- the example above is illustrative only. Add real entries as mods enter the registry that genuinely conflict with each other.
 
 | Field | Type | Description |
 |---|---|---|

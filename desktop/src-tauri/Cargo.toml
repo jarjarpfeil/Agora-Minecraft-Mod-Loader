@@ -1,5 +1,5 @@
 [package]
-name = "agora"
+name = "agora-desktop"
 version = "0.1.0"
 description = "Agora Minecraft Mod Launcher"
 authors = ["Agora Contributors"]
@@ -31,6 +31,8 @@ urlencoding = "2"
 trash = "3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 dirs = "5"
+sysinfo = { workspace = true }
+rand = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 rfd = "0.14"
@@ -43,3 +45,4 @@ pbkdf2 = "0.12"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-cli = "2"
+

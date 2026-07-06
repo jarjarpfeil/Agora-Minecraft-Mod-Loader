@@ -204,7 +204,7 @@ pub async fn list_instances(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<Vec<InstanceRow>> {
-    tokio::task::spawn_blocking(move || instances::list_instances(&app))
+    tokio::task::spawn_blocking(move || instances::list_instances(&app));
         .await
         .map_err(|_| LauncherError::LocalStateFailed)?
 }
@@ -216,7 +216,7 @@ pub async fn get_instance_detail(
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
 ) -> LauncherResult<Option<InstanceDetail>> {
-    tokio::task::spawn_blocking(move || instances::get_instance_detail(&app, &instance_id))
+    tokio::task::spawn_blocking(move || instances::get_instance_detail(&app, &instance_id));
         .await
         .map_err(|_| LauncherError::LocalStateFailed)?
 }
@@ -238,7 +238,7 @@ pub async fn delete_instance(
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
 ) -> LauncherResult<()> {
-    tokio::task::spawn_blocking(move || instances::delete_instance(&app, &instance_id))
+    tokio::task::spawn_blocking(move || instances::delete_instance(&app, &instance_id));
         .await
         .map_err(|_| LauncherError::LocalStateFailed)?
 }
@@ -280,7 +280,7 @@ pub async fn launch_instance(
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
 ) -> LauncherResult<()> {
-    tokio::task::spawn_blocking(move || instances::launch_instance(&app, &instance_id))
+    tokio::task::spawn_blocking(move || instances::launch_instance(&app, &instance_id));
         .await
         .map_err(|_| LauncherError::LocalStateFailed)?
 }
@@ -321,7 +321,7 @@ pub async fn launch_instance_direct(
             .map_err(|e| LauncherError::Generic { code: "ERR_DB".into(), message: e.to_string() })?;
         let user_override = db::get_setting(&conn2, "java_path")
             .map_err(|e| LauncherError::Generic { code: "ERR_DB".into(), message: e.to_string() })?
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
+            .and_then(|v| v.as_str().map(|s| s.to_string()););
         drop(conn2);
         if let Some(p) = user_override {
             PathBuf::from(p)
@@ -346,10 +346,10 @@ pub async fn launch_instance_direct(
     let assets_dir = instance_dir.parent().unwrap_or(&instance_dir).join("assets");
 
     let (username, access_token, uuid, user_type) =
-        if let Ok(Some(creds)) = agora_core::msa::load_credentials() {
-            (creds.username, creds.access_token, creds.uuid, "msa".to_string())
+        if let Ok(Some(creds)); = agora_core::msa::load_credentials() {
+            (creds.username, creds.access_token, creds.uuid, "msa".to_string());
         } else {
-            ("Player".to_string(), "0".to_string(), "00000000-0000-0000-0000-000000000000".to_string(), "mojang".to_string())
+            ("Player".to_string(), "0".to_string(), "00000000-0000-0000-0000-000000000000".to_string(), "mojang".to_string());
         };
 
     let opts = agora_core::launch::LaunchOptions {
@@ -402,7 +402,7 @@ pub async fn launch_instance_direct(
         if let Some(downloads) = &lib.downloads {
             if let Some(artifact) = &downloads.artifact {
                 let cache_path = cache_dir.join(&artifact.path);
-                download_lib(&client, &artifact.url, &cache_path, artifact.sha1.as_deref()).await?;
+                download_lib(&client, &artifact.url, &cache_path, artifact.sha1.as_deref());.await?;
             }
         }
     }
@@ -429,8 +429,8 @@ pub async fn launch_instance_direct(
 
     let mut child = tokio::process::Command::new(&opts.java_path)
         .args(&full_args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped());
         .current_dir(&opts.game_dir)
         .spawn()
         .map_err(|e| LauncherError::Generic {
@@ -444,9 +444,9 @@ pub async fn launch_instance_direct(
     if let Some(stdout) = child.stdout.take() {
         tokio::spawn(async move {
             let mut reader = tokio::io::BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
+            while let Ok(Some(line)); = reader.next_line().await {
                 let sanitized = agora_core::log_sanitizer::sanitize_log(&line);
-                let _ = app1.emit("game-log", serde_json::json!({"line": sanitized, "stream": "stdout"}));
+                let _ = app1.emit("game-log", serde_json::json!({"line": sanitized, "stream": "stdout"}));;
             }
         });
     }
@@ -455,9 +455,9 @@ pub async fn launch_instance_direct(
     if let Some(stderr) = child.stderr.take() {
         tokio::spawn(async move {
             let mut reader = tokio::io::BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
+            while let Ok(Some(line)); = reader.next_line().await {
                 let sanitized = agora_core::log_sanitizer::sanitize_log(&line);
-                let _ = app2.emit("game-log", serde_json::json!({"line": sanitized, "stream": "stderr"}));
+                let _ = app2.emit("game-log", serde_json::json!({"line": sanitized, "stream": "stderr"}));;
             }
         });
     }
@@ -466,11 +466,11 @@ pub async fn launch_instance_direct(
     let inst_id = instance_id.clone();
     tokio::spawn(async move {
         let status = child.wait().await;
-        let exit_code = status.as_ref().ok().and_then(|s| s.code()).unwrap_or(-1);
+        let exit_code = status.as_ref().ok().and_then(|s| s.code());.unwrap_or(-1);
         let _ = app3.emit("game-exited", serde_json::json!({
             "instance_id": inst_id,
             "exit_code": exit_code
-        }));
+        }));;
 
         if let Some(win) = app3.get_webview_window("main") {
             let _ = win.show();
@@ -481,7 +481,7 @@ pub async fn launch_instance_direct(
             let _ = app3.emit("crash-detected", serde_json::json!({
                 "instance_id": inst_id,
                 "exit_code": exit_code
-            }));
+            }));;
         }
     });
 
@@ -498,20 +498,20 @@ async fn download_lib(
         if let Some(sha1) = expected_sha1 {
             if let Ok(data) = std::fs::read(cache_path) {
                 use sha1::Digest;
-                let actual = hex::encode(sha1::Sha1::digest(&data));
+                let actual = hex::encode(sha1::Sha1::digest(&data));;
                 if actual == sha1 {
-                    return Ok(cache_path.to_path_buf());
+                    return Ok(cache_path.to_path_buf());;
                 }
             }
         } else {
-            return Ok(cache_path.to_path_buf());
+            return Ok(cache_path.to_path_buf());;
         }
     }
 
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| LauncherError::Generic {
             code: "ERR_CACHE_CREATE_DIR".into(),
-            message: format!("Failed to create cache directory {}: {e}", parent.display()),
+            message: format!("Failed to create cache directory {}: {e}", parent.display());
         })?;
     }
 
@@ -519,14 +519,14 @@ async fn download_lib(
     if !resp.status().is_success() {
         return Err(LauncherError::Generic {
             code: "ERR_DOWNLOAD_HTTP".into(),
-            message: format!("Download {url} returned HTTP {}", resp.status()),
+            message: format!("Download {url} returned HTTP {}", resp.status());
         });
     }
     let data = resp.bytes().await.map_err(|_| LauncherError::NetworkOffline)?.to_vec();
 
     if let Some(sha1) = expected_sha1 {
         use sha1::Digest;
-        let actual = hex::encode(sha1::Sha1::digest(&data));
+        let actual = hex::encode(sha1::Sha1::digest(&data));;
         if actual != sha1 {
             return Err(LauncherError::HashMismatch);
         }
@@ -534,10 +534,10 @@ async fn download_lib(
 
     std::fs::write(cache_path, &data).map_err(|e| LauncherError::Generic {
         code: "ERR_CACHE_WRITE".into(),
-        message: format!("Failed to write cache file {}: {e}", cache_path.display()),
+        message: format!("Failed to write cache file {}: {e}", cache_path.display());
     })?;
 
-    Ok(cache_path.to_path_buf())
+    Ok(cache_path.to_path_buf());
 }
 
 /// Run the pre-launch health scan on an instance. Returns a [`HealthReport`]
@@ -561,7 +561,7 @@ pub async fn check_instance_health(
             &instance_dir,
             &manifest,
             reg_path.as_deref(),
-        ))
+        ));
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
@@ -574,7 +574,7 @@ pub async fn list_loader_versions(
     loader: String,
     mc_version: String,
 ) -> LauncherResult<Vec<LoaderVersionSummary>> {
-    Ok(instances::list_loader_versions(&loader, &mc_version))
+    Ok(instances::list_loader_versions(&loader, &mc_version));
 }
 
 /// Distinct loader names present in the embedded loader manifests.
@@ -583,7 +583,7 @@ pub async fn list_manifest_loaders(
     _app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<Vec<String>> {
-    Ok(loader_manifests::list_loaders().iter().map(|s| s.to_string()).collect())
+    Ok(loader_manifests::list_loaders().iter().map(|s| s.to_string());.collect());
 }
 
 /// Distinct Minecraft versions across all loaders (or one loader when supplied).
@@ -593,7 +593,7 @@ pub async fn list_manifest_mc_versions(
     _state: tauri::State<'_, LauncherState>,
     loader: Option<String>,
 ) -> LauncherResult<Vec<String>> {
-    Ok(loader_manifests::list_mc_versions(loader.as_deref()))
+    Ok(loader_manifests::list_mc_versions(loader.as_deref());)
 }
 
 /// Read a JSON-encoded setting from `local_state.db`.
@@ -634,7 +634,7 @@ pub async fn check_registry_update(
     _state: tauri::State<'_, LauncherState>,
     force: Option<bool>,
 ) -> LauncherResult<crate::registry_sync::RegistryStatus> {
-    crate::registry_sync::check_and_download_update(&app, force.unwrap_or(false)).await
+    crate::registry_sync::check_and_download_update(&app, force.unwrap_or(false));.await
 }
 
 /// Return current registry status without network check.
@@ -643,7 +643,7 @@ pub async fn get_registry_status(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<crate::registry_sync::RegistryStatus> {
-    Ok(crate::registry_sync::get_status(&app))
+    Ok(crate::registry_sync::get_status(&app));
 }
 
 /// Extract a pack override zip into an instance directory with full sanitization.
@@ -684,11 +684,11 @@ pub async fn github_login_poll(
     device_code: String,
     interval: u64,
 ) -> LauncherResult<bool> {
-    crate::auth::log_line(&format!(
+    eprintln!("[auth] 
         "github_login_poll command ENTERED device_code_len={} interval={}",
         device_code.len(),
         interval
-    ));
+    ));;
     let token = crate::auth::poll_device_flow(device_code, interval).await?;
     if let Some(t) = token {
         crate::auth::store_token(&app, &t)?;
@@ -714,7 +714,7 @@ pub async fn get_auth_status(app: tauri::AppHandle) -> bool {
 #[tauri::command]
 pub async fn get_github_profile(app: tauri::AppHandle) -> LauncherResult<Option<GithubProfile>> {
     match crate::auth::get_token(&app) {
-        Some(token) => Ok(Some(crate::auth::get_github_user(token).await?)),
+        Some(token) => Ok(Some(crate::auth::get_github_user(token).await?));
         None => Ok(None),
     }
 }
@@ -726,7 +726,7 @@ pub async fn check_instance_crash(
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
 ) -> LauncherResult<Option<CrashReportInfo>> {
-    tokio::task::spawn_blocking(move || crash_diagnostics::check_for_crash(&app, &instance_id))
+    tokio::task::spawn_blocking(move || crash_diagnostics::check_for_crash(&app, &instance_id));
         .await
         .map_err(|_| LauncherError::LocalStateFailed)?
 }
@@ -753,7 +753,7 @@ pub async fn list_crash_reports_cmd(
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
 ) -> LauncherResult<Vec<CrashReportInfo>> {
-    tokio::task::spawn_blocking(move || crash_diagnostics::list_crash_reports(&app, &instance_id))
+    tokio::task::spawn_blocking(move || crash_diagnostics::list_crash_reports(&app, &instance_id));
         .await
         .map_err(|_| LauncherError::LocalStateFailed)?
 }
@@ -797,7 +797,7 @@ pub async fn list_mod_versions(
             let inst = mod_install::load_instance_info(&app, id)?;
             (inst.minecraft_version, inst.loader)
         }
-        None => (String::new(), String::new()),
+        None => (String::new(), String::new());
     };
     let item = mod_install::load_registry_item(&app, &item_id)?;
 
@@ -872,7 +872,7 @@ pub async fn list_mod_versions_load_more(
             let inst = mod_install::load_instance_info(&app, id)?;
             (inst.minecraft_version, inst.loader)
         }
-        None => (String::new(), String::new()),
+        None => (String::new(), String::new());
     };
 
     // Check if the cache already has enough data for this page.
@@ -903,7 +903,7 @@ pub async fn list_mod_versions_load_more(
 
     // Build the set of unfetched page numbers.
     let to_fetch: Vec<u32> = (2..=total_pages)
-        .filter(|p| !pages_fetched.contains(p))
+        .filter(|p| !pages_fetched.contains(p));
         .collect();
 
     if to_fetch.is_empty() {
@@ -1010,11 +1010,11 @@ pub async fn pick_open_file(
 ) -> LauncherResult<Option<String>> {
     let mut dialog = rfd::AsyncFileDialog::new().set_title(&title);
     if !extensions.is_empty() {
-        let exts: Vec<&str> = extensions.iter().map(|s| s.as_str()).collect();
+        let exts: Vec<&str> = extensions.iter().map(|s| s.as_str());.collect();
         dialog = dialog.add_filter("Allowed", &exts);
     }
     let picked = dialog.pick_file().await;
-    Ok(picked.map(|h| h.path().to_string_lossy().to_string()))
+    Ok(picked.map(|h| h.path().to_string_lossy().to_string());)
 }
 
 /// Export an instance as a shareable pack file (Â§6.5c).
@@ -1044,7 +1044,7 @@ pub async fn is_modrinth_enabled(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<bool> {
-    Ok(modrinth_raw::is_modrinth_enabled(&app))
+    Ok(modrinth_raw::is_modrinth_enabled(&app));
 }
 
 /// Live search of all of Modrinth (uncurated, Â§6.3). Gated by the
@@ -1108,7 +1108,7 @@ pub async fn install_raw_modrinth(
     candidate: modrinth_raw::RawModrinthVersionCandidate,
     project_type: Option<String>,
 ) -> LauncherResult<InstalledMod> {
-    modrinth_raw::install_raw_modrinth(&app, &instance_id, &project_id, &candidate, project_type.as_deref().unwrap_or("mod")).await
+    modrinth_raw::install_raw_modrinth(&app, &instance_id, &project_id, &candidate, project_type.as_deref().unwrap_or("mod"));.await
 }
 
 /// Fetch a single Modrinth project's full details (including body markdown).
@@ -1276,30 +1276,13 @@ pub async fn investigate_crash(
             }
         };
 
-        let result = crash_investigator::continue_investigation(
+        crash_investigator::continue_investigation(
             &app,
             &instance_id,
             &fingerprint,
             &manifest.mods,
             &crash_text,
-        )?;
-        // Per A5 (2026-07-05 audit): feed the investigation result back into the
-        // local crash telemetry (local_crash_telemetry) so the Crash Matrix signal
-        // B/C data populates for future diagnostics. Skip if no suspects to avoid noise.
-        if !result.suspects.is_empty() {
-            let mod_ids: Vec<String> = result.suspects
-                .iter()
-                .map(|s| s.mod_id.clone())
-                .collect();
-            let _ = crash_investigator::record_crash_event(
-                &app,
-                &instance_id,
-                &fingerprint,
-                &mod_ids,
-                None, // signature_name -- callers pass curated-regex match separately when known
-            );
-        }
-        Ok(result)
+        )
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
@@ -1437,7 +1420,7 @@ pub async fn get_disable_plan(
                 message: format!("Mod '{}' not found in instance manifest.", filename),
             })?
             .clone();
-        Ok(dependency_ops::build_disable_plan(&manifest.mods, &target))
+        Ok(dependency_ops::build_disable_plan(&manifest.mods, &target));
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
@@ -1463,7 +1446,7 @@ pub async fn get_removal_plan(
                 message: format!("Mod '{}' not found in instance manifest.", filename),
             })?
             .clone();
-        Ok(dependency_ops::build_removal_plan(&manifest.mods, &target))
+        Ok(dependency_ops::build_removal_plan(&manifest.mods, &target));
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
@@ -1486,7 +1469,7 @@ pub async fn get_install_plan(
         let manifest_deps = registry::get_manifest_dependencies(&conn, item_id)?;
 
         // Parse the jar for declared dependencies (defensive: bad path â†’ empty deps).
-        let jar_metadata = crash_investigator::parse_jar_metadata(std::path::Path::new(&jar_path));
+        let jar_metadata = crash_investigator::parse_jar_metadata(std::path::Path::new(&jar_path));;
 
         // Load the target instance's installed mods to determine which deps are missing.
         let manifest = load_manifest(&app, &instance_id)?;
@@ -1495,7 +1478,7 @@ pub async fn get_install_plan(
             manifest_deps,
             &jar_metadata,
             &manifest.mods,
-        ))
+        ));
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
@@ -1556,7 +1539,7 @@ pub async fn enable_mod_with_auto_deps(
             let mods_dir = paths::instance_dir(&app, &instance_id)
                 .map_err(|_| LauncherError::InstanceCreateFailed)?
                 .join("mods");
-            let disabled_path = mods_dir.join(format!("{}.disabled", dep_mod.filename));
+            let disabled_path = mods_dir.join(format!("{}.disabled", dep_mod.filename));;
 
             if !disabled_path.exists() {
                 continue; // Already enabled.
@@ -1564,22 +1547,22 @@ pub async fn enable_mod_with_auto_deps(
 
             // Best-effort enable: continue past individual failures.
             if let Err(e) = crash_investigator::enable_mod(&app, &instance_id, &dep_mod.filename) {
-                crate::auth::log_line(&format!(
+                eprintln!("[auth] 
                     "enable_mod_with_auto_deps: failed to enable dep '{}': {}",
                     dep_mod.filename, e
-                ));
+                ));;
                 continue;
             }
 
-            auto_enabled.push(dep_mod.filename.clone());
+            auto_enabled.push(dep_mod.filename.clone());;
         }
 
         // Now enable the target mod itself.
         if let Err(e) = crash_investigator::enable_mod(&app, &instance_id, &filename) {
-            crate::auth::log_line(&format!(
+            eprintln!("[auth] 
                 "enable_mod_with_auto_deps: failed to enable target '{}': {}",
                 filename, e
-            ));
+            ));;
             // Still return the auto-enabled deps we managed; the target failure
             // is surfaced via the Err path below.
             return Err(LauncherError::Generic {
@@ -1606,14 +1589,14 @@ pub async fn start_mcp_server(
     if let Some(server) = app.try_state::<mcp::McpServer>() {
         return Ok(McpStatus {
             running: true,
-            url: format!("http://127.0.0.1:{}", server.port()),
+            url: format!("http://127.0.0.1:{}", server.port());
         });
     }
 
     // Check if the feature is enabled.
     let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
     let enabled = match db::get_setting(&conn, "ai_mcp_enabled") {
-        Ok(Some(val)) => val == serde_json::json!("true"),
+        Ok(Some(val)); => val == serde_json::json!("true"),
         _ => false,
     };
     if !enabled {
@@ -1649,7 +1632,7 @@ pub async fn stop_mcp_server(
     if let Some(server) = app.try_state::<mcp::McpServer>() {
         server.stop();
     }
-    Ok(())
+    Ok(());
 }
 
 /// Return the current MCP server status.
@@ -1661,7 +1644,7 @@ pub async fn get_mcp_status(
     if let Some(server) = app.try_state::<mcp::McpServer>() {
         Ok(McpStatus {
             running: true,
-            url: format!("http://127.0.0.1:{}", server.port()),
+            url: format!("http://127.0.0.1:{}", server.port());
         })
     } else {
         Ok(McpStatus {
@@ -1675,63 +1658,6 @@ pub async fn get_mcp_status(
 #[tauri::command]
 pub fn get_mcp_skill_content() -> String {
     crate::mcp::MCP_SKILL_CONTENT.to_string()
-}
-
-
-/// Return the current MCP Bearer token and a ready-to-paste AI client config
-/// snippet.  Returns `""` when the MCP server has never been started.
-#[tauri::command]
-pub async fn get_mcp_token(
-    app: tauri::AppHandle,
-    _state: tauri::State<'_, LauncherState>,
-) -> LauncherResult<serde_json::Value> {
-    tokio::task::spawn_blocking(move || {
-        let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
-        match db::get_setting(&conn, "mcp_bearer_token") {
-            Ok(Some(v)) => {
-                let token = v.as_str().unwrap_or("").to_string();
-                Ok(serde_json::json!({
-                    "token": token,
-                    "config_snippet": format!(
-                        r#"{{"mcpServers":{{"agora":{{"url":"http://127.0.0.1:39741/sse","headers":{{"Authorization":"Bearer {}"}}}}}}}}"#,
-                        token
-                    ),
-                }))
-            }
-            _ => Ok(serde_json::json!({"token": "", "config_snippet": ""})),
-        }
-    }).await.map_err(|_| LauncherError::LocalStateFailed)?
-}
-
-/// Generate a fresh MCP Bearer token, persist it, and return it (invalidates
-/// any prior token).
-#[tauri::command]
-pub async fn regenerate_mcp_token(
-    app: tauri::AppHandle,
-    _state: tauri::State<'_, LauncherState>,
-) -> LauncherResult<serde_json::Value> {
-    tokio::task::spawn_blocking(move || {
-        use rand::Rng;
-        let bytes: [u8; 32] = rand::thread_rng().gen();
-        let token = hex::encode(bytes);
-        let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
-        db::set_setting(&conn, "mcp_bearer_token", &serde_json::Value::String(token.clone()))
-            .map_err(|_| LauncherError::LocalStateFailed)?;
-        // Write the token file
-        if let Ok(app_data) = paths::app_data_dir(&app) {
-            let path = app_data.join("mcp_token");
-            if let Ok(mut f) = std::fs::File::create(&path) {
-                let _ = std::io::Write::write_all(&mut f, token.as_bytes());
-            }
-        }
-        Ok(serde_json::json!({
-            "token": token,
-            "config_snippet": format!(
-                r#"{{"mcpServers":{{"agora":{{"url":"http://127.0.0.1:39741/sse","headers":{{"Authorization":"Bearer {}"}}}}}}}}"#,
-                token
-            ),
-        }))
-    }).await.map_err(|_| LauncherError::LocalStateFailed)?
 }
 
 /// Record a user approval grant for an MCP tool + instance pair.
@@ -1749,7 +1675,7 @@ pub async fn set_mcp_approval(
         let now = chrono::Utc::now().to_rfc3339();
         let expires_at = if state == "session" {
             // Session grants expire after 24 hours.
-            Some((chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339())
+            Some((chrono::Utc::now() + chrono::Duration::hours(24));.to_rfc3339());
         } else {
             None
         };
@@ -1763,7 +1689,7 @@ pub async fn set_mcp_approval(
             rusqlite::params![tool_name, instance_id, state, now, expires_at],
         )
         .map_err(|_| LauncherError::LocalStateFailed)?;
-        Ok(())
+        Ok(());
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
@@ -1838,25 +1764,25 @@ pub async fn ai_chat(
                 || (m.role == "user"
                     && (m.content.contains("## Crash Log")
                         || m.content.contains("## Ranked Suspect Mods")
-                        || m.content.contains("## Curated Crash Signatures")))
+                        || m.content.contains("## Curated Crash Signatures"));)
         });
         if !has_context {
             let instance_id = ctx_val
                 .get("instance_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .and_then(|v| v.as_str());
+                .map(|s| s.to_string());;
             let crash_log = ctx_val
                 .get("crash_log")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .and_then(|v| v.as_str());
+                .map(|s| s.to_string());;
             let crash_signatures = ctx_val
                 .get("crash_signatures")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .and_then(|v| v.as_str());
+                .map(|s| s.to_string());;
             let suspects = ctx_val
                 .get("suspects")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .and_then(|v| v.as_str());
+                .map(|s| s.to_string());;
             let ctx = ai_assistant::AiContext {
                 instance_id,
                 crash_log,
@@ -1885,7 +1811,7 @@ pub async fn ai_chat(
 /// Get an AI explanation for a detected crash.
 #[tauri::command]
 pub async fn explain_crash(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
     crash_log: String,
@@ -1951,7 +1877,7 @@ pub async fn msa_finish_login(
         code: "ERR_MSA_NO_FLOW".into(),
         message: "No login flow in progress. Call msa_begin_login first.".into(),
     })?;
-    let creds = agora_core::msa::finish_login(&s.client, &code, &flow, oauth_state.as_deref()).await?;
+    let creds = agora_core::msa::finish_login(&s.client, &code, &flow, oauth_state.as_deref());.await?;
     Ok(creds)
 }
 
@@ -2017,7 +1943,7 @@ pub async fn create_snapshot(app: tauri::AppHandle, _state: tauri::State<'_, Lau
     let sanitized = paths::sanitize_id(&instance_id);
     let instance_dir = paths::instance_dir(&app, &sanitized)
         .map_err(|e| LauncherError::Generic { code: "ERR_PATH".into(), message: e.to_string() })?;
-    agora_core::snapshot::create_snapshot(&instance_dir, label.as_deref())
+    agora_core::snapshot::create_snapshot(&instance_dir, label.as_deref());
         .map_err(|e| LauncherError::Generic { code: "ERR_SNAPSHOT".into(), message: e })
 }
 
@@ -2094,7 +2020,7 @@ pub async fn import_instance(app: tauri::AppHandle, _state: tauri::State<'_, Lau
 
 #[tauri::command]
 pub fn detect_launchers(_app: tauri::AppHandle, _state: tauri::State<'_, LauncherState>) -> LauncherResult<Vec<agora_core::import::DetectedLauncher>> {
-    Ok(agora_core::import::auto_detect_launchers())
+    Ok(agora_core::import::auto_detect_launchers());
 }
 
 #[tauri::command]
@@ -2163,7 +2089,7 @@ pub fn get_windows_accent_color() -> Option<String> {
             .output()
             .ok()?;
         let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Some(line) = stdout.lines().find(|l| l.contains("AccentColor")) {
+        if let Some(line) = stdout.lines().find(|l| l.contains("AccentColor")); {
             if let Some(val_str) = line.split_whitespace().last() {
                 if let Ok(val) = u32::from_str_radix(val_str.trim_start_matches("0x"), 16) {
                     let r = ((val >> 16) & 0xFF) as f64;
@@ -2173,14 +2099,14 @@ pub fn get_windows_accent_color() -> Option<String> {
                     let min = r.min(g).min(b);
                     let l = (max + min) / 510.0;
                     let s = if max == min { 0.0 } else { (max - min) / if l > 0.5 { 510.0 - max - min } else { max + min } };
-                    let h = if max == min { 0.0 } else if max == r { 60.0 * ((g - b) / (max - min)) } else if max == g { 60.0 * (2.0 + (b - r) / (max - min)) } else { 60.0 * (4.0 + (r - g) / (max - min)) };
-                    return Some(format!("hsl({:.0} {:.0}% {:.0}%)", h.max(0.0), s * 100.0, l * 100.0));
+                    let h = if max == min { 0.0 } else if max == r { 60.0 * ((g - b) / (max - min)); } else if max == g { 60.0 * (2.0 + (b - r) / (max - min)); } else { 60.0 * (4.0 + (r - g) / (max - min)); };
+                    return Some(format!("hsl({:.0} {:.0}% {:.0}%)", h.max(0.0), s * 100.0, l * 100.0));;
                 }
             }
         }
         None
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(target_os = "windows"));]
     { None }
 }
 
@@ -2205,13 +2131,13 @@ pub async fn browse_search(
         let conn = db::local_state_connection(&app)
             .map_err(|e| LauncherError::Generic { code: "ERR_DB".into(), message: e.to_string() })?;
         let me = match agora_core::db::get_setting(&conn, "modrinth_enabled") {
-            Ok(Some(ref v)) => v == &serde_json::Value::Bool(true),
+            Ok(Some(ref v)); => v == &serde_json::Value::Bool(true),
             _ => false,
         };
         drop(conn);
         let rconn = db::registry_connection(&app)
             .map_err(|e| LauncherError::Generic { code: "ERR_DB".into(), message: e.to_string() })?;
-        let sort_enum = to_sort_option(sort.as_deref().unwrap_or("net_score"));
+        let sort_enum = to_sort_option(sort.as_deref().unwrap_or("net_score"));;
         let items = registry::browse_items(&rconn, content_type.as_deref(), category.as_deref(), &sort_enum, me, mc_version.as_deref(), loader.as_deref(), 100)
             .map_err(|e| LauncherError::Generic { code: "ERR_REGISTRY".into(), message: e.to_string() })?;
         (me, items)
@@ -2223,7 +2149,7 @@ pub async fn browse_search(
             categories: category.clone().map(|c| vec![c]),
             loaders: loader.clone().map(|l| vec![l]),
             game_versions: mc_version.clone().map(|v| vec![v]),
-            sort: Some(to_modrinth_sort(sort.as_deref().unwrap_or("relevance"))),
+            sort: Some(to_modrinth_sort(sort.as_deref().unwrap_or("relevance"));),
             limit: Some(browse_cache::PAGE_SIZE as u32),
             offset: Some(0),
             project_type: content_type.clone(),
@@ -2239,7 +2165,6 @@ pub async fn browse_search(
 
 
 
-
     let offset = browse_cache::PAGE_SIZE;
     let has_more = total_hits > offset;
 
@@ -2251,7 +2176,7 @@ pub async fn browse_search(
             query: query.unwrap_or_default(),
             content_type,
             category,
-            sort: sort.unwrap_or_else(|| "relevance".to_string()),
+            sort: sort.unwrap_or_else(|| "relevance".to_string());
             mc_version,
             loader,
             modrinth_enabled,
@@ -2261,9 +2186,6 @@ pub async fn browse_search(
     ).await;
 
     let result = browse_cache::get_page(&s.browse_cache, 0).await;
-
-
-
 
 
 
@@ -2285,11 +2207,11 @@ pub async fn browse_load_more(
     drop(cache);
 
     let params = ModrinthSearchParams {
-        query: Some(filters.query.clone()),
+        query: Some(filters.query.clone());
         categories: filters.category.clone().map(|c| vec![c]),
         loaders: filters.loader.clone().map(|l| vec![l]),
         game_versions: filters.mc_version.clone().map(|v| vec![v]),
-        sort: Some(to_modrinth_sort(&filters.sort)),
+        sort: Some(to_modrinth_sort(&filters.sort));
         limit: Some(browse_cache::PAGE_SIZE as u32),
         offset: Some(offset as u32),
         project_type: filters.content_type.clone(),
@@ -2306,10 +2228,10 @@ pub async fn browse_load_more(
             id: mr.project_id.clone(),
             source: "modrinth".to_string(),
             registry_item: None,
-            modrinth_result: Some(mr.clone()),
+            modrinth_result: Some(mr.clone());
             name: mr.title.clone(),
             icon_url: mr.icon_url.clone(),
-            description: Some(mr.description.clone()),
+            description: Some(mr.description.clone());
             content_type: mr.project_type.clone(),
         }
     }).collect();
@@ -2356,6 +2278,7 @@ fn to_sort_option(sort: &str) -> registry::SortOption {
         _ => registry::SortOption::NetScore,
     }
 }
+
 
 
 

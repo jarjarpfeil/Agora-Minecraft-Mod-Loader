@@ -177,7 +177,6 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
 
     #[derive(Debug, serde::Deserialize)]
     struct ReactionsPayload {
-        url: String,
         reactions: Option<ReactionsPayloadInner>,
     }
 

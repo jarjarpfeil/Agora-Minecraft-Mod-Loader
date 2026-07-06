@@ -760,7 +760,7 @@ pub fn compute_mod_score(
     let ubiquity_denom = if total_survivals == 0 { 1 } else { total_survivals };
 
     // --- Signal A (stack-frame match) ---
-    let base_A: f64 = java_packages
+    let base_a: f64 = java_packages
         .iter()
         .filter(|pkg_mod| {
             crashed_packages.iter().any(|pkg_crash| {
@@ -803,10 +803,10 @@ pub fn compute_mod_score(
     }
 
     // --- Signal E (confirmed prior) ---
-    let base_E: f64 = (confirmed_count as f64 * 0.5).min(1.0);
+    let base_e: f64 = (confirmed_count as f64 * 0.5).min(1.0);
 
     // --- Signal B (fingerprint recurrence) ---
-    let base_B: f64 = if confirmed_count > 0 { 0.2 } else { 0.0 };
+    let base_b: f64 = if confirmed_count > 0 { 0.2 } else { 0.0 };
 
     // --- Signal C (co-crash telemetry) ---
     let max_pair_crash: i64 = pair_crash_counts
@@ -814,7 +814,7 @@ pub fn compute_mod_score(
         .map(|(_, count)| *count)
         .max()
         .unwrap_or(0);
-    let base_C = (max_pair_crash as f64 * 0.1).min(0.5);
+    let base_c = (max_pair_crash as f64 * 0.1).min(0.5);
 
     // -------------------------------------------------------------------
     // Confounders
@@ -822,13 +822,13 @@ pub fn compute_mod_score(
 
     // D (survival ubiquity) — dampens A and C
     let ubiquity = (mod_survival_count as f64 / ubiquity_denom as f64).min(1.0).max(0.0);
-    let dampener_D = 1.0 - (ubiquity * 0.7);
+    let dampener_d = 1.0 - (ubiquity * 0.7);
 
-    let A_final = base_A * dampener_D;
-    let C_final = base_C * dampener_D;
+    let a_final = base_a * dampener_d;
+    let c_final = base_c * dampener_d;
 
     // Survival co-decay on G
-    let mut G_final = 0.0f64;
+    let mut g_final = 0.0f64;
     for (contrib, other_id) in &g_contributions {
         let pair_surv = pair_survival_counts
             .iter()
@@ -840,13 +840,13 @@ pub fn compute_mod_score(
         } else {
             1.0
         };
-        G_final += contrib * g_mod;
+        g_final += contrib * g_mod;
     }
 
     // -------------------------------------------------------------------
     // Total + NaN gate
     // -------------------------------------------------------------------
-    let mut total_score = G_final + base_E + A_final + base_B + C_final;
+    let mut total_score = g_final + base_e + a_final + base_b + c_final;
     if total_score.is_nan() {
         total_score = 0.0;
     }
@@ -863,12 +863,12 @@ pub fn compute_mod_score(
             .collect();
 
         serde_json::json!({
-            "G": G_final,
-            "E": base_E,
-            "A": A_final,
-            "B": base_B,
-            "C": C_final,
-            "ubiquity_dampener": dampener_D,
+            "G": g_final,
+            "E": base_e,
+            "A": a_final,
+            "B": base_b,
+            "C": c_final,
+            "ubiquity_dampener": dampener_d,
             "conflict_pairs": conflict_pairs,
         })
     } else {
@@ -1060,7 +1060,7 @@ pub fn score_suspects<R: tauri::Runtime>(
     // Build a reverse-dependency lookup: parent_mod_jar_id → Vec<dependent mod_id>.
     let mut reverse_deps: HashMap<String, Vec<String>> = HashMap::new();
     for mod_entry in installed {
-        if let Some(ref mod_jar_id) = mod_entry.mod_jar_id {
+        if let Some(ref _mod_jar_id) = mod_entry.mod_jar_id {
             for dep_on in &mod_entry.depends_on {
                 reverse_deps
                     .entry(dep_on.clone())

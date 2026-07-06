@@ -2,7 +2,7 @@
 """Standalone unit tests for compiler/compile.py pure functions.
 
 Run with:  python compiler/test_compile.py
-No pytest dependency — uses only stdlib (unittest, sys, tempfile, json, os, re).
+No pytest dependency â€” uses only stdlib (unittest, sys, tempfile, json, os, re).
 
 Covers: validate_sha256, _get_registry_repo, _load_poll_blacklist,
         _extract_mod_id, _extract_review_text, _scrub_review_text,
@@ -237,7 +237,7 @@ class TestExtractReviewText(unittest.TestCase):
     """Tests for _extract_review_text."""
 
     def test_from_realistic_body(self):
-        """Body with review heading → extracted text."""
+        """Body with review heading â†’ extracted text."""
         body = (
             "### Mod Registry ID\n"
             "sodium\n"
@@ -411,6 +411,405 @@ class TestRegexDosProtection(unittest.TestCase):
             "SELECT id FROM crash_signatures WHERE id = ?", ("boundary_test",)
         ).fetchone()
         self.assertIsNotNone(row)
+
+
+
+# ---------------------------------------------------------------------------
+# Ported from _test_social_metrics.py (no equivalents in this file)
+# ---------------------------------------------------------------------------
+
+class TestParseReaction(unittest.TestCase):
+    """Tests for _parse_reaction."""
+
+    def test_parse_reaction_upvote(self):
+        """A +1 reaction on the issue itself is an upvote with comment_id=None."""
+        obj = {
+            "user": {"login": "alice"},
+            "content": "+1",
+            "created_at": "2026-01-15T12:00:00Z",
+        }
+        r = _compile._parse_reaction(obj, comment_id=None)
+        self.assertIsNotNone(r)
+        self.assertEqual(r.user, "alice")
+        self.assertTrue(r.is_upvote)
+        self.assertIsNone(r.comment_id)
+        self.assertEqual(r.timestamp, datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+    def test_parse_reaction_downvote(self):
+        """A -1 reaction is a downvote."""
+        obj = {
+            "user": {"login": "bob"},
+            "content": "-1",
+            "created_at": "2026-02-20T08:30:00Z",
+        }
+        r = _compile._parse_reaction(obj, comment_id=42)
+        self.assertIsNotNone(r)
+        self.assertFalse(r.is_upvote)
+        self.assertEqual(r.comment_id, 42)
+
+    def test_parse_reaction_neutral(self):
+        """Neutral emoji (laugh, heart, etc.) sets is_upvote to None."""
+        for content in ("laugh", "hooray", "confused", "heart", "rocket", "eyes"):
+            obj = {
+                "user": {"login": "charlie"},
+                "content": content,
+                "created_at": "2026-03-01T00:00:00Z",
+            }
+            r = _compile._parse_reaction(obj, comment_id=None)
+            self.assertIsNotNone(r)
+            self.assertIsNone(r.is_upvote)
+
+    def test_parse_reaction_malformed_no_user(self):
+        """Missing user field returns None."""
+        obj = {"content": "+1", "created_at": "2026-01-01T00:00:00Z"}
+        self.assertIsNone(_compile._parse_reaction(obj, comment_id=None))
+
+    def test_parse_reaction_malformed_no_content(self):
+        """Missing content field returns None."""
+        obj = {"user": {"login": "dave"}, "created_at": "2026-01-01T00:00:00Z"}
+        self.assertIsNone(_compile._parse_reaction(obj, comment_id=None))
+
+    def test_parse_reaction_malformed_no_created_at(self):
+        """Missing created_at field returns None."""
+        obj = {"user": {"login": "eve"}, "content": "+1"}
+        self.assertIsNone(_compile._parse_reaction(obj, comment_id=None))
+
+    def test_parse_reaction_malformed_created_at(self):
+        """Unparseable created_at returns None."""
+        obj = {
+            "user": {"login": "frank"},
+            "content": "+1",
+            "created_at": "not-a-date",
+        }
+        self.assertIsNone(_compile._parse_reaction(obj, comment_id=None))
+
+    def test_parse_reaction_user_login_lowercased(self):
+        """User login is always lowercased."""
+        obj = {
+            "user": {"login": "AliceWunderland"},
+            "content": "+1",
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        r = _compile._parse_reaction(obj, comment_id=None)
+        self.assertEqual(r.user, "alicewunderland")
+
+
+class TestUserReactionDataclass(unittest.TestCase):
+    """Tests for UserReaction dataclass."""
+
+    def test_user_reaction_dataclass_defaults(self):
+        """comment_id defaults to None."""
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        r = _compile.UserReaction(user="test", is_upvote=True, timestamp=ts)
+        self.assertIsNone(r.comment_id)
+
+    def test_user_reaction_dataclass_with_comment_id(self):
+        """comment_id can be provided explicitly."""
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        r = _compile.UserReaction(user="test", is_upvote=False, timestamp=ts, comment_id=99)
+        self.assertEqual(r.comment_id, 99)
+
+
+class TestModSocialMetrics(unittest.TestCase):
+    """Tests for ModSocialMetrics dataclass."""
+
+    def test_mod_social_metrics_defaults(self):
+        """reactions defaults to empty list; each instance gets its own list."""
+        m1 = _compile.ModSocialMetrics(mod_id="foo", issue_number=1)
+        m2 = _compile.ModSocialMetrics(mod_id="bar", issue_number=2)
+        self.assertEqual(m1.reactions, [])
+        self.assertEqual(m2.reactions, [])
+        self.assertIsNot(m1.reactions, m2.reactions)
+        m1.reactions.append("x")
+        self.assertEqual(m2.reactions, [])
+
+    def test_mod_social_metrics_with_reactions(self):
+        """Reactions can be appended after construction."""
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        r = _compile.UserReaction(user="alice", is_upvote=True, timestamp=ts)
+        m = _compile.ModSocialMetrics(mod_id="sodium", issue_number=5)
+        m.reactions.append(r)
+        self.assertEqual(len(m.reactions), 1)
+        self.assertEqual(m.reactions[0].user, "alice")
+
+
+class TestSybilDiversityWeight(unittest.TestCase):
+    """Tests for _sybil_diversity_weight."""
+
+    def test_sybil_diversity_weight_single_mod(self):
+        """User who only reacted on one mod gets 0.5 weight."""
+        self.assertEqual(_compile._sybil_diversity_weight("alice", ["sodium"]), 0.5)
+
+    def test_sybil_diversity_weight_multiple_mods(self):
+        """User who reacted on multiple mods gets 1.0 weight."""
+        self.assertEqual(_compile._sybil_diversity_weight("alice", ["sodium", "iris"]), 1.0)
+
+    def test_sybil_diversity_weight_repeated_single_mod(self):
+        """Repeated reactions on a single mod still count as one distinct mod."""
+        self.assertEqual(_compile._sybil_diversity_weight("alice", ["sodium", "sodium", "sodium"]), 0.5)
+
+
+class TestUserInteractionCounts(unittest.TestCase):
+    """Tests for _user_interaction_counts."""
+
+    def test_user_interaction_counts_counts_per_user(self):
+        """Counts are correct for shared and exclusive users across mods."""
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        m1 = _compile.ModSocialMetrics(mod_id="sodium", issue_number=1)
+        m1.reactions.extend([
+            _compile.UserReaction(user="alice", is_upvote=True, timestamp=ts),
+            _compile.UserReaction(user="bob", is_upvote=False, timestamp=ts),
+        ])
+        m2 = _compile.ModSocialMetrics(mod_id="iris", issue_number=2)
+        m2.reactions.extend([
+            _compile.UserReaction(user="alice", is_upvote=True, timestamp=ts),
+            _compile.UserReaction(user="charlie", is_upvote=True, timestamp=ts),
+        ])
+        by_mod = {"sodium": m1, "iris": m2}
+        cache: dict[str, int] = {}
+        result = _compile._user_interaction_counts(by_mod, token="", org="", cache=cache)
+        self.assertEqual(cache["alice"], 0)
+        self.assertEqual(cache["bob"], 0)
+        self.assertEqual(cache["charlie"], 0)
+        self.assertIs(result, cache)
+
+
+class TestComputeVelocity(unittest.TestCase):
+    """Tests for _compute_velocity."""
+
+    def test_compute_velocity_zero_history_zero_recent(self):
+        """With zero history and zero recent, velocity is clamped."""
+        now_dt = datetime(2026, 6, 22, tzinfo=timezone.utc)
+        velocity, is_anomaly, anomaly_start = _compile._compute_velocity([], [], now_dt)
+        self.assertGreaterEqual(velocity, -1.5)
+        self.assertLessEqual(velocity, 0.0)
+        self.assertFalse(is_anomaly)
+        self.assertIsNone(anomaly_start)
+
+    def test_compute_velocity_anomaly_fires_on_large_recent_downvote_burst(self):
+        """25 downvotes in the last 6h with minimal historical context fires anomaly."""
+        now_dt = datetime(2026, 6, 22, tzinfo=timezone.utc)
+        six_h_ago = now_dt - __import__("datetime").timedelta(hours=6)
+        down_ts = [
+            now_dt - __import__("datetime").timedelta(hours=1, minutes=i)
+            for i in range(25)
+        ]
+        historical_ts = [
+            now_dt - __import__("datetime").timedelta(days=3),
+            now_dt - __import__("datetime").timedelta(days=5),
+        ]
+        down_ts.extend(historical_ts)
+        velocity, is_anomaly, anomaly_start = _compile._compute_velocity([], down_ts, now_dt)
+        self.assertTrue(is_anomaly)
+        self.assertIsNotNone(anomaly_start)
+        self.assertAlmostEqual(anomaly_start, six_h_ago, delta=__import__("datetime").timedelta(minutes=1))
+        self.assertGreater(velocity, 0.0)
+        self.assertLessEqual(velocity, 10.0)
+
+    def test_compute_velocity_no_anomaly_at_low_recent_count(self):
+        """10 downvotes in 6h vs. historical 5/7d: ratio > 5 but recent_count <= 20 -> no anomaly."""
+        now_dt = datetime(2026, 6, 22, tzinfo=timezone.utc)
+        down_6h = [
+            now_dt - __import__("datetime").timedelta(hours=1, minutes=i)
+            for i in range(10)
+        ]
+        down_7d = [
+            now_dt - __import__("datetime").timedelta(days=d)
+            for d in [1, 2, 3, 4, 5]
+        ]
+        down_ts = down_6h + down_7d
+        velocity, is_anomaly, anomaly_start = _compile._compute_velocity([], down_ts, now_dt)
+        self.assertFalse(is_anomaly)
+        self.assertIsNone(anomaly_start)
+
+
+class TestRegexFilterComment(unittest.TestCase):
+    """Tests for _regex_filter_comment."""
+
+    def test_version_begging_regex_drops(self):
+        """Version-begging comments are rejected."""
+        passed, reason = _compile._regex_filter_comment("when is 1.21 release?")
+        self.assertFalse(passed)
+        self.assertEqual(reason, "version-begging")
+
+    def test_empty_praise_regex_drops(self):
+        """Empty praise comments are rejected."""
+        passed, reason = _compile._regex_filter_comment("nice mod!")
+        self.assertFalse(passed)
+        self.assertEqual(reason, "empty-praise")
+
+    def test_legit_review_passes_regex(self):
+        """A substantive technical review passes regex filters."""
+        passed, reason = _compile._regex_filter_comment(
+            "This mod significantly improved my framerate from 30 to 120 FPS."
+        )
+        self.assertTrue(passed)
+        self.assertEqual(reason, "")
+
+    def test_empty_text_dropped(self):
+        """Empty or whitespace-only text is dropped."""
+        passed, reason = _compile._regex_filter_comment("")
+        self.assertFalse(passed)
+        self.assertEqual(reason, "empty")
+        passed, reason = _compile._regex_filter_comment("   ")
+        self.assertFalse(passed)
+        self.assertEqual(reason, "empty")
+
+    def test_port_to_regex_drops(self):
+        """'port to' and 'update to' variants are also dropped."""
+        for text in ("update to 1.21?", "port to 1.20 release", "for 1.22"):
+            passed, reason = _compile._regex_filter_comment(text)
+            self.assertFalse(passed, f"Expected drop for '{text}', got pass")
+            self.assertEqual(reason, "version-begging")
+
+
+class TestNlpFilterComment(unittest.TestCase):
+    """Tests for _nlp_filter_comment."""
+
+    def test_nlp_filter_comment_handles_missing_deps_gracefully(self):
+        """If profanity-check import fails, _nlp_filter_comment returns (True, "")."""
+        try:
+            import profanity_check  # noqa: F401
+            has_deps = True
+        except ImportError:
+            has_deps = False
+        passed, reason = _compile._nlp_filter_comment("This mod is fantastic and very well made.")
+        self.assertTrue(passed)
+        self.assertEqual(reason, "")
+
+
+class TestPass3Constants(unittest.TestCase):
+    """Tests for Pass 3 circuit-breaker constants."""
+
+    def test_organic_under_review_threshold_constant(self):
+        """ORGANIC_UNDER_REVIEW_THRESHOLD must equal -10."""
+        self.assertEqual(_compile.ORGANIC_UNDER_REVIEW_THRESHOLD, -10)
+
+    def test_triage_poll_duration_constant(self):
+        """TRIAGE_POLL_DURATION_DAYS must equal 7."""
+        self.assertEqual(_compile.TRIAGE_POLL_DURATION_DAYS, 7)
+
+
+class TestAppendAuditEntry(unittest.TestCase):
+    """Tests for _append_audit_entry."""
+
+    def setUp(self):
+        self._audit_path = _compile.REGISTRY_DIR / "governance" / "audit_log.json"
+        self._backup_path = None
+        if self._audit_path.exists():
+            self._backup_path = self._audit_path.with_suffix(self._audit_path.suffix + ".bak")
+            shutil.copy2(str(self._audit_path), str(self._backup_path))
+
+    def tearDown(self):
+        if self._backup_path and self._backup_path.exists():
+            shutil.copy2(str(self._backup_path), str(self._audit_path))
+            self._backup_path.unlink(missing_ok=True)
+        elif self._audit_path.exists() and self._backup_path is None:
+            self._audit_path.unlink(missing_ok=True)
+
+    def test_append_audit_entry_creates_file_when_absent(self):
+        """_append_audit_entry creates the file if it doesn't exist."""
+        if self._audit_path.exists():
+            self._audit_path.unlink()
+        _compile._append_audit_entry("test_action", "test_details")
+        self.assertTrue(self._audit_path.exists())
+        with self._audit_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        self.assertIn("entries", data)
+        self.assertEqual(len(data["entries"]), 1)
+        self.assertEqual(data["entries"][0]["action"], "test_action")
+        self.assertEqual(data["entries"][0]["details"], "test_details")
+        self.assertIn("timestamp", data["entries"][0])
+
+    def test_append_audit_entry_rotates_at_10000(self):
+        """After 10000 entries, adding one more rotates to keep <= 10000."""
+        data = {"log_format_version": 1, "entries": [{"timestamp": "2026-01-01T00:00:00Z", "action": f"dummy_{i}", "details": ""} for i in range(10000)]}
+        self._audit_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._audit_path.open("w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        _compile._append_audit_entry("rotate_test", "should rotate")
+        with self._audit_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        self.assertLessEqual(len(data["entries"]), 10000)
+        self.assertIn("log_format_version", data)
+
+
+class TestFindTriageDiscussionCategory(unittest.TestCase):
+    """Tests for _find_triage_discussion_category."""
+
+    def test_find_triage_discussion_category_returns_none_without_network(self):
+        """With a dummy nonexistent repo, the function should return None."""
+        result = _compile._find_triage_discussion_category(
+            "og-nonexistent-xyz", "og-nonexistent-xyz", token="invalid-token-for-test",
+        )
+        self.assertIsNone(result)
+
+
+class TestCreateAdminAlertIssue(unittest.TestCase):
+    """Tests for _create_admin_alert_issue."""
+
+    def test_create_admin_alert_issue_failure_logged_not_raised(self):
+        """Invalid token should log a warning but not raise."""
+        _compile._create_admin_alert_issue(
+            "og-nonexistent-xyz", "og-nonexistent-xyz",
+            mod_id="test", offending_reactions=[], token="invalid-token",
+        )
+        self.assertTrue(True)
+
+
+class TestDiscordAlert(unittest.TestCase):
+    """Tests for Discord webhook notification channel."""
+
+    _prev_discord_url: str | None = None
+
+    def setUp(self):
+        self._prev_discord_url = os.environ.pop("DISCORD_WEBHOOK_URL", None)
+
+    def tearDown(self):
+        if self._prev_discord_url is not None:
+            os.environ["DISCORD_WEBHOOK_URL"] = self._prev_discord_url
+
+    def test_load_discord_webhook_url_returns_none_when_unset(self):
+        """When DISCORD_WEBHOOK_URL is absent, _load_discord_webhook_url returns None."""
+        os.environ.pop("DISCORD_WEBHOOK_URL", None)
+        result = _compile._load_discord_webhook_url()
+        self.assertIsNone(result)
+
+    def test_load_discord_webhook_url_returns_value_when_set(self):
+        """When DISCORD_WEBHOOK_URL is set, _load_discord_webhook_url returns it."""
+        os.environ["DISCORD_WEBHOOK_URL"] = "https://discord.com/api/webhooks/test/abc"
+        result = _compile._load_discord_webhook_url()
+        self.assertEqual(result, "https://discord.com/api/webhooks/test/abc")
+
+    def test_post_discord_alert_is_noop_when_url_unset(self):
+        """When DISCORD_WEBHOOK_URL is unset, _post_discord_alert returns without making a network call."""
+        os.environ.pop("DISCORD_WEBHOOK_URL", None)
+        _compile._post_discord_alert(mod_id="testmod", reason="test", severity="spike")
+        self.assertTrue(True)
+
+    @unittest.skipIf(os.environ.get("CI") == "true", "skip network test on CI")
+    def test_post_discord_alert_swallows_invalid_webhook_failures(self):
+        """An invalid webhook URL must not raise."""
+        os.environ["DISCORD_WEBHOOK_URL"] = "https://discord.com/api/webhooks/INVALID/INVALID"
+        _compile._post_discord_alert(
+            mod_id="testmod",
+            reason="test reason",
+            severity="spike",
+            offending_reactions=[{"user": "bob"}],
+        )
+        self.assertTrue(True)
+
+    def test_post_discord_alert_accepts_optional_fields(self):
+        """Calling _post_discord_alert with optional fields still returns cleanly when no webhook is configured."""
+        os.environ.pop("DISCORD_WEBHOOK_URL", None)
+        _compile._post_discord_alert(
+            mod_id="testmod",
+            reason="test reason",
+            severity="spike",
+            offending_reactions=[{"user": "alice"}],
+            admin_alert_issue_url="https://example.com/issues/1",
+        )
+        self.assertTrue(True)
 
 
 if __name__ == "__main__":

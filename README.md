@@ -15,7 +15,7 @@ The **"Agora"** mission is simple: bypass centralized commercial infrastructure 
 Core principles:
 
 - **$0/month server footprint** — GitHub, GitHub Release Assets, and the official Mojang launcher handle everything.
-- **Security by delegation** — We never touch Microsoft/Xbox auth or JVM execution.
+- **Security by delegation (optional)** — The default path delegates Microsoft/Xbox auth and JVM execution to the official Mojang launcher. An opt-in in-process mode performs MSA auth + direct JVM spawn for users who want tighter integration.
 - **Decentralized governance** — Votes, reviews, and triage live as structured GitHub interactions.
 - **Modrinth independence** — Primary source is `github_release`; Modrinth is an optional fallback.
 
@@ -23,13 +23,15 @@ Core principles:
 
 | Layer | Technology |
 | --- | --- |
-| Desktop backend | Tauri (Rust) |
+| Desktop backend | Tauri (Rust; crate `agora-desktop`) |
+| Shared Rust library | `crates/agora-core/` -- business logic shared with CLI |
+| Standalone CLI | `crates/agora/` -> `agora` binary |
 | Desktop frontend | React + Tailwind CSS |
 | Web directory | Next.js (static) |
 | Client DB | SQLite (`tauri-plugin-sql`) |
 | Compiler | Python (GitHub Actions) |
-| Game execution | Official Mojang Launcher |
-| AI integration | Local MCP server |
+| Game execution | In-process MSA auth + direct JVM spawn (primary), Mojang Launcher delegation (fallback) |
+| AI integration | Local MCP server (loopback only) |
 | Data hosting | GitHub Release Assets |
 
 ## Monorepo Layout
@@ -49,13 +51,19 @@ Core principles:
 /crash-signatures/ Regex-based crash triage signatures
 /loader-manifests/ Pinned modloader hashes and domain allowlists
 /.github/
-  workflows/       CI/CD (nightly compiler)
+  workflows/       CI/CD (nightly compiler, web build, desktop release, e2e)
   ISSUE_TEMPLATE/  Structured community forms
 /compiler/         Python nightly compiler
-/desktop/          Tauri desktop application (React + Tailwind + Rust)
+/crates/
+  agora-core/      Shared Rust business-logic library (no tauri/clap types)
+  agora/           Standalone `agora` CLI binary
+/desktop/          Tauri desktop application (React + Tailwind + Rust; crate `agora-desktop`)
 /web/              Static Next.js public directory
 /scripts/          Development helper utilities
+AGENTS.md          Agent guide (canonical for AI sessions)
+BACKLOG.md         Phase-by-phase task tracker
 CODE_OF_ENGAGEMENT.md  Canonical review conduct rules
+REGISTRY_CURATION_REFERENCE.md  Self-contained manifest-authoring reference
 ```
 
 ## Quick Start
@@ -67,11 +75,12 @@ cd compiler
 python -m venv .venv
 # .venv\Scripts\activate on Windows; source .venv/bin/activate on macOS/Linux
 pip install -r requirements.txt
-python compile.py --out ../registry.db
+python compile.py --out ../registry.db            # uses ED25519_PRIVATE_KEY from .env if set
+python compile.py --skip-sign --out ../registry.db # local dev without signing
 python ../scripts/verify_db.py
 ```
 
-The signed database is normally published as a GitHub Release Asset by `.github/workflows/compile.yml`.
+The signed database is normally published as a GitHub Release Asset by `.github/workflows/compile.yml`. Locally, if the `ED25519_PRIVATE_KEY` env var is unset (or PyNaCl is not installed) and you omit `--skip-sign`, the compiler fails loudly with a non-zero exit code -- it will NOT silently produce an unsigned `registry.db.sig` placeholder. Use `--skip-sign` for local development.
 
 ### 2. Desktop app
 
@@ -220,6 +229,19 @@ In debug builds (`npm run tauri:dev`), an unset `AGORA_REGISTRY_PUBKEY` is
 non-fatal: signature verification is skipped with a console warning, to
 keep the local-dev loop smooth. In release builds (`npm run tauri:build`),
 the app refuses to verify any registry without the key compiled in.
+
+## Compiler `.env` variables
+
+These are loaded at runtime by the Python compiler (NOT read by the Tauri Rust build):
+
+| Variable | Purpose | Sensitive? |
+|---|---|---|
+| `ED25519_PRIVATE_KEY` | CI-only Ed25519 key used to sign `registry.db` | ✅ Secret |
+| `GITHUB_TOKEN` | Standard GitHub token used by the compiler for issue-form / reaction / GraphQL calls | ✅ Secret |
+| `DISCORD_WEBHOOK_URL` | Optional. Discord webhook for curator alerts on velocity circuit-breakers / coordinated-attack detection. When unset, Discord notifications are silently skipped (audit-trail + admin-alert GitHub issue still fire) | Optional |
+| `AGORA_REGISTRY_REPO` | Optional override for the governance repo (`owner/repo`). Defaults to the `DEFAULT_REGISTRY_OWNER`/`DEFAULT_REGISTRY_REPO` constants in `compiler/compile.py` (currently `jarjarpfeil/Agora-Minecraft-Mod-Loader`), falling back to the GitHub Actions `GITHUB_REPOSITORY` env var when running in CI | ❌ Public |
+
+`AGORA_OAUTH_CLIENT_ID` and `AGORA_REGISTRY_PUBKEY` are intentionally NOT loaded from `.env` -- they are read by the Tauri Rust build at compile time via `option_env!()`. See "Environment variables for the Tauri build" below.
 
 ## Releasing the Desktop App
 

@@ -1,6 +1,21 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+/// Hosts allowed for mod downloads (GitHub + Modrinth).
+/// Separate from the loader-manifest allowlist to enforce the whitelist principle.
+const MOD_ALLOWED_HOSTS: &[&str] = &[
+    "cdn.modrinth.com",
+    "github.com",
+    "objects.githubusercontent.com",
+    "codeload.github.com",
+    "raw.githubusercontent.com",
+];
+
+/// Check whether a URL host is on the mod-download allowlist.
+fn is_allowed_mod_host(host: &str) -> bool {
+    MOD_ALLOWED_HOSTS.contains(&host)
+}
+
 #[derive(Parser)]
 #[command(name = "agora", about = "Agora Minecraft Launcher CLI")]
 struct Cli {
@@ -279,10 +294,23 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                     &candidate,
                     "mod",
                     |url| {
-                        let c = client.clone();
                         let u = url.to_string();
                         Box::pin(async move {
-                            let resp = c
+                            let download_client = reqwest::Client::builder()
+                                .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                                    if let Some(host) = attempt.url().host_str() {
+                                        if is_allowed_mod_host(host) {
+                                            return attempt.follow();
+                                        }
+                                    }
+                                    attempt.stop()
+                                }))
+                                .build()
+                                .map_err(|e| agora_core::error::LauncherError::Generic {
+                                    code: "ERR_NETWORK".to_string(),
+                                    message: format!("Failed to build HTTP client: {e}"),
+                                })?;
+                            let resp = download_client
                                 .get(&u)
                                 .send()
                                 .await
@@ -424,6 +452,7 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                     data_dir,
                     &local_state,
                     true,
+                    None,
                 )
                 .await?;
                 if json {
@@ -693,6 +722,7 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                 data_dir,
                 &local_state,
                 true,
+                None,
             )
             .await?;
             if json {

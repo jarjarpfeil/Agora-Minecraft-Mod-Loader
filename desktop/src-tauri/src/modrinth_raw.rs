@@ -43,8 +43,6 @@ struct ModrinthLicenseRaw {
 #[derive(Debug, Deserialize)]
 struct ModrinthGalleryImageRaw {
     url: Option<String>,
-    #[serde(default)]
-    featured: bool,
 }
 
 /// Full project details returned from the Modrinth v2 project endpoint.

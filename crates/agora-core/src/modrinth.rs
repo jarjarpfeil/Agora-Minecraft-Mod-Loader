@@ -41,8 +41,6 @@ pub(crate) struct ModrinthLicenseRaw {
 #[derive(Debug, Deserialize)]
 pub(crate) struct ModrinthGalleryImageRaw {
     pub(crate) url: Option<String>,
-    #[serde(default)]
-    pub(crate) featured: bool,
 }
 
 /// Full project details returned from the Modrinth v2 project endpoint.

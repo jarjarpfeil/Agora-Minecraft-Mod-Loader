@@ -22,7 +22,6 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::ecdsa::signature::Signer;
-use p256::ecdsa::signature::SignatureEncoding;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -211,7 +210,7 @@ impl DeviceTokenKey {
 
 /// Response shapes (PascalCase = Xbox Live convention)
 mod xbox_types {
-    use serde::{Deserialize, Serialize};
+    use serde::Deserialize;
     use chrono::{DateTime, Utc};
     use std::collections::HashMap;
 

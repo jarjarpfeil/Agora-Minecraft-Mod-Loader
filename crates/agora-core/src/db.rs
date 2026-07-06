@@ -1,10 +1,6 @@
-use crate::models::InstanceRow;
+﻿use crate::models::InstanceRow;
 use rusqlite::Connection;
 use serde::Serialize;
-
-/// Expected schema version for the downloaded read-only registry database.
-/// The launcher compares this against `SELECT version FROM schema_version`.
-pub const REGISTRY_SCHEMA_VERSION: i64 = 1;
 
 /// Expected schema version for the mutable local SQLite database.
 /// Migrations are applied sequentially on startup.
@@ -38,6 +34,8 @@ pub fn init_local_state_db(db_path: &std::path::PathBuf) -> anyhow::Result<()> {
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
     run_migrations(&conn)?;
 
+    // Network feature toggles are stored as JSON strings ("true"/"false")
+    // because is_network_enabled reads them with .as_str().
     for key in [
         "network_modrinth_enabled",
         "network_modrinth_cdn_enabled",
@@ -45,21 +43,29 @@ pub fn init_local_state_db(db_path: &std::path::PathBuf) -> anyhow::Result<()> {
         "network_github_oauth_enabled",
         "network_msa_enabled",
         "network_adoptium_enabled",
-        // Feature toggles (default ON so tabs appear on fresh install)
-        "modrinth_enabled",
-        "ai_chat_enabled",
-        "ai_mcp_enabled",
     ] {
         if get_setting(&conn, key).ok().flatten().is_none() {
             set_setting(&conn, key, &serde_json::Value::String("true".to_string()))?;
         }
     }
 
+    // Feature toggles are stored as genuine JSON booleans so that readers
+    // comparing with  == true /  == &Value::Bool(true) match correctly.
+    for key in [
+        "modrinth_enabled",
+        "ai_chat_enabled",
+        "ai_mcp_enabled",
+    ] {
+        if get_setting(&conn, key).ok().flatten().is_none() {
+            set_setting(&conn, key, &serde_json::Value::Bool(true))?;
+        }
+    }
+
     Ok(())
 }
 
-/// Apply sequential migrations up to [`LOCAL_STATE_SCHEMA_VERSION`].
-fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
+/// Apply sequential migrations up to [LOCAL_STATE_SCHEMA_VERSION].
+pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_version (
              version INTEGER PRIMARY KEY
@@ -189,7 +195,7 @@ fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Read a JSON-encoded setting from `user_settings`.
+/// Read a JSON-encoded setting from user_settings.
 pub fn get_setting(conn: &Connection, key: &str) -> anyhow::Result<Option<serde_json::Value>> {
     let mut stmt = conn.prepare("SELECT value_json FROM user_settings WHERE key = ?1")?;
     let mut rows = stmt.query([key])?;
@@ -216,7 +222,7 @@ pub fn is_network_enabled(conn: &Connection, key: &str) -> bool {
         .unwrap_or(true)
 }
 
-/// Upsert a JSON-encoded setting into `user_settings`.
+/// Upsert a JSON-encoded setting into user_settings.
 pub fn set_setting(
     conn: &Connection,
     key: &str,
@@ -322,7 +328,7 @@ pub fn get_instance(conn: &Connection, instance_id: &str) -> anyhow::Result<Opti
     }
 }
 
-/// Update `last_launched_at` for an instance.
+/// Update last_launched_at for an instance.
 pub fn touch_last_launched(
     conn: &Connection,
     instance_id: &str,
@@ -399,7 +405,7 @@ pub fn record_flag_submission(conn: &Connection, now_unix: i64) -> anyhow::Resul
     Ok(())
 }
 
-/// Return the number of flag submissions at or after `since_unix`.
+/// Return the number of flag submissions at or after since_unix.
 pub fn count_flags_since(conn: &Connection, since_unix: i64) -> anyhow::Result<i64> {
     conn.query_row(
         "SELECT COUNT(*) FROM flag_submissions WHERE timestamp >= ?1",
@@ -859,3 +865,4 @@ mod tests {
         assert_eq!(results[1].confirm_count, 1);
     }
 }
+

@@ -20,8 +20,10 @@ import {
   setSetting,
   startMcpServer,
   stopMcpServer,
+  getMCPToken,
+  regenerateMCPToken,
 } from '../lib/tauri';
-import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus } from '../lib/tauri';
+import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus, McpTokenData } from '../lib/tauri';
 import { Privacy } from './Privacy';
 import { useAdvancedMode } from '../components/AdvancedModeContext';
 
@@ -61,6 +63,9 @@ export function Settings() {
   // Skill content state
   const [skillContent, setSkillContent] = useState<string | null>(null);
   const [skillLoading, setSkillLoading] = useState(false);
+
+  // MCP token state (for Bearer auth)
+  const [mcpToken, setMcpToken] = useState<McpTokenData | null>(null);
   const [skillCopied, setSkillCopied] = useState(false);
 
   // AI Copilot state
@@ -143,6 +148,13 @@ export function Settings() {
         if (!cancelled) setSkillContent(content);
       } catch {
         // Skill content unavailable; panel will show gracefully
+      }
+      // Fetch MCP Bearer token
+      try {
+        const data = await getMCPToken();
+        if (!cancelled) setMcpToken(data);
+      } catch {
+        // token unavailable; panel degrades gracefully
       }
     })();
     return () => {
@@ -410,26 +422,12 @@ export function Settings() {
               Allow live Modrinth API queries and show Modrinth-sourced curated mods.
             </p>
 
-            <label className="flex items-center justify-between pt-2 border-t border-border">
-              <span className="text-sm">AI / MCP Server</span>
-              <input
-                type="checkbox"
-                checked={aiMcp}
-                onChange={(e) => toggleAiMcp(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
-              />
-            </label>
-            <p className="text-xs text-muted-foreground">
-              Enable the local MCP server for external AI tools.
-            </p>
-
-           
-
+            
             <label className="flex items-center justify-between pt-2 border-t border-border">
               <div>
                 <span className="text-sm">Integrated AI Assistant</span>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Built-in AI chat powered by GitHub Models (GPT-4.1 Mini). Free with your GitHub account — no separate API key needed. Use this for quick crash analysis and mod questions.
+                  Built-in AI chat powered by GitHub Copilot. Free with your GitHub account — no separate API key needed. Use this for quick crash analysis and mod questions.
                 </p>
               </div>
               <input
@@ -478,6 +476,20 @@ export function Settings() {
                 </p>
               </div>
             )}
+            
+            <label className="flex items-center justify-between pt-2 border-t border-border">
+              <span className="text-sm">AI / MCP Server</span>
+              <input
+                type="checkbox"
+                checked={aiMcp}
+                onChange={(e) => toggleAiMcp(e.target.checked)}
+                className="h-5 w-5 accent-brand-600"
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Enable the local MCP server for external AI tools.
+            </p>
+
 
             {advancedMode && aiMcp && (
               <div className="pt-2 border-t border-border space-y-3">
@@ -527,10 +539,11 @@ export function Settings() {
 
                 {/* Approval Settings */}
                 <div className="rounded-lg bg-muted px-3 py-2.5 space-y-2">
-                  <h4 className="text-sm font-semibold">Approval Settings</h4>
+                  <h4 className="text-sm font-semibold">Approval Settings (per instance)</h4>
                   <p className="text-xs text-muted-foreground">
                     Tool: disable_mod — controls whether external AI tools can disable mods without prompting.
                   </p>
+              
                   {mcpInstances.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No instances found.</p>
                   ) : (
@@ -557,6 +570,48 @@ export function Settings() {
                         );
                       })}
                     </div>
+                  )}
+                </div>
+
+                {/* Bearer Token */}
+                <div className="rounded-lg bg-muted px-3 py-2.5 space-y-2">
+                  <h4 className="text-sm font-semibold">Bearer Token</h4>
+                  <p className="text-xs text-muted-foreground">
+                    All MCP connections require this token. Present it as <code className="bg-muted px-1 py-0.5 rounded">Authorization: Bearer &lt;token&gt;</code> header or <code className="bg-muted px-1 py-0.5 rounded">?token=&lt;token&gt;</code> query parameter.
+                  </p>
+                  {mcpToken?.token ? (
+                    <>
+                      <pre className="text-xs bg-background rounded-lg p-2.5 overflow-x-auto select-all break-all border border-border">{mcpToken.token}</pre>
+                      <div className="flex flex-wrap gap-1.5">
+                        <CopyButton text={mcpToken.token} label="Copy token" />
+                        <CopyButton text={mcpToken.config_snippet} label="Copy MCP config" />
+                        <button
+                          onClick={async () => {
+                            try {
+                              const data = await regenerateMCPToken();
+                              setMcpToken(data);
+                            } catch {
+                              /* keep existing token */
+                            }
+                          }}
+                          className="rounded-md border border-input px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                        >
+                          Regenerate token
+                        </button>
+                      </div>
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Regenerating invalidates the previous token — all AI clients must be updated with the new one.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Start the MCP server to generate a token.
+                    </p>
+                  )}
+                  {advancedMode && (
+                    <p className="text-xs text-muted-foreground">
+                      Token path: <code className="bg-muted px-1 py-0.5 rounded">{'<app_data>/mcp_token'}</code>
+                    </p>
                   )}
                 </div>
 
@@ -644,7 +699,7 @@ export function Settings() {
                     <div className="text-xs text-muted-foreground space-y-0.5">
                       <p>Server URL: <code className="bg-muted px-1 py-0.5 rounded">http://127.0.0.1:39741/sse</code></p>
                       <p>Transport: <code className="bg-muted px-1 py-0.5 rounded">SSE (Server-Sent Events)</code></p>
-                      <p>No authentication required</p>
+                      <p>Authentication: Bearer token (see above)</p>
                       <p>If you get stuck, your AI agent might be able to help you troubleshoot/customize the MCP integration.</p>
                     </div>
                   </div>

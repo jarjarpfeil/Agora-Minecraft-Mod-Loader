@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
@@ -10,37 +10,32 @@ interface MarkdownRendererProps {
 }
 
 // Allowlist schema for curator/upstream markdown (curator_note, body_markdown).
-// rehype-sanitize's default strips <script>, on* handlers, javascript:/data:
-// URLs, <iframe>. We allow richer structural tags (details/summary, tables)
-// for formatting; drop `style` (blocks CSS-based UI overlay) and `className`
-// (blocks Tailwind-class UI-deception injection); restrict href/src to https
-// only. No dangerouslySetInnerHTML — unsafe nodes are stripped from the tree
-// before React renders.
-//
-// MIRRORS desktop/src/pages/ModDetail.tsx SANITIZE_SCHEMA — there is no shared
-// monorepo package, so keep both in sync when tightening this allowlist.
+// Restricted tag set: structural/inline tags Modrinth about pages use,
+// but EXCLUDES dangerous tags (script, iframe, object, embed, input, video,
+// audio, link, meta, form, button, textarea, select, option).
+// Attributes: only href/src/alt/title/colspan/rowspan/class allowed on safe tags.
+// style stripped (blocks CSS-based UI overlay / clickjacking).
+// href/src restricted to https only.
 const SANITIZE_SCHEMA: Schema = {
   ...defaultSchema,
   tagNames: [
-    ...(defaultSchema.tagNames ?? []),
-    'details', 'summary', 'section', 'article', 'header', 'footer', 'aside',
-    'figure', 'figcaption', 'mark', 'abbr', 'kbd', 'var', 'samp',
-    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
-    'blockquote', 'hr', 'br', 'wbr',
+    'p', 'br', 'hr', 'strong', 'em', 'code', 'pre', 'a',
+    'ul', 'ol', 'li', 'blockquote',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'img', 'span', 'div', 'center', 'del', 'sub', 'sup',
+    'details', 'summary',
   ],
   attributes: {
-    ...defaultSchema.attributes,
-    a: [...(defaultSchema.attributes?.a ?? []), 'title'],
-    img: [...(defaultSchema.attributes?.img ?? []), 'alt', 'title', 'loading'],
-    th: ['align'], td: ['align'], col: ['span'], colgroup: ['span'],
-    details: ['open'],
+    a: ['href', 'title'],
+    img: ['src', 'alt', 'title'],
+    th: ['colspan', 'rowspan'],
+    td: ['colspan', 'rowspan'],
+    '*': ['title', 'class'],
   },
   protocols: {
-    ...defaultSchema.protocols,
     href: ['https'],
     src: ['https'],
-    cite: ['https'],
-    poster: ['https'],
   },
 };
 
@@ -53,3 +48,4 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
     </ReactMarkdown>
   );
 }
+

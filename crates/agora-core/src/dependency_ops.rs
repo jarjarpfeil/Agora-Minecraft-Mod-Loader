@@ -147,18 +147,6 @@ impl AliasMap {
 // 3. Helpers
 // ---------------------------------------------------------------------------
 
-/// Collect every `mod_jar_id` whose value is `Some` into a `HashSet`.
-///
-/// All IDs are lowercased for case-insensitive matching. Mod IDs are
-/// conventionally lowercase, but this normalises defensively against
-/// mixed-case entries from different sources (jar metadata vs manifest).
-fn installed_jar_ids(installed: &[InstalledMod]) -> HashSet<String> {
-    installed
-        .iter()
-        .filter_map(|m| m.mod_jar_id.as_ref().map(|id| id.to_lowercase()))
-        .collect()
-}
-
 /// Build a jar-dep classification map: mod_jar_id → Requirement.
 ///
 /// Only includes `depends_on` (Required) and `optional_deps` (Optional).

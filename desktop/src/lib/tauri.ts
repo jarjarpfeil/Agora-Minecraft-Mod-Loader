@@ -679,6 +679,16 @@ export const getMcpSkillContent = () => invoke<string>('get_mcp_skill_content');
 export const setMcpApproval = (toolName: string, instanceId: string, state: string) =>
   invoke<void>('set_mcp_approval', { toolName, instanceId, state });
 
+// --- MCP Token Management ---
+
+export interface McpTokenData {
+  token: string;
+  config_snippet: string;
+}
+
+export const getMCPToken = () => invoke<McpTokenData>('get_mcp_token');
+export const regenerateMCPToken = () => invoke<McpTokenData>('regenerate_mcp_token');
+
 // --- AI Assistant (GitHub Models) ---
 
 export interface ChatMessage {

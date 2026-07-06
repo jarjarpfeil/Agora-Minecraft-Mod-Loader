@@ -1,3 +1,5 @@
+﻿#![allow(dead_code)]
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -10,6 +12,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
 use crate::crash_investigator;
+use crate::crash_diagnostics;
 use crate::db;
 use crate::error::LauncherError;
 use crate::instances;
@@ -26,7 +29,7 @@ use crate::registry;
 pub const MCP_SKILL_CONTENT: &str = include_str!("../skills/agora-mcp/SKILL.md");
 
 // ---------------------------------------------------------------------------
-// Session ID generation (no uuid crate — SystemTime + counter)
+// Session ID generation (no uuid crate â€” SystemTime + counter)
 // ---------------------------------------------------------------------------
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -94,6 +97,81 @@ const MCP_ERR_TOO_MANY_REQUESTS: &str = "ERR_MCP_TOO_MANY_REQUESTS";
 
 // MCP error codes (application-level)
 const MCP_ERR_DENIED: &str = "ERR_MCP_DENIED";
+const MCP_TOKEN_KEY: &str = "mcp_bearer_token";
+
+fn generate_token() -> String {
+    use rand::Rng;
+    let bytes: [u8; 32] = rand::thread_rng().gen();
+    hex::encode(bytes)
+}
+
+fn get_or_create_mcp_token(app: &AppHandle) -> Option<String> {
+    let conn = db::local_state_connection(app).ok()?;
+    match db::get_setting(&conn, MCP_TOKEN_KEY) {
+        Ok(Some(serde_json::Value::String(t))) if !t.is_empty() => Some(t),
+        _ => {
+            let token = generate_token();
+            if db::set_setting(&conn, MCP_TOKEN_KEY, &serde_json::Value::String(token.clone())).is_ok() {
+                if let Ok(app_data) = paths::app_data_dir(app) {
+                    write_token_file(&app_data, &token);
+                }
+                Some(token)
+            } else { None }
+        }
+    }
+}
+
+fn write_token_file(app_data_dir: &std::path::Path, token: &str) {
+    let path = app_data_dir.join("mcp_token");
+    if let Ok(mut f) = std::fs::File::create(&path) {
+        let _ = std::io::Write::write_all(&mut f, token.as_bytes());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+        }
+    }
+}
+
+fn read_stored_token(app: &AppHandle) -> Option<String> {
+    let conn = db::local_state_connection(app).ok()?;
+    match db::get_setting(&conn, MCP_TOKEN_KEY) {
+        Ok(Some(serde_json::Value::String(t))) if !t.is_empty() => Some(t),
+        _ => None,
+    }
+}
+
+fn extract_bearer_token(headers: &std::collections::HashMap<String, String>, full_path: &str) -> Option<String> {
+    if let Some(auth) = headers.get("authorization") {
+        if let Some(t) = auth.strip_prefix("Bearer ") {
+            return Some(t.trim().to_string());
+        }
+        if let Some(t) = auth.strip_prefix("bearer ") {
+            return Some(t.trim().to_string());
+        }
+    }
+    if let Some(q) = full_path.find('?') {
+        for pair in full_path[q + 1..].split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+                if k == "token" {
+                    return urlencoding::decode(v).ok().map(|s| s.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn validate_token(app: &AppHandle, headers: &std::collections::HashMap<String, String>, full_path: &str) -> bool {
+    match read_stored_token(app) {
+        Some(expected) => match extract_bearer_token(headers, full_path) {
+            Some(t) => t == expected,
+            None => false,
+        },
+        None => false,
+    }
+}
+
 
 // ---------------------------------------------------------------------------
 // SSE session store
@@ -239,7 +317,7 @@ fn tool_definitions() -> Vec<serde_json::Value> {
         }),
         serde_json::json!({
             "name": "disable_mod",
-            "description": "Disable a mod in an instance by renaming its .jar file to .jar.disabled. Destructive — requires approval.",
+            "description": "Disable a mod in an instance by renaming its .jar file to .jar.disabled. Destructive â€” requires approval.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -296,6 +374,66 @@ fn tool_definitions() -> Vec<serde_json::Value> {
                 "required": []
             }
         }),
+        serde_json::json!({
+            "name": "read_latest_crash",
+            "description": "Read the most recent crash report or log for an instance. Returns the last 200 lines of the newest crash file.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "instance_id": {
+                        "type": "string",
+                        "description": "The instance ID to read crash reports for."
+                    }
+                },
+                "required": ["instance_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "read_mod_manifest",
+            "description": "Fetch curated metadata for a specific mod from the local SQLite registry, including curator notes, categories, compatibility data, and license info.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mod_id": {
+                        "type": "string",
+                        "description": "The registry ID of the mod (e.g. 'sodium', 'iris')."
+                    }
+                },
+                "required": ["mod_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "enable_mod",
+            "description": "Re-enable a previously disabled mod in an instance by renaming its .jar.disabled file back to .jar. Destructive -- requires approval.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "instance_id": {
+                        "type": "string",
+                        "description": "The instance ID."
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "The mod filename to re-enable."
+                    }
+                },
+                "required": ["instance_id", "filename"]
+            }
+        }),
+        serde_json::json!({
+            "name": "search_knowledge_base",
+            "description": "Search the curated registry for mods matching a natural-language query. Uses LIKE matching across mod names and descriptions in the local SQLite database. Returns the top 5 matches with their curator metadata.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language search string, e.g. 'performance rendering optimization' or 'magic mod'."
+                    }
+                },
+                "required": ["query"]
+            }
+        }),
     ]
 }
 
@@ -328,7 +466,7 @@ fn build_system_context(app: &AppHandle) -> String {
             } else {
                 for row in &rows {
                     lines.push(format!(
-                        "- **{}** (`{}`) — Minecraft {}, Loader: {} {}",
+                        "- **{}** (`{}`) â€” Minecraft {}, Loader: {} {}",
                         row.name, row.instance_id, row.minecraft_version, row.loader, row.loader_version
                     ));
                 }
@@ -350,7 +488,7 @@ fn build_system_context(app: &AppHandle) -> String {
                 let manifest = read_manifest(app, &row.instance_id);
                 match manifest {
                     Ok(Some(m)) => {
-                        lines.push(format!("- **{}** — {} mods", row.name, m.mods.len()));
+                        lines.push(format!("- **{}** â€” {} mods", row.name, m.mods.len()));
                         total_mods += m.mods.len();
                         for mod_ in &m.mods {
                             let ver = mod_.version.as_deref().unwrap_or("unknown");
@@ -361,10 +499,10 @@ fn build_system_context(app: &AppHandle) -> String {
                         }
                     }
                     Ok(None) => {
-                        lines.push(format!("- **{}** — manifest not found", row.name));
+                        lines.push(format!("- **{}** â€” manifest not found", row.name));
                     }
                     Err(_) => {
-                        lines.push(format!("- **{}** — could not read manifest", row.name));
+                        lines.push(format!("- **{}** â€” could not read manifest", row.name));
                     }
                 }
             }
@@ -662,7 +800,7 @@ fn suggest_mod_incompatibility_impl(
             }
         }
         Err(_) => {
-            // No async runtime — run synchronously.
+            // No async runtime â€” run synchronously.
             match crash_investigator::score_suspects(app, instance_id, crash_text, &manifest.mods) {
                 Ok(suspects) => {
                     let results: Vec<serde_json::Value> = suspects
@@ -689,6 +827,139 @@ fn suggest_mod_incompatibility_impl(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// read_latest_crash handler
+// ---------------------------------------------------------------------------
+
+fn handle_read_latest_crash(app: &AppHandle, instance_id: &str) -> serde_json::Value {
+    let reports = match crash_diagnostics::list_crash_reports(app, instance_id) {
+        Ok(r) => r,
+        Err(e) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Error listing crash reports: {}", e)}],
+            "isError": true,
+        }),
+    };
+    let newest = match reports.first() {
+        Some(r) => r.filename.clone(),
+        None => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("No crash reports found for instance '{}'", instance_id)}],
+            "isError": false,
+        }),
+    };
+    let full = match crash_diagnostics::read_crash_log(app, instance_id, &newest) {
+        Ok(t) => t,
+        Err(e) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Error reading crash log: {}", e)}],
+            "isError": true,
+        }),
+    };
+    // Return the last 200 lines (most relevant for diagnosis).
+    let lines: Vec<&str> = full.lines().collect();
+    let start = if lines.len() > 200 { lines.len() - 200 } else { 0 };
+    let tail: Vec<&str> = lines[start..].to_vec();
+    serde_json::json!({
+        "content": [{"type": "text", "text": tail.join("\n")}],
+        "isError": false,
+        "filename": newest,
+        "total_lines": lines.len(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// read_mod_manifest handler
+// ---------------------------------------------------------------------------
+
+fn handle_read_mod_manifest(app: &AppHandle, mod_id: &str) -> serde_json::Value {
+    let conn = match registry::open_registry(app) {
+        Ok(c) => c,
+        Err(e) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Could not open registry: {}", e)}],
+            "isError": true,
+        }),
+    };
+    let item = match registry::get_item_by_id(&conn, mod_id) {
+        Ok(Some(i)) => i,
+        Ok(None) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Mod '{}' not found in curated registry", mod_id)}],
+            "isError": true,
+        }),
+        Err(e) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Registry query error: {}", e)}],
+            "isError": true,
+        }),
+    };
+    serde_json::json!({
+        "id": item.id,
+        "name": item.name,
+        "content_type": item.content_type,
+        "download_strategy": item.download_strategy,
+        "source_identifier": item.source_identifier,
+        "sha256": item.sha256,
+        "license_id": item.license_id,
+        "description": item.description,
+        "body_markdown": item.body_markdown,
+        "page_url": item.page_url,
+        "icon_url": item.icon_url,
+        "upvotes": item.upvotes,
+        "downvotes": item.downvotes,
+        "net_score": item.net_score,
+        "velocity": item.velocity,
+        "status": item.status,
+        "is_immune": item.is_immune,
+        "immunity_reason": item.immunity_reason,
+        "date_added": item.date_added,
+        "compatible_versions_json": item.compatible_versions_json,
+        "modrinth_id": item.modrinth_id,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// search_knowledge_base handler
+// ---------------------------------------------------------------------------
+
+fn handle_search_knowledge_base(app: &AppHandle, query: &str) -> serde_json::Value {
+    let conn = match registry::open_registry(app) {
+        Ok(c) => c,
+        Err(e) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Could not open registry: {}", e)}],
+            "isError": true,
+        }),
+    };
+    let like_pattern = format!("%{}%", query);
+    let sql = "SELECT id, name, content_type, description                FROM registry_items                WHERE (description IS NOT NULL AND description LIKE ?1)                   OR (name LIKE ?1)                LIMIT 5";
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(e) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Query prepare error: {}", e)}],
+            "isError": true,
+        }),
+    };
+    let rows = match stmt.query_map([&like_pattern], |row| -> rusqlite::Result<serde_json::Value> {
+        Ok(serde_json::json!({
+            "id": row.get::<_, String>(0)?,
+            "name": row.get::<_, String>(1)?,
+            "content_type": row.get::<_, String>(2)?,
+            "description": row.get::<_, Option<String>>(3)?,
+        }))
+    }) {
+        Ok(r) => r,
+        Err(e) => return serde_json::json!({
+            "content": [{"type": "text", "text": format!("Query error: {}", e)}],
+            "isError": true,
+        }),
+    };
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    for row in rows {
+        if let Ok(v) = row {
+            results.push(v);
+        }
+    }
+    serde_json::json!({
+        "results": results,
+        "query": query,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -779,6 +1050,45 @@ fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json::Value
                 }],
                 "isError": false,
             })
+        }
+        "read_latest_crash" => {
+            let instance_id = get_str("instance_id").unwrap_or_default();
+            handle_read_latest_crash(app, &instance_id)
+        }
+        "read_mod_manifest" => {
+            let mod_id = get_str("mod_id").unwrap_or_default();
+            handle_read_mod_manifest(app, &mod_id)
+        }
+        "enable_mod" => {
+            if let Err(e) = check_approval(app, "enable_mod", &instance_id, true) {
+                return serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("Approval denied: {}", e),
+                    }],
+                    "isError": true,
+                });
+            }
+            match crash_investigator::enable_mod(app, &instance_id, &filename) {
+                Ok(()) => serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("Mod {} re-enabled in instance {}. Restart the game to apply.", filename, instance_id),
+                    }],
+                    "isError": false,
+                }),
+                Err(e) => serde_json::json!({
+                    "content": [{
+                        "type": "text",
+                        "text": e.to_string(),
+                    }],
+                    "isError": true,
+                }),
+            }
+        }
+        "search_knowledge_base" => {
+            let query = get_str("query").unwrap_or_default();
+            handle_search_knowledge_base(app, &query)
         }
         _ => serde_json::json!({
             "content": [{
@@ -906,7 +1216,7 @@ fn extract_session_id(path: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Connection handler — the core of the MCP server
+// Connection handler â€” the core of the MCP server
 // ---------------------------------------------------------------------------
 
 async fn handle_connection(
@@ -914,7 +1224,7 @@ async fn handle_connection(
     store: SessionStore,
     app: AppHandle,
 ) -> std::io::Result<()> {
-    let (raw_read, write_half) = stream.into_split();
+    let (raw_read, mut write_half) = stream.into_split();
     let mut read_half = BufReader::new(raw_read);
 
     // Read request line
@@ -947,6 +1257,18 @@ async fn handle_connection(
 
     let route = extract_route(&full_path);
 
+    // Token auth: reject unauthenticated connections (spec 10.0 #2, B2 2026-07-05).
+    if !validate_token(&app, &headers, &full_path) {
+        let body = br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"Unauthorized: MCP Bearer token required. Copy it from Settings > Integrations > MCP Server."}}"#;
+        let msg = format!(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            std::str::from_utf8(body).unwrap_or(""),
+        );
+        let _ = write_half.write_all(msg.as_bytes()).await;
+        return Ok(());
+    }
+
     match (method.as_str(), route) {
         ("GET", "/sse") => {
             handle_sse(write_half, store, app).await
@@ -970,7 +1292,7 @@ async fn handle_connection(
 async fn handle_sse(
     writer: tokio::net::tcp::OwnedWriteHalf,
     store: SessionStore,
-    _app: AppHandle,
+    app: AppHandle,
 ) -> std::io::Result<()> {
     let session_id = generate_session_id();
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
@@ -1039,7 +1361,7 @@ async fn handle_sse(
 async fn handle_post_messages(
     full_path: String,
     store: SessionStore,
-    _app: AppHandle,
+    app: AppHandle,
     headers: HashMap<String, String>,
     mut read_half: tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>,
     mut write_half: tokio::net::tcp::OwnedWriteHalf,
@@ -1114,16 +1436,8 @@ async fn handle_post_messages(
     // Dispatch the JSON-RPC method
     let response = match request.method.as_str() {
         "initialize" | "tools/list" | "tools/call" | "resources/list" | "resources/read" => {
-            // These are MCP methods that need the app handle.
-            // We can't access app here directly since we don't have it.
-            // The app handle is needed for tool implementations that query the DB.
-            // We'll return a placeholder error for now — the actual dispatch
-            // will need the app handle passed through.
-            JsonRpcResponse::error(
-                request.id.unwrap_or(serde_json::Value::Null),
-                JSONRPC_ERROR_INTERNAL_ERROR,
-                "MCP method handler requires app context",
-            )
+            let result = handle_mcp_method(&app, &request.method, request.params.as_ref());
+            JsonRpcResponse::success(request.id.clone().unwrap_or(serde_json::Value::Null), result)
         }
         _ => JsonRpcResponse::error(
             request.id.unwrap_or(serde_json::Value::Null),
@@ -1188,6 +1502,8 @@ pub async fn start_server(app: AppHandle) -> Result<McpServer, std::io::Error> {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
     let listener = TcpListener::bind(addr).await?;
+    // Ensure the MCP bearer token exists on server start (generates + persists on first call).
+    let _ = get_or_create_mcp_token(&app);
     let session_store: SessionStore = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -1279,7 +1595,7 @@ mod tests {
 
     #[test]
     fn test_approval_no_grant_readonly() {
-        // No grant + non-destructive → allowed (safe default).
+        // No grant + non-destructive â†’ allowed (safe default).
         assert_eq!(
             check_approval_grant(None, false),
             ApprovalResult::Allowed
@@ -1288,7 +1604,7 @@ mod tests {
 
     #[test]
     fn test_approval_no_grant_destructive() {
-        // No grant + destructive → denied (safe default).
+        // No grant + destructive â†’ denied (safe default).
         assert_eq!(
             check_approval_grant(None, true),
             ApprovalResult::Denied
@@ -1380,7 +1696,7 @@ mod tests {
     #[test]
     fn test_rate_limiter_allows_under_limit() {
         let mut rl = RateLimiter::new();
-        // Under 100 requests — all allowed.
+        // Under 100 requests â€” all allowed.
         for _ in 0..100 {
             assert!(rl.allow());
         }
@@ -1397,3 +1713,4 @@ mod tests {
         assert!(!rl.allow());
     }
 }
+

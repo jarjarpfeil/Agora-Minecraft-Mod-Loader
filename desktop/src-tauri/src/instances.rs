@@ -613,7 +613,16 @@ fn write_manifest<R: tauri::Runtime>(
 ) -> LauncherResult<()> {
     let path = manifest_path(app, instance_id)?;
     let text = serde_json::to_string_pretty(manifest).map_err(|_| LauncherError::InstanceCreateFailed)?;
-    std::fs::write(&path, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    // Atomic write: write to .tmp then rename. Abort-safe against mid-write crashes.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    if let Err(e) = std::fs::rename(&tmp, &path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(LauncherError::Generic {
+            code: "ERR_INSTANCE_WRITE".to_string(),
+            message: format!("Failed to write instance_manifest atomically: {}", e),
+        });
+    }
     Ok(())
 }
 
@@ -753,4 +762,5 @@ mod tests {
         assert_eq!(profile_id_for("test-123"), "agora-test-123");
     }
 }
+
 

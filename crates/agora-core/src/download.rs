@@ -1,7 +1,7 @@
 use crate::error::{LauncherError, LauncherResult};
 use crate::loader_manifests;
 use sha1::{Digest as Sha1Digest, Sha1};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 
 /// Raw SHA-256 hex digest of a byte slice.
 pub fn sha256_hex(data: &[u8]) -> String {

@@ -29,8 +29,6 @@ pub struct DetectedLauncher {
 struct MrpackIndex {
     #[serde(default)]
     name: String,
-    #[serde(default)]
-    version_id: Option<String>,
     dependencies: Option<serde_json::Value>,
     files: Vec<MrpackFile>,
     #[serde(default)]
@@ -41,8 +39,6 @@ struct MrpackIndex {
 struct MrpackFile {
     path: String,
     downloads: Vec<String>,
-    #[serde(default)]
-    file_size: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -122,7 +118,7 @@ fn copy_or_symlink(src: &Path, dst: &Path, symlink: bool) -> LauncherResult<()> 
 pub fn import_mrpack(
     mrpack_path: &Path,
     target_dir: &Path,
-    symlink_saves: bool,
+    _symlink_saves: bool,
 ) -> LauncherResult<ImportResult> {
     let file = fs::File::open(mrpack_path).map_err(|e| LauncherError::Generic {
         code: "ERR_IMPORT_OPEN".into(), message: format!("Cannot open mrpack: {e}"),

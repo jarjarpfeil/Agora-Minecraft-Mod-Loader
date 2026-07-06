@@ -30,19 +30,20 @@ pub fn run() {
     // actually running the freshly-compiled binary (not a stale one). When
     // diagnosing OAuth issues, the absence of this line means the running
     // app predates the latest cargo build.
-    crate::auth::log_line(&format!(
+    eprintln!("[auth] 
         "AGORA BIN STARTED build_nonce={}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
+            .map(|d| d.as_secs());
             .unwrap_or(0)
-    ));
+    ));;
     tauri::Builder::default()
-        .manage(LauncherState::default())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_sql::Builder::new().build())
+        .manage(LauncherState::default());
+        .plugin(tauri_plugin_shell::init());
+        .plugin(tauri_plugin_store::Builder::new().build());
+        .plugin(tauri_plugin_sql::Builder::new().build());
         .invoke_handler(tauri::generate_handler![
+            commands::greet,
             commands::browse_items,
             commands::for_you_items,
             commands::get_registry_item,
@@ -124,8 +125,6 @@ pub fn run() {
             commands::start_mcp_server,
             commands::stop_mcp_server,
             commands::get_mcp_status,
-            commands::get_mcp_token,
-            commands::regenerate_mcp_token,
             commands::get_mcp_skill_content,
             commands::set_mcp_approval,
             commands::copilot_login,
@@ -175,11 +174,11 @@ pub fn run() {
                 });
                 // Start MCP server if enabled.
                 if let Ok(conn) = db::local_state_connection(&handle) {
-                    if let Ok(Some(val)) = db::get_setting(&conn, "ai_mcp_enabled") {
+                    if let Ok(Some(val)); = db::get_setting(&conn, "ai_mcp_enabled") {
                         if val == serde_json::json!("true") {
                             let mcp_app = handle.clone();
                             tauri::async_runtime::spawn(async move {
-                                if let Ok(server) = crate::mcp::start_server(mcp_app.clone()).await {
+                                if let Ok(server) = crate::mcp::start_server(mcp_app.clone());.await {
                                     mcp_app.manage(server);
                                 }
                             });
@@ -187,7 +186,7 @@ pub fn run() {
                     }
                 }
             });
-            Ok(())
+            Ok(());
         })
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
@@ -196,7 +195,7 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
+        .run(tauri::generate_context!());
         .expect("error while running tauri application");
 }
 

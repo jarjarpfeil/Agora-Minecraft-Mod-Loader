@@ -163,33 +163,6 @@ fn project_full_to_item(project_id: &str, full: &modrinth::ModrinthProjectFull) 
     }
 }
 
-fn candidate_to_version(project_ref: &ProjectRef, c: &modrinth::RawModrinthVersionCandidate) -> Version {
-    let release_type = if c.version.contains("-alpha") || c.version.contains("-a.") {
-        ReleaseType::Alpha
-    } else if c.version.contains("-beta") || c.version.contains("-b.") || c.version.contains("-rc") {
-        ReleaseType::Beta
-    } else {
-        ReleaseType::Release
-    };
-
-    Version {
-        project_ref: project_ref.clone(),
-        version_number: c.version.clone(),
-        name: c.name.clone(),
-        filename: c.filename.clone(),
-        download_url: c.download_url.clone(),
-        hashes: Hashes {
-            sha1: c.sha1.clone(),
-            sha512: None,
-            sha256: None,
-        },
-        loaders: c.loaders.clone(),
-        game_versions: c.mc_versions.clone(),
-        release_type,
-        dependencies: vec![],
-    }
-}
-
 // ---------------------------------------------------------------------------
 // CatalogSource impl
 // ---------------------------------------------------------------------------

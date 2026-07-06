@@ -44,40 +44,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "agora"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "agora-core",
- "anyhow",
- "chrono",
- "dirs 5.0.1",
- "ed25519-dalek",
- "hex",
- "keyring",
- "pbkdf2 0.12.2",
- "regex",
- "reqwest 0.12.28",
- "rfd",
- "rusqlite",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-cli",
- "tauri-plugin-shell",
- "tauri-plugin-sql",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tokio",
- "trash",
- "urlencoding",
- "zip 0.6.6",
-]
-
-[[package]]
 name = "agora-cli"
 version = "0.1.0"
 dependencies = [
@@ -120,6 +86,42 @@ dependencies = [
  "tokio",
  "urlencoding",
  "uuid",
+ "zip 0.6.6",
+]
+
+[[package]]
+name = "agora-desktop"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "agora-core",
+ "anyhow",
+ "chrono",
+ "dirs 5.0.1",
+ "ed25519-dalek",
+ "hex",
+ "keyring",
+ "pbkdf2 0.12.2",
+ "rand 0.8.6",
+ "regex",
+ "reqwest 0.12.28",
+ "rfd",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-cli",
+ "tauri-plugin-shell",
+ "tauri-plugin-sql",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tokio",
+ "trash",
+ "urlencoding",
  "zip 0.6.6",
 ]
 

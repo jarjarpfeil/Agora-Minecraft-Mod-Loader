@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import Reviews from '@/components/Reviews';
@@ -45,7 +45,7 @@ export default async function DetailPage({ params }: DetailPageProps) {
           role="status"
         >
           <div className="flex items-center gap-2 font-semibold">
-            <span aria-hidden="true">🛡️</span>
+            <span aria-hidden="true">ðŸ›¡ï¸</span>
             <span>Curator Shield Active</span>
           </div>
           <p className="mt-1 text-xs opacity-90">
@@ -58,18 +58,18 @@ export default async function DetailPage({ params }: DetailPageProps) {
           href={contentTypePath(contentType)}
           className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
         >
-          ← Back to {contentTypeLabel(contentType)}
+          â† Back to {contentTypeLabel(contentType)}
         </Link>
         <h1 className="mt-2 text-3xl font-bold">{item.name}</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          {contentTypeLabel(contentType)} · {item.download_strategy}
+          {contentTypeLabel(contentType)} Â· {item.download_strategy}
         </p>
       </div>
 
       {item.icon_url && (() => {
         let url: URL | null = null;
         try { url = new URL(item.icon_url); } catch { /* invalid */ }
-        const safe = url && (url.protocol === 'https:' || url.protocol === 'data:');
+        const safe = url && (url.protocol === 'https:');
         if (!safe) return null;
         return (
           // eslint-disable-next-line @next/next/no-img-element
@@ -108,7 +108,7 @@ export default async function DetailPage({ params }: DetailPageProps) {
           <ul className="list-disc space-y-1 pl-6">
             {item.compatible_versions.map((v, i) => (
               <li key={i} className="text-gray-700 dark:text-gray-300">
-                {v.mc_version} · {v.loader} · {v.mod_version}
+                {v.mc_version} Â· {v.loader} Â· {v.mod_version}
               </li>
             ))}
           </ul>
@@ -133,3 +133,4 @@ export default async function DetailPage({ params }: DetailPageProps) {
     </div>
   );
 }
+

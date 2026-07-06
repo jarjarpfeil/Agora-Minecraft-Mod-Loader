@@ -25,6 +25,10 @@ Core values:
 | `.github/` | Workflows, issue templates, and governance forms |
 | `.kilo/` | Kilo AI tooling configuration, agent profiles, commands, and skills |
 | `.kilo/plans/MASTER_SPEC.md` | Authoritative engineering blueprint (read-only for agents) |
+| crates/ | Shared Rust workspace (gora-core shared lib, gora CLI binary) |
+| BACKLOG.md | Phase-by-phase task tracker |
+| CODE_OF_ENGAGEMENT.md | Canonical review-conduct rules |
+| REGISTRY_CURATION_REFERENCE.md | Self-contained manifest-authoring reference |
 
 ## Agent Roles
 
@@ -37,7 +41,7 @@ Core values:
 
 ## Conventions
 
-- Treat `AGENTS.md` and `.kilo/plans/MASTER_SPEC.md` as the source of truth. Do **not** edit `MASTER_SPEC.md`.
+- Treat `AGENTS.md` and `.kilo/plans/MASTER_SPEC.md` as the source of truth. `MASTER_SPEC.md` §0-§18 are the original design spec; §19 captures architectural-evolution decisions and supersedes the earlier prose where they conflict. When the architecture genuinely pivots, append a new subsection under §19 (do NOT rewrite §0-§18 design prose as drive-by edits -- those are preserved for decision-rationale value).
 - Prefer the smallest change that satisfies the request; avoid drive-by refactoring.
 - Edit files via Kilo tools. Do not manually stage or edit files outside the project directory.
 - After registry/loader/crash-signature changes, run `/registry`.
@@ -54,7 +58,7 @@ Core values:
 
 ## MCP Server
 
-When the optional Agora launcher MCP server is running locally, agents can interact with it through Kilo's MCP panel. It is bound to `127.0.0.1:39741`, is disabled by default in this project's configuration, and requires a Bearer token via the `LAUNCHER_MCP_TOKEN` environment variable. Keep MCP calls stateless and avoid privileged operations without explicit user approval.
+The shipped Agora launcher app exposes an MCP server on `127.0.0.1:39741` when the user has *AI / MCP Server* enabled in Settings (disabled by default in the shipped app). **Authentication:** the localhost binding is the current sole security boundary; the per-session Bearer token from MASTER_SPEC section 10.0 number 2 is intentionally not yet implemented (deferred pending user decision, see section 19.6). For local development, this project's `.kilo/kilo.json` enables the Kilo MCP client (`enabled: true`) to talk to a locally-running launcher instance. Keep MCP calls stateless and avoid privileged operations without explicit user approval.
 
 ## Environment Variables
 

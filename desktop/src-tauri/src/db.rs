@@ -3,15 +3,15 @@ use crate::paths;
 use rusqlite::Connection;
 use serde::Serialize;
 
-/// Expected schema version for the downloaded read-only registry database.
-/// The launcher compares this against `SELECT version FROM schema_version`.
-pub const REGISTRY_SCHEMA_VERSION: i64 = 1;
-
 /// Expected schema version for the mutable local SQLite database.
 /// Migrations are applied sequentially on startup.
 pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 3;
 
 /// Open a connection to the mutable local state database, creating it if needed.
+
+// Re-exported from agora-core for desktop-internal callers.
+pub use agora_core::db::{record_co_crash, normalize_pair, get_flag_rate_limit_status};
+
 pub fn local_state_connection<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> anyhow::Result<Connection> {
@@ -41,138 +41,13 @@ pub fn init_local_state_db<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyh
     Ok(())
 }
 
-/// Apply sequential migrations up to [`LOCAL_STATE_SCHEMA_VERSION`].
+/// Apply sequential migrations up to [LOCAL_STATE_SCHEMA_VERSION].
+/// Delegates to agora-core for the actual migration SQL.
 fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_version (
-             version INTEGER PRIMARY KEY
-         );",
-    )?;
-
-    let current: i64 = conn
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_version", [], |row| {
-            row.get(0)
-        })?;
-    let target = LOCAL_STATE_SCHEMA_VERSION;
-
-    if current < 1 {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS user_settings (
-                 key TEXT PRIMARY KEY,
-                 value_json TEXT NOT NULL
-             );
-
-             CREATE TABLE IF NOT EXISTS user_instances (
-                 instance_id TEXT PRIMARY KEY,
-                 name TEXT NOT NULL,
-                 minecraft_version TEXT NOT NULL,
-                 loader TEXT NOT NULL,
-                 loader_version TEXT NOT NULL,
-                 is_modpack BOOLEAN NOT NULL DEFAULT 0,
-                 is_locked BOOLEAN NOT NULL DEFAULT 0,
-                 last_launched_at TEXT,
-                 jvm_memory_mb INTEGER NOT NULL DEFAULT 4096,
-                 jvm_gc TEXT NOT NULL DEFAULT 'g1gc',
-                 jvm_custom_args TEXT NOT NULL DEFAULT '',
-                 jvm_always_pre_touch INTEGER NOT NULL DEFAULT 1,
-                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
-             );
-
-             CREATE TABLE IF NOT EXISTS local_crash_telemetry (
-                 mod_a_id TEXT NOT NULL,
-                 mod_b_id TEXT NOT NULL,
-                 crash_count INTEGER NOT NULL DEFAULT 1,
-                 last_seen_at TEXT NOT NULL,
-                 PRIMARY KEY (mod_a_id, mod_b_id)
-             );
-
-              CREATE TABLE IF NOT EXISTS mcp_approval_grants (
-                  tool_name TEXT NOT NULL,
-                  instance_id TEXT NOT NULL,
-                  state TEXT NOT NULL,
-                  granted_at TEXT NOT NULL,
-                  expires_at TEXT,
-                  PRIMARY KEY (tool_name, instance_id)
-              );
-
-              CREATE TABLE IF NOT EXISTS flag_submissions (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  timestamp INTEGER NOT NULL
-              );",
-        )?;
-        conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (1)", [])?;
-    }
-
-    // Migration v2: add flag_submissions table for comment-flag rate limiting (Â§5.5).
-    if current < 2 {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS flag_submissions (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 timestamp INTEGER NOT NULL
-             );",
-        )?;
-        conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (2)", [])?;
-    }
-
-    // Migration v3: add crash-investigator tables for dynamic scoring algorithm.
-    if current < 3 {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS crash_events (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 instance_id TEXT NOT NULL,
-                 fingerprint TEXT NOT NULL,
-                 exception_class TEXT NOT NULL,
-                 top_frames_json TEXT NOT NULL,
-                 signature_name TEXT,
-                 occurred_at TEXT NOT NULL
-             );
-
-             CREATE TABLE IF NOT EXISTS crash_survivals (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 instance_id TEXT NOT NULL,
-                 occurred_at TEXT NOT NULL
-             );
-
-             CREATE TABLE IF NOT EXISTS crash_survival_mods (
-                 survival_id INTEGER NOT NULL,
-                 mod_id TEXT NOT NULL,
-                 PRIMARY KEY (survival_id, mod_id),
-                 FOREIGN KEY (survival_id) REFERENCES crash_survivals(id)
-             );
-
-             CREATE TABLE IF NOT EXISTS crash_attribution (
-                 fingerprint TEXT NOT NULL,
-                 mod_id TEXT NOT NULL,
-                 confirm_count INTEGER NOT NULL DEFAULT 0,
-                 last_confirmed_at TEXT,
-                 PRIMARY KEY (fingerprint, mod_id)
-             );
-
-             CREATE TABLE IF NOT EXISTS crash_ruled_out (
-                 fingerprint TEXT NOT NULL,
-                 mod_id TEXT NOT NULL,
-                 ruled_out_at TEXT NOT NULL,
-                 PRIMARY KEY (fingerprint, mod_id)
-             );",
-        )?;
-        conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (3)", [])?;
-    }
-
-    // Migration: add jvm_always_pre_touch column to existing databases.
-    if current >= 1 {
-        let _ = conn.execute(
-            "ALTER TABLE user_instances ADD COLUMN jvm_always_pre_touch INTEGER NOT NULL DEFAULT 1",
-            [],
-        );
-    }
-
-    if current > target {
-        anyhow::bail!("local_state.db schema version {current} is newer than supported {target}");
-    }
-    Ok(())
+    agora_core::db::run_migrations(conn)
 }
 
-/// Read a JSON-encoded setting from `user_settings`.
+/// Read a JSON-encoded setting from user_settings.
 pub fn get_setting(conn: &Connection, key: &str) -> anyhow::Result<Option<serde_json::Value>> {
     let mut stmt = conn.prepare("SELECT value_json FROM user_settings WHERE key = ?1")?;
     let mut rows = stmt.query([key])?;
@@ -185,7 +60,7 @@ pub fn get_setting(conn: &Connection, key: &str) -> anyhow::Result<Option<serde_
     }
 }
 
-/// Upsert a JSON-encoded setting into `user_settings`.
+/// Upsert a JSON-encoded setting into user_settings.
 pub fn set_setting(
     conn: &Connection,
     key: &str,
@@ -282,7 +157,7 @@ pub fn get_instance(conn: &Connection, instance_id: &str) -> anyhow::Result<Opti
     }
 }
 
-/// Update `last_launched_at` for an instance.
+/// Update last_launched_at for an instance.
 pub fn touch_last_launched(
     conn: &Connection,
     instance_id: &str,
@@ -312,150 +187,67 @@ pub fn count_instances_by_loader_version(
     .map_err(Into::into)
 }
 
-/// Normalize a mod pair so the lexicographically smaller ID always comes first.
-/// This ensures (sodium, iris) and (iris, sodium) map to the same row.
-pub fn normalize_pair<'a>(a: &'a str, b: &'a str) -> (&'a str, &'a str) {
-    if a <= b {
-        (a, b)
-    } else {
-        (b, a)
-    }
-}
+// ---------------------------------------------------------------------------
+// Set-locked helper
+// ---------------------------------------------------------------------------
 
-/// Record a co-crash for a pair of mods (Â§4.1b).
-pub fn record_co_crash(conn: &Connection, mod_a: &str, mod_b: &str) -> anyhow::Result<()> {
-    let (a, b) = normalize_pair(mod_a, mod_b);
-    let now = chrono::Utc::now().to_rfc3339();
+pub fn set_locked(conn: &Connection, instance_id: &str, locked: bool) -> anyhow::Result<()> {
     conn.execute(
-        "INSERT INTO local_crash_telemetry (mod_a_id, mod_b_id, crash_count, last_seen_at)
-         VALUES (?1, ?2, 1, ?3)
-         ON CONFLICT(mod_a_id, mod_b_id) DO UPDATE SET
-             crash_count = crash_count + 1,
-             last_seen_at = excluded.last_seen_at",
-        rusqlite::params![a, b, now],
+        "UPDATE user_instances SET is_locked = ?1 WHERE instance_id = ?2",
+        rusqlite::params![locked, instance_id],
     )?;
     Ok(())
 }
 
-/// Purge stale crash telemetry records per Â§4.1b retention rules:
-/// - Records older than 90 days.
-/// - Pairs with crash_count < 2.
-pub fn purge_stale_crash_telemetry(conn: &Connection) -> anyhow::Result<()> {
-    let cutoff = chrono::Utc::now() - chrono::Duration::days(90);
-    conn.execute(
-        "DELETE FROM local_crash_telemetry
-         WHERE last_seen_at < ?1 OR crash_count < 2",
-        rusqlite::params![cutoff.to_rfc3339()],
-    )?;
-    Ok(())
-}
+// ---------------------------------------------------------------------------
+// Version cache helpers
+// ---------------------------------------------------------------------------
 
-/// Record a flag submission for rate-limit tracking (Â§5.5).
-pub fn record_flag_submission(conn: &Connection, now_unix: i64) -> anyhow::Result<()> {
-    conn.execute(
-        "INSERT INTO flag_submissions (timestamp) VALUES (?1)",
-        rusqlite::params![now_unix],
-    )?;
-    Ok(())
-}
-
-/// Return the number of flag submissions at or after `since_unix`.
-pub fn count_flags_since(conn: &Connection, since_unix: i64) -> anyhow::Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM flag_submissions WHERE timestamp >= ?1",
-        rusqlite::params![since_unix],
-        |row| row.get(0),
-    )
-    .map_err(Into::into)
-}
-
-/// Rate-limit status for comment-flag submissions (Â§5.5).
-#[derive(Serialize)]
-pub struct FlagRateLimit {
-    pub remaining_hour: i64,
-    pub remaining_day: i64,
-    pub reset_hour_at_unix: i64,
-    pub reset_day_at_unix: i64,
-    pub can_flag: bool,
-}
-
-const MAX_FLAGS_PER_HOUR: i64 = 5;
-const MAX_FLAGS_PER_DAY: i64 = 20;
-
-/// Compute the current flag rate-limit status for a connection at `now_unix`.
-pub fn get_flag_rate_limit_status(
+/// Read the stored Modrinth version page from settings.
+pub fn get_version_page(
     conn: &Connection,
-    now_unix: i64,
-) -> anyhow::Result<FlagRateLimit> {
-    let hour_window_start = now_unix - 3600;
-    let day_window_start = now_unix - 86400;
-
-    let hour_count = count_flags_since(conn, hour_window_start)?;
-    let day_count = count_flags_since(conn, day_window_start)?;
-
-    let remaining_hour = (MAX_FLAGS_PER_HOUR - hour_count).max(0);
-    let remaining_day = (MAX_FLAGS_PER_DAY - day_count).max(0);
-
-    let reset_hour_at_unix = if hour_count > 0 {
-        let mut stmt = conn.prepare(
-            "SELECT MIN(timestamp) FROM flag_submissions WHERE timestamp >= ?1",
-        )?;
-        let oldest_hour: i64 = stmt.query_row([hour_window_start], |row| row.get(0))?;
-        oldest_hour + 3600
-    } else {
-        now_unix + 3600
-    };
-
-    let reset_day_at_unix = if day_count > 0 {
-        let mut stmt = conn.prepare(
-            "SELECT MIN(timestamp) FROM flag_submissions WHERE timestamp >= ?1",
-        )?;
-        let oldest_day: i64 = stmt.query_row([day_window_start], |row| row.get(0))?;
-        oldest_day + 86400
-    } else {
-        now_unix + 86400
-    };
-
-    let can_flag = remaining_hour > 0 && remaining_day > 0;
-
-    Ok(FlagRateLimit {
-        remaining_hour,
-        remaining_day,
-        reset_hour_at_unix,
-        reset_day_at_unix,
-        can_flag,
-    })
+    mod_id: &str,
+) -> anyhow::Result<Option<String>> {
+    let key = format!("modrinth_versions_page_{}", mod_id);
+    get_setting(conn, &key).map(|v| v.and_then(|j| j.as_str().map(String::from)))
 }
 
-fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstanceRow> {
-    Ok(InstanceRow {
-        instance_id: row.get(0)?,
-        name: row.get(1)?,
-        minecraft_version: row.get(2)?,
-        loader: row.get(3)?,
-        loader_version: row.get(4)?,
-        is_modpack: row.get(5)?,
-        is_locked: row.get(6)?,
-        last_launched_at: row.get(7)?,
-        jvm_memory_mb: row.get(8)?,
-        jvm_gc: row.get(9)?,
-        jvm_custom_args: row.get(10)?,
-        jvm_always_pre_touch: row.get::<_, i64>(11)? != 0,
-        created_at: row.get(12)?,
-    })
+/// Store a Modrinth version page in settings.
+pub fn set_version_page(
+    conn: &Connection,
+    mod_id: &str,
+    data: &str,
+) -> anyhow::Result<()> {
+    let key = format!("modrinth_versions_page_{}", mod_id);
+    set_setting(conn, &key, &serde_json::Value::String(data.to_string()))
+}
+
+/// Delete the stored version page for a mod.
+pub fn delete_version_page(conn: &Connection, mod_id: &str) -> anyhow::Result<()> {
+    let key = format!("modrinth_versions_page_{}", mod_id);
+    conn.execute(
+        "DELETE FROM user_settings WHERE key = ?1",
+        rusqlite::params![key],
+    )?;
+    Ok(())
+}
+
+/// Store a registry item's info (name, icon_url, etc.) in settings so we don't
+/// need the registry db on every UI render.
+pub fn set_item_cache(conn: &Connection, item_id: &str, data: &str) -> anyhow::Result<()> {
+    let key = format!("item_cache_{}", item_id);
+    set_setting(conn, &key, &serde_json::Value::String(data.to_string()))
+}
+
+/// Read a cached registry item.
+pub fn get_item_cache(conn: &Connection, item_id: &str) -> anyhow::Result<Option<String>> {
+    let key = format!("item_cache_{}", item_id);
+    get_setting(conn, &key).map(|v| v.and_then(|j| j.as_str().map(String::from)))
 }
 
 // ---------------------------------------------------------------------------
-// Crash Investigator tables (v3 schema)
+// Crash investigator tables (v3 schema)
 // ---------------------------------------------------------------------------
-
-/// An attribution row: (mod_id, confirm_count, last_confirmed_at).
-#[derive(Debug, Clone, Serialize)]
-pub struct CrashAttribution {
-    pub mod_id: String,
-    pub confirm_count: i64,
-    pub last_confirmed_at: Option<String>,
-}
 
 /// Insert a crash event and return the new row id.
 pub fn insert_crash_event(
@@ -496,11 +288,49 @@ pub fn insert_survival(
     Ok(())
 }
 
+/// Return the number of survivals a mod appears in.
+pub fn get_mod_survival_count(conn: &Connection, mod_id: &str) -> anyhow::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM crash_survival_mods WHERE mod_id = ?1",
+        rusqlite::params![mod_id],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Return the number of survivals where both mods a and b appear together.
+pub fn get_pair_survival_count(
+    conn: &Connection,
+    a: &str,
+    b: &str,
+) -> anyhow::Result<i64> {
+    use agora_core::db::normalize_pair;
+    let (first, second) = normalize_pair(a, b);
+    conn.query_row(
+        "SELECT COUNT(*) FROM crash_survival_mods x
+         JOIN crash_survival_mods y ON x.survival_id = y.survival_id
+         WHERE x.mod_id = ?1 AND y.mod_id = ?2",
+        rusqlite::params![first, second],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Return the total number of crash_survivals rows.
+pub fn get_total_survival_count(conn: &Connection) -> anyhow::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM crash_survivals",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
 /// Return confirmed attributions for a fingerprint, ordered by confirm_count DESC.
 pub fn get_confirmed_attribution(
     conn: &Connection,
     fingerprint: &str,
-) -> anyhow::Result<Vec<CrashAttribution>> {
+) -> anyhow::Result<Vec<agora_core::db::CrashAttribution>> {
     let mut stmt = conn.prepare(
         "SELECT mod_id, confirm_count, last_confirmed_at
          FROM crash_attribution
@@ -508,7 +338,7 @@ pub fn get_confirmed_attribution(
          ORDER BY confirm_count DESC",
     )?;
     let rows = stmt.query_map([fingerprint], |row| {
-        Ok(CrashAttribution {
+        Ok(agora_core::db::CrashAttribution {
             mod_id: row.get(0)?,
             confirm_count: row.get(1)?,
             last_confirmed_at: row.get(2)?,
@@ -581,462 +411,58 @@ pub fn get_ruled_out_mods(
     Ok(out)
 }
 
-/// Return the number of survivals a mod appears in.
-pub fn get_mod_survival_count(conn: &Connection, mod_id: &str) -> anyhow::Result<i64> {
+// ---------------------------------------------------------------------------
+// Flag rate limiting (§5.5)
+// ---------------------------------------------------------------------------
+
+/// Record a flag submission for rate-limit tracking.
+pub fn record_flag_submission(conn: &Connection, now_unix: i64) -> anyhow::Result<()> {
+    conn.execute(
+        "INSERT INTO flag_submissions (timestamp) VALUES (?1)",
+        rusqlite::params![now_unix],
+    )?;
+    Ok(())
+}
+
+/// Return the number of flag submissions at or after since_unix.
+pub fn count_flags_since(conn: &Connection, since_unix: i64) -> anyhow::Result<i64> {
     conn.query_row(
-        "SELECT COUNT(*) FROM crash_survival_mods WHERE mod_id = ?1",
-        rusqlite::params![mod_id],
+        "SELECT COUNT(*) FROM flag_submissions WHERE timestamp >= ?1",
+        rusqlite::params![since_unix],
         |row| row.get(0),
     )
     .map_err(Into::into)
 }
 
-/// Return the number of survivals where both mods a and b appear together.
-pub fn get_pair_survival_count(
-    conn: &Connection,
-    a: &str,
-    b: &str,
-) -> anyhow::Result<i64> {
-    let (first, second) = normalize_pair(a, b);
-    conn.query_row(
-        "SELECT COUNT(*) FROM crash_survival_mods x
-         JOIN crash_survival_mods y ON x.survival_id = y.survival_id
-         WHERE x.mod_id = ?1 AND y.mod_id = ?2",
-        rusqlite::params![first, second],
-        |row| row.get(0),
-    )
-    .map_err(Into::into)
-}
-
-/// Return the total number of crash_survivals rows.
-pub fn get_total_survival_count(conn: &Connection) -> anyhow::Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM crash_survivals",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(Into::into)
+/// Purge stale crash telemetry records per retention rules.
+pub fn purge_stale_crash_telemetry(conn: &Connection) -> anyhow::Result<()> {
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(90);
+    conn.execute(
+        "DELETE FROM local_crash_telemetry
+         WHERE last_seen_at < ?1 OR crash_count < 2",
+        rusqlite::params![cutoff.to_rfc3339()],
+    )?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Row mapping
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rusqlite::params;
-
-    /// Helper: create an in-memory Connection with all migrations applied.
-    fn test_db() -> Connection {
-        let conn = Connection::open_in_memory().expect("in-memory sqlite");
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;",
-        )
-        .expect("PRAGMA setup");
-        run_migrations(&conn)
-            .expect("migrations");
-        conn
-    }
-
-    // ------------------------------------------------------------------
-    // normalize_pair (pure, no DB)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_normalize_pair_lexicographic() {
-        let (a, b) = normalize_pair("zinc", "sodium");
-        assert_eq!(a, "sodium");
-        assert_eq!(b, "zinc");
-    }
-
-    #[test]
-    fn test_normalize_pair_already_ordered() {
-        let (a, b) = normalize_pair("a", "b");
-        assert_eq!(a, "a");
-        assert_eq!(b, "b");
-    }
-
-    #[test]
-    fn test_normalize_pair_symmetric() {
-        assert_eq!(normalize_pair("a", "b"), normalize_pair("b", "a"));
-    }
-
-    #[test]
-    fn test_normalize_pair_same_id() {
-        let (a, b) = normalize_pair("x", "x");
-        assert_eq!(a, "x");
-        assert_eq!(b, "x");
-    }
-
-    // ------------------------------------------------------------------
-    // get_setting / set_setting (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_get_setting_absent_returns_none() {
-        let conn = test_db();
-        let result = get_setting(&conn, "nonexistent").expect("get_setting ok");
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_set_setting_roundtrip() {
-        let conn = test_db();
-        set_setting(&conn, "key", &serde_json::json!("value"))
-            .expect("set_setting ok");
-        let result = get_setting(&conn, "key").expect("get_setting ok");
-        assert_eq!(result, Some(serde_json::Value::String("value".into())));
-    }
-
-    #[test]
-    fn test_set_setting_overwrite() {
-        let conn = test_db();
-        set_setting(&conn, "key", &serde_json::json!("v1"))
-            .expect("set v1");
-        set_setting(&conn, "key", &serde_json::json!("v2"))
-            .expect("set v2");
-        let result = get_setting(&conn, "key").expect("get_setting ok");
-        assert_eq!(result, Some(serde_json::Value::String("v2".into())));
-    }
-
-    // ------------------------------------------------------------------
-    // record_co_crash (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_record_co_crash_increments() {
-        let conn = test_db();
-        record_co_crash(&conn, "a", "b").expect("record 1");
-        record_co_crash(&conn, "a", "b").expect("record 2");
-        let count: i64 = conn
-            .query_row(
-                "SELECT crash_count FROM local_crash_telemetry WHERE mod_a_id = ?1 AND mod_b_id = ?2",
-                params!["a", "b"],
-                |row| row.get(0),
-            )
-            .expect("query crash_count");
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn test_record_co_crash_symmetric() {
-        let conn = test_db();
-        record_co_crash(&conn, "a", "b").expect("record a,b");
-        record_co_crash(&conn, "b", "a").expect("record b,a");
-        // Both should map to the same normalized row (a, b) with crash_count=2.
-        let count: i64 = conn
-            .query_row(
-                "SELECT crash_count FROM local_crash_telemetry WHERE mod_a_id = ?1 AND mod_b_id = ?2",
-                params!["a", "b"],
-                |row| row.get(0),
-            )
-            .expect("query crash_count");
-        assert_eq!(count, 2);
-    }
-
-    // ------------------------------------------------------------------
-    // Flag rate limiting (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_flag_rate_limit_empty_can_flag() {
-        let conn = test_db();
-        let now = 1_700_000_000i64;
-        let status = get_flag_rate_limit_status(&conn, now).expect("status");
-        assert!(status.can_flag);
-        assert_eq!(status.remaining_hour, MAX_FLAGS_PER_HOUR); // 5
-        assert_eq!(status.remaining_day, MAX_FLAGS_PER_DAY); // 20
-    }
-
-    #[test]
-    fn test_flag_rate_limit_after_three_flags() {
-        let conn = test_db();
-        let now = 1_700_000_000i64;
-        for _ in 0..3 {
-            record_flag_submission(&conn, now).expect("record flag");
-        }
-        let status = get_flag_rate_limit_status(&conn, now).expect("status");
-        assert_eq!(status.remaining_hour, 2); // 5 - 3
-        assert_eq!(status.remaining_day, 17); // 20 - 3
-        assert!(status.can_flag);
-    }
-
-    #[test]
-    fn test_flag_rate_limit_hourly_exceeded() {
-        let conn = test_db();
-        let now = 1_700_000_000i64;
-        // Record 5 submissions within the last hour.
-        for i in 0..5 {
-            record_flag_submission(&conn, now - i * 60).expect("record flag");
-        }
-        let status = get_flag_rate_limit_status(&conn, now).expect("status");
-        assert!(!status.can_flag);
-        assert_eq!(status.remaining_hour, 0);
-        assert_eq!(status.remaining_day, 15); // 20 - 5
-    }
-
-    #[test]
-    fn test_flag_rate_limit_daily_exceeded() {
-        let conn = test_db();
-        let now = 1_700_000_000i64;
-        // Record 20 submissions within the last day.
-        for i in 0..20 {
-            record_flag_submission(&conn, now - i * 3600).expect("record flag");
-        }
-        let status = get_flag_rate_limit_status(&conn, now).expect("status");
-        assert!(!status.can_flag);
-        assert_eq!(status.remaining_day, 0);
-    }
-
-    // ------------------------------------------------------------------
-    // Crash attribution (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_increment_confirmation_inserts() {
-        let conn = test_db();
-        increment_confirmation(&conn, "fp1", "mod_a")
-            .expect("increment");
-        let count: i64 = conn
-            .query_row(
-                "SELECT confirm_count FROM crash_attribution WHERE fingerprint = ?1 AND mod_id = ?2",
-                params!["fp1", "mod_a"],
-                |row| row.get(0),
-            )
-            .expect("query confirm_count");
-        assert_eq!(count, 1);
-    }
-
-    #[test]
-    fn test_increment_confirmation_increments() {
-        let conn = test_db();
-        increment_confirmation(&conn, "fp1", "mod_a")
-            .expect("increment 1");
-        increment_confirmation(&conn, "fp1", "mod_a")
-            .expect("increment 2");
-        let count: i64 = conn
-            .query_row(
-                "SELECT confirm_count FROM crash_attribution WHERE fingerprint = ?1 AND mod_id = ?2",
-                params!["fp1", "mod_a"],
-                |row| row.get(0),
-            )
-            .expect("query confirm_count");
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn test_get_confirmed_attribution() {
-        let conn = test_db();
-        // Insert two attributions with different confirm counts.
-        increment_confirmation(&conn, "fp1", "mod_alpha")
-            .expect("insert alpha");
-        // mod_beta gets 2 confirmations, mod_alpha gets 1.
-        increment_confirmation(&conn, "fp1", "mod_beta")
-            .expect("insert beta 1");
-        increment_confirmation(&conn, "fp1", "mod_beta")
-            .expect("insert beta 2");
-
-        let attributions = get_confirmed_attribution(&conn, "fp1")
-            .expect("get attributions");
-        assert_eq!(attributions.len(), 2);
-        // Ordered by confirm_count DESC: mod_beta (2) first, mod_alpha (1) second.
-        assert_eq!(attributions[0].mod_id, "mod_beta");
-        assert_eq!(attributions[0].confirm_count, 2);
-        assert_eq!(attributions[1].mod_id, "mod_alpha");
-        assert_eq!(attributions[1].confirm_count, 1);
-    }
-
-    // ------------------------------------------------------------------
-    // Crash events (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_insert_crash_event() {
-        let conn = test_db();
-        let id = insert_crash_event(
-            &conn,
-            "inst1",
-            "fp1",
-            "java.lang.NullPointerException",
-            "[\"frame1\"]",
-            Some("Sodium Crash"),
-        )
-        .expect("insert crash event");
-        assert!(id > 0);
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM crash_events", [], |row| row.get(0))
-            .expect("count crash_events");
-        assert_eq!(count, 1);
-    }
-
-    #[test]
-    fn test_insert_multiple_crash_events() {
-        let conn = test_db();
-        insert_crash_event(
-            &conn, "inst1", "fp1", "java.lang.NullPointerException", "[]", None,
-        )
-        .expect("insert fp1");
-        insert_crash_event(
-            &conn, "inst1", "fp2", "java.lang.OutOfMemoryError", "[]", None,
-        )
-        .expect("insert fp2");
-        insert_crash_event(
-            &conn, "inst1", "fp3", "java.lang.StackOverflowError", "[]", None,
-        )
-        .expect("insert fp3");
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM crash_events", [], |row| row.get(0))
-            .expect("count crash_events");
-        assert_eq!(count, 3);
-        let exception: String = conn
-            .query_row(
-                "SELECT exception_class FROM crash_events WHERE fingerprint = ?1",
-                params!["fp2"],
-                |row| row.get(0),
-            )
-            .expect("get fp2 exception");
-        assert_eq!(exception, "java.lang.OutOfMemoryError");
-    }
-
-    // ------------------------------------------------------------------
-    // Crash survivals + survival mods (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_insert_survival() {
-        let conn = test_db();
-        insert_survival(&conn, "inst1", &["mod_a".into(), "mod_b".into()])
-            .expect("insert survival");
-        let surv_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM crash_survivals", [], |row| row.get(0))
-            .expect("count survivals");
-        assert_eq!(surv_count, 1);
-        let mod_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM crash_survival_mods", [], |row| row.get(0))
-            .expect("count survival_mods");
-        assert_eq!(mod_count, 2);
-    }
-
-    #[test]
-    fn test_insert_multiple_survivals() {
-        let conn = test_db();
-        insert_survival(&conn, "inst1", &["mod_a".into()]).expect("survival 1");
-        insert_survival(&conn, "inst1", &["mod_b".into()]).expect("survival 2");
-        insert_survival(&conn, "inst1", &["mod_c".into()]).expect("survival 3");
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM crash_survivals", [], |row| row.get(0))
-            .expect("count survivals");
-        assert_eq!(count, 3);
-    }
-
-    #[test]
-    fn test_get_mod_survival_count() {
-        let conn = test_db();
-        insert_survival(&conn, "inst1", &["mod_a".into()]).expect("survival 1");
-        insert_survival(&conn, "inst1", &["mod_a".into(), "mod_b".into()])
-            .expect("survival 2");
-        let count = get_mod_survival_count(&conn, "mod_a").expect("mod survival count");
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn test_get_mod_survival_count_zero() {
-        let conn = test_db();
-        insert_survival(&conn, "inst1", &["mod_a".into()]).expect("survival");
-        let count = get_mod_survival_count(&conn, "mod_z").expect("mod survival count");
-        assert_eq!(count, 0);
-    }
-
-    #[test]
-    fn test_get_pair_survival_count() {
-        let conn = test_db();
-        insert_survival(&conn, "inst1", &["a".into(), "b".into(), "c".into()])
-            .expect("survival 1");
-        let count_ac =
-            get_pair_survival_count(&conn, "a", "c").expect("pair a,c count");
-        assert_eq!(count_ac, 1);
-        let count_ad =
-            get_pair_survival_count(&conn, "a", "d").expect("pair a,d count");
-        assert_eq!(count_ad, 0);
-    }
-
-    #[test]
-    fn test_get_total_survival_count() {
-        let conn = test_db();
-        insert_survival(&conn, "inst1", &["a".into()]).expect("survival 1");
-        insert_survival(&conn, "inst1", &["b".into()]).expect("survival 2");
-        insert_survival(&conn, "inst1", &["c".into()]).expect("survival 3");
-        let total = get_total_survival_count(&conn).expect("total survival count");
-        assert_eq!(total, 3);
-    }
-
-    // ------------------------------------------------------------------
-    // Crash ruled out (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_add_ruled_out() {
-        let conn = test_db();
-        add_ruled_out(&conn, "fp1", "mod_a").expect("add ruled out");
-        let ruled = is_ruled_out(&conn, "fp1", "mod_a").expect("is ruled out");
-        assert!(ruled);
-    }
-
-    #[test]
-    fn test_ruled_out_different_fingerprint() {
-        let conn = test_db();
-        add_ruled_out(&conn, "fp1", "mod_a").expect("rule out fp1");
-        let ruled = is_ruled_out(&conn, "fp2", "mod_a").expect("is ruled out fp2");
-        assert!(!ruled);
-    }
-
-    #[test]
-    fn test_ruled_out_different_mod() {
-        let conn = test_db();
-        add_ruled_out(&conn, "fp1", "mod_a").expect("rule out mod_a");
-        let ruled = is_ruled_out(&conn, "fp1", "mod_b").expect("is ruled out mod_b");
-        assert!(!ruled);
-    }
-
-    #[test]
-    fn test_get_ruled_out_mods() {
-        let conn = test_db();
-        add_ruled_out(&conn, "fp1", "mod_a").expect("rule out mod_a");
-        add_ruled_out(&conn, "fp1", "mod_b").expect("rule out mod_b");
-        let ruled = get_ruled_out_mods(&conn, "fp1").expect("get ruled out fp1");
-        assert_eq!(ruled.len(), 2);
-        assert!(ruled.contains(&"mod_a".to_string()));
-        assert!(ruled.contains(&"mod_b".to_string()));
-        let empty = get_ruled_out_mods(&conn, "fp2").expect("get ruled out fp2");
-        assert!(empty.is_empty());
-    }
-
-    #[test]
-    fn test_add_ruled_out_idempotent() {
-        let conn = test_db();
-        add_ruled_out(&conn, "fp1", "mod_a").expect("first");
-        add_ruled_out(&conn, "fp1", "mod_a").expect("second");
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM crash_ruled_out WHERE fingerprint = ?1 AND mod_id = ?2",
-                params!["fp1", "mod_a"],
-                |row| row.get(0),
-            )
-            .expect("count ruled out");
-        assert_eq!(count, 1);
-    }
-
-    // ------------------------------------------------------------------
-    // Crash attribution â€” edge cases (DB-backed)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_get_confirmed_attribution_empty() {
-        let conn = test_db();
-        let attributions =
-            get_confirmed_attribution(&conn, "fp_nonexistent").expect("get attribution");
-        assert!(attributions.is_empty());
-    }
+fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstanceRow> {
+    Ok(InstanceRow {
+        instance_id: row.get(0)?,
+        name: row.get(1)?,
+        minecraft_version: row.get(2)?,
+        loader: row.get(3)?,
+        loader_version: row.get(4)?,
+        is_modpack: row.get(5)?,
+        is_locked: row.get(6)?,
+        last_launched_at: row.get(7)?,
+        jvm_memory_mb: row.get(8)?,
+        jvm_gc: row.get(9)?,
+        jvm_custom_args: row.get(10)?,
+        jvm_always_pre_touch: row.get::<_, i64>(11)? != 0,
+        created_at: row.get(12)?,
+    })
 }
-

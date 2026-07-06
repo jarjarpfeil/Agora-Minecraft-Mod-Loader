@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::registry::{self, RegistryItem};
-use crate::modrinth::{self, ModrinthSearchResult};
+use crate::registry::RegistryItem;
+use crate::modrinth::ModrinthSearchResult;
 
 pub const PAGE_SIZE: usize = 20;
 

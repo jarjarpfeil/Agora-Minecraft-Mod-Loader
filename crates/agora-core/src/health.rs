@@ -1,10 +1,8 @@
 use crate::db;
 use crate::dependency_ops::JarDeps;
-use crate::error::{LauncherError, LauncherResult};
 use crate::jar_metadata::parse_jar_metadata;
-use crate::models::{InstanceManifest, InstalledMod};
-use crate::paths;
-use crate::registry::{self, KnownConflict};
+use crate::models::InstanceManifest;
+use crate::registry;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -288,6 +286,7 @@ pub fn health(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::InstalledMod;
 
     #[test]
     fn health_empty_instance_is_green() {

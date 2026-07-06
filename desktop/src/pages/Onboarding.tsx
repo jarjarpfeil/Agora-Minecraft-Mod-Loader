@@ -261,7 +261,6 @@ function GithubStep({
     try {
       console.log('[onboarding] signIn starting, calling githubLogin()');
       const flow = await githubLogin();
-      console.log('[onboarding] githubLogin returned flow:', flow);
       if (isStale()) {
         console.log('[onboarding] session superseded after githubLogin; aborting');
         return;
@@ -283,9 +282,7 @@ function GithubStep({
         console.warn('[onboarding] openUrl synchronous throw:', syncErr);
       }
 
-      console.log('[onboarding] calling githubLoginPoll, device_code length =', flow.device_code.length);
       const token = await githubLoginPoll(flow.device_code, flow.interval);
-      console.log('[onboarding] githubLoginPoll returned:', token);
       if (isStale()) {
         console.log('[onboarding] session superseded after poll; aborting');
         return;

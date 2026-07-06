@@ -2,7 +2,7 @@ use crate::error::{LauncherError, LauncherResult};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::HashSet;
+
 
 /// Canonical column list for `registry_items` selects that feed `row_to_item`.
 ///

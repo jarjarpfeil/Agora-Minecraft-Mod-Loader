@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import { List, LayoutGrid } from 'lucide-react';
 import {
   browseSearch,
@@ -16,6 +16,15 @@ import {
   type ModrinthSearchResult,
 } from '../lib/tauri';
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
 const SORTS: { label: string; value: SortOption }[] = [
   { label: 'For You', value: 'for_you' },
   { label: 'Net Score', value: 'net_score' },
@@ -29,6 +38,8 @@ const CONTENT_TYPES = ['mod', 'pack', 'shader', 'resourcepack', 'server', 'datap
 
 type BrowseItem = BrowseItemCached;
 
+// NOTE: the modrinthResults branch is currently unused (For You sort passes []).
+// Kept for future Modrinth_raw integration.
 function mergeItems(
   registryItems: RegistryItem[],
   modrinthResults: ModrinthSearchResult[],
@@ -90,8 +101,6 @@ function mergeItems(
 }
 
 export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) {
-  console.log('[RENDER] Browse component rendering');
-
   const [items, setItems] = useState<BrowseItemCached[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -108,6 +117,7 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
   const [mcVersion, setMcVersion] = useState<string | null>(null);
   const [loader, setLoader] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebounce(query, 250);
   const [layout, setLayout] = useState<'list' | 'grid'>(() => {
     try {
       const saved = localStorage.getItem('browse_layout');
@@ -166,15 +176,12 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
 
   // --- Main search effect ---
   useEffect(() => {
-    console.log('[BROWSE] search effect firing: sort=', sort, 'category=', category, 'contentType=', contentType);
-
     let cancelled = false;
     (async () => {
       try {
         if (!cancelled) setLoading(true);
 
         if (sort === 'for_you') {
-          console.log('[BROWSE] for_you path');
           let modrinthEnabled = false;
           try {
             const m = await getSetting('modrinth_enabled');
@@ -187,9 +194,8 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
             setHasMore(false);
           }
         } else {
-          console.log('[BROWSE] browseSearch path');
           const page = await browseSearch(
-            query.trim() || undefined,
+            debouncedQuery.trim() || undefined,
             contentType ?? undefined,
             category ?? undefined,
             sort,
@@ -197,15 +203,9 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
             loader ?? undefined,
           );
           console.log('[BROWSE] browseSearch returned', page.items.length, 'items, hasMore=', page.hasMore, 'total=', page.total);
-          page.items.forEach((item, i) => {
-            console.log(`[BROWSE]   item[${i}]: source=${item.source} name=${item.name} id=${item.id} regItem=${!!item.registryItem} mrResult=${!!item.modrinthResult}`);
-          });
           if (!cancelled) {
-            console.log('[BROWSE] setting items (not cancelled)');
             setItems(page.items);
             setHasMore(page.hasMore);
-          } else {
-            console.log('[BROWSE] SKIPPED: result cancelled');
           }
         }
       } catch (e) {
@@ -219,10 +219,9 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
       }
     })();
     return () => {
-      console.log('[BROWSE] search effect cleanup (cancelling)');
       cancelled = true;
     };
-  }, [sort, category, contentType, mcVersion, loader, query]);
+  }, [sort, category, contentType, mcVersion, loader, debouncedQuery]);
 
   // --- Infinite scroll ---
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -232,14 +231,10 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting && hasMore && !loadingMore) {
-          console.log('[BROWSE] loading more...');
           setLoadingMore(true);
           browseLoadMore()
             .then((page) => {
               console.log('[BROWSE] loadMore returned', page.items.length, 'items');
-              page.items.forEach((item, i) => {
-                console.log(`[BROWSE]   loadMore item[${i}]: source=${item.source} name=${item.name}`);
-              });
               setItems((prev) => [...prev, ...page.items]);
               setHasMore(page.hasMore);
             })
@@ -261,12 +256,7 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
       })
     : items;
 
-  console.log('[RENDER] sort=', sort, 'loading=', loading, 'items.length=', items.length, 'filtered.length=', filtered.length, 'hasMore=', hasMore);
-  if (filtered.length > 0) {
-    filtered.forEach((item, i) => {
-      console.log(`[RENDER]   item[${i}]: source=${item.source} name=${item.name} id=${item.id}`);
-    });
-  }
+  console.log('[RENDER] Browse: items=', filtered.length, 'loading=', loading);
 
   return (
     <div className="space-y-6">

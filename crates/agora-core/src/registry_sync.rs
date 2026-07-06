@@ -329,8 +329,6 @@ struct GitHubRelease {
 struct GitHubAsset {
     id: u64,
     name: String,
-    #[serde(default)]
-    browser_download_url: String,
 }
 
 impl GitHubRelease {

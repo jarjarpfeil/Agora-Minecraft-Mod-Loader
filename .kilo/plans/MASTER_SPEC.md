@@ -1,7 +1,22 @@
 # MASTER_SPEC.md
 # The Premium Curated Minecraft Mod Launcher — Complete Engineering Blueprint
 
-> **This document is the single source of truth for the entire project. It is intended to be fed directly to an AI coding agent (Claude Code, Cursor, Devin, etc.) as unambiguous implementation context. Every architectural decision made across the full design session is captured here.**
+> **This document is the single source of truth for the entire project. It is intended to be fed directly to an AI coding agent as unambiguous implementation context. Every architectural decision made across the full design session is captured here.**
+
+> **IMPLEMENTATION STATUS (last consolidated 2026-07-05):** The original design captured below is preserved verbatim for its decision-rationale value. Several architectural pivots have since landed in code and are documented in **§19 — Architectural Evolution & Implementation Status** (appended at the end). Where §19 conflicts with the original prose in §0–§18, **§19 wins** for the purposes of new work. The pivots in brief:
+> - **Pivot (E9):** The launcher now optionally performs **in-process Microsoft Account (MSA) authentication and direct JVM execution** (crates/agora-core/src/msa.rs, launch.rs). This is a deliberate expansion of the original *security by delegation* constraint in §0, motivated by the v1 launcher refactor — it enables in-launcher features (account sign-in, version manifest fetching) that the Mojang-launcher-delegation model cannot support. The Mojang-launcher-delegation path in §8 remains as a fallback; MSA + direct launch is the new primary path.
+> - **Workspace restructure (D12/E13):** Business logic is migrating into a shared Rust crate crates/agora-core/ consumed by both the Tauri GUI (desktop/src-tauri/, package name **gora-desktop**) and a standalone CLI (crates/agora/, binary gora). See §1.1 and §19 for migration status.
+> - **Modrinth unified into Browse (E4/D1):** The separate *Raw Modrinth tab / page* (originally described in §6.3) was removed — Modrinth search results are now merged directly into the Browse grid. The desktop/src/pages/ModrinthRaw.tsx file has been deleted.
+> - **Telemetry removed (E5/§12):** The opt-in crash telemetry (§12) had no aggregation endpoint and was never wired to a real upload path. The opt-in prompt UI and the crash_telemetry_opt_in setting have been deleted. The spec text in §12 is kept for historical reference only.
+> - **MCP server audit (A2/E2/E3):** The MCP server in desktop/src-tauri/src/mcp.rs is bound to 127.0.0.1:39741. Per the project pivot the per-session Bearer token from §10.0 #2 is **not yet implemented** (the localhost binding is the current security boundary). The tool set already implemented is the extended set (6 tools: list_instances, list_instance_mods, disable_mod, search_crash_signatures, suggest_mod_incompatibility, get_system_context) — the §10.1 set (
+ead_latest_crash, 
+ead_mod_manifest, enable_mod, search_knowledge_base) is planned to be added as a superset per user decision.
+> - **Old plan files removed:** .kilo/plans/1782081355093-crash-investigator-plan.md, 1782611768583-agora-v1-launcher-refactor.md, and dependency-aware-mod-ops-plan.md have been deleted; their key decisions are folded into §19.
+
+> **The original §0–§18 design spec follows below. For current code status, jump to §19.**
+
+---
+
 
 ---
 
@@ -2210,3 +2225,161 @@ The spec is comprehensive, internally consistent, and covers all major architect
 
 **This document is the source of truth.** When implementation questions arise that are not answered here, prefer the simplest interpretation that is consistent with the existing decisions. Update this document as those questions are resolved.
 ```
+
+
+## 19. ARCHITECTURAL EVOLUTION & IMPLEMENTATION STATUS
+
+> This section supersedes conflicting statements above. Last updated 2026-07-05.
+
+### 19.1 Workspace Layout (supersedes section 1)
+
+`
+D:/Agora/
++-- registry/                 # Curated flat-file manifests (the GitHub database)
+|   +-- mods/ packs/ shaders/ resourcepacks/ servers/ datapacks/ worlds/
+|   +-- governance/            # audit_log.json, known_conflicts.json, poll_blacklist.json
+|   +-- pack-overrides/        # Config/resource override zips
+|   +-- archived/              # Retired entries (compiler skips)
++-- crash-signatures/         # Regex triage definitions
++-- loader-manifests/         # loader_manifests.json + known_good_hashes.json + minecraft_versions.json
++-- compiler/                  # Python nightly compiler -> registry.db (+ .sig)
++-- crates/
+|   +-- agora-core/           # Shared business-logic library (no tauri/clap types) -- Phase 1 of v1 refactor
+|   +-- agora/                # Standalone gora CLI binary (Phase 9 of v1 refactor)
++-- desktop/                   # Tauri GUI app (crate package name: agora-desktop)
+|   +-- src/                   # React + Tailwind + Vite frontend
+|   +-- src-tauri/             # Rust backend -- thin facades delegating to agora-core
+|   +-- e2e/                   # Playwright end-to-end tests
++-- web/                       # Static Next.js public directory (static export)
++-- scripts/                   # verify_db.py, deploy_release_assets.py, fetch_registry_db.py, refresh_loader_manifests.py
++-- .github/                   # workflows (compile, release-desktop, web-build, e2e), ISSUE_TEMPLATE
++-- .kilo/                     # Kilo agent config, commands, agent profiles, skills, MASTER_SPEC.md
++-- AGENTS.md                  # Canonical agent guide
++-- README.md                  # Project overview + setup + release cutting
++-- BACKLOG.md                 # Phase-by-phase task tracker
++-- CODE_OF_ENGAGEMENT.md      # Canonical review-conduct rules
++-- REGISTRY_CURATION_REFERENCE.md   # Self-contained manifest-authoring guide
++-- Cargo.toml                 # Workspace root (members: crates/agora-core, desktop/src-tauri, crates/agora)
++-- .env.example               # Compiler env vars (GITHUB_TOKEN, ED25519_PRIVATE_KEY, DISCORD_WEBHOOK_URL)
+`
+
+### 19.2 Migration Status: desktop to agora-core (v1 refactor)
+
+Goal (per the deleted v1-launcher-refactor plan): move all business logic into crates/agora-core/, leaving desktop/src-tauri/src/ as thin facades, and expose a standalone gora CLI binary from crates/agora/.
+
+**Fully migrated to agora-core (desktop delegates):** error, models, paths, download, loader_manifests, registry, registry_sync, crash_diagnostics, dependency_ops, launcher_profiles (with section 8.3 atomic write + .bak recovery), override_sanitizer, mod_cache, snapshot, import, clone, loadout, server_export, github_ratelimit, ai_assistant, msa (full 9-step account chain), launch (direct Java spawn + Forge/NeoForge install), gc, java (JRE detection), health (pre-launch scanner), modrinth (search/versions/install), jar_metadata, browse_cache, pack_install. Desktop db.rs::run_migrations now delegates to gora_core::db::run_migrations.
+
+**Still thick in desktop (not yet migrated):** crash_investigator.rs (~1968 lines -- contains scoring algorithm), mod_install.rs (~2275 lines), instances.rs, mojang.rs, mcp.rs (plan: move into core with gora serve CLI), ersion_cache.rs. The desktop governance.rs duplicates etch_triage_poll / lag_review network logic not yet in core. Future migration work should target these modules.
+
+**Dead code removed during 2026-07-05 audit:** dead REGISTRY_SCHEMA_VERSION = 1 constants, commands::greet template leftover, the duplicate compiler/_test_social_metrics.py (merged into 	est_compile.py), compiler/analyze_sha256.py, desktop/src-tauri/neoforge-installer.jar.log, the stray root rowse search response.md debug dump, and the entire desktop/src/pages/ModrinthRaw.tsx (separate Modrinth UI merged into Browse).
+
+### 19.3 MSA Authentication & Direct Launch (supersedes section 0, section 8.1)
+
+Per the v1 refactor (decision E9): the launcher now optionally performs **Microsoft Account (MSA) authentication and direct JVM execution in-process** -- crates/agora-core/src/msa.rs implements the full: device code, then MSA token, then XSTS, then Minecraft services token, then profile + Xbox profile, then DRM header token flow. crates/agora-core/src/launch.rs then constructs the classpath + args + natives and spawns java directly.
+
+This deliberately relaxes the original *security by delegation* constraint because in-launcher features (one-click version selection, accurate launch errors, native version manifest caching via piston-meta.mojang.com, OAuth token refresh) cannot be implemented on top of the Mojang-launcher-delegation model. The Mojang-launcher-path (section 8.4 -- discover official launcher binary, mutate launcher_profiles.json) is retained as a fallback for users who prefer not to use the in-process MSA flow.
+
+MSA tokens use the same storage backend as GitHub OAuth tokens: OS keyring first, with a PBKDF2 + AES-256-GCM encrypted-file fallback (	okens.enc) per section 7.5.2 -- implemented during the 2026-07-05 audit (was previously a hard error).
+
+### 19.4 Crash Investigator (signal-based dynamic scoring)
+
+From the deleted 1782081355093-crash-investigator-plan.md: when a curated regex signature (section 9.2) does not match a crash log, the launcher runs a **dynamic weighted scoring algorithm** in desktop/src-tauri/src/crash_investigator.rs to rank suspect mods. Score contributions per mod:
+
+- **A -- stack-frame attribution:** the mod Java packages (extracted from .jar manifests at install time) appear in the crash Caused by: / stack trace. The strongest single signal.
+- **B -- fingerprint recurrence:** the crash fingerprint (normalized Caused by block hash) has co-occurred with this mod in past local crashes.
+- **C -- co-crash signal:** this mod co-occurs in historical crashes with another direct suspect (local_crash_telemetry table).
+- **D -- survival ubiquity dampener:** penalty for mods installed on >50 percent of instances (they appear everywhere so their presence is weak evidence).
+- **E -- confirmed prior:** the user previously confirmed this mod caused a similar crash (attribution recorded as a prior).
+- **F -- recency factor:** recent attributions weighted higher than stale ones.
+- **G -- curated conflict:** the mod appears in a curated known_conflicts.json entry with another suspect.
+
+Indirect suspects (mods that depend on a direct suspect via the mod_dependencies manifest field) are listed separately with reduced scores. The algorithm writes attributions back into local_crash_telemetry and the priors store via 
+ecord_crash_event (now wired into investigate_crash per A5 of the 2026-07-05 audit).
+
+### 19.5 Dependency-Aware Mod Operations
+
+From the deleted dependency-aware-mod-ops-plan.md: manifests may declare mod_dependencies: {required: [...], optional: [...], incompatible: [...]} and mod_jar_aliases: [...] to let the install/dependency system match across sources (curated registry ID, Modrinth project ID, jar-declared ID). crates/agora-core/src/dependency_ops.rs and desktop/src-tauri/src/dependency_ops.rs implement a unified dependency graph; crates/agora-core/src/jar_metadata.rs parses abric.mod.json / mods.toml from jars at install time. abric-api.json is the canonical example of a manifest with mod_dependencies.
+
+### 19.6 MCP Server -- Implemented Tool Set & Roadmap
+
+Per the E2 user decision (combine spec section 10.1 with the implemented v1 set), the MCP server is being expanded to a **superset**. Currently implemented (in desktop/src-tauri/src/mcp.rs):
+
+1. list_instances -- list all instance IDs + metadata.
+2. list_instance_mods(instance_id) -- read instance_manifest.json, return mod jar info + java packages.
+3. disable_mod(instance_id, filename) -- destructive; requires per-instance approval grant (ERR_MCP_DENIED if not granted).
+4. search_crash_signatures(crash_text) -- local regex triage against crash_signatures table.
+5. suggest_mod_incompatibility(instance_id, crash_text) -- runs the section 19.4 dynamic scoring algorithm.
+6. get_system_context -- markdown overview returnable to AI clients.
+
+**Planned additions** (from the section 10.1 superset, not yet implemented):
+- 
+ead_latest_crash(instance_id) -- return last 200 lines of newest crash report.
+- 
+ead_mod_manifest(mod_id) -- fetch curator data from local SQLite.
+- enable_mod(instance_id, filename) -- reverse disable_mod.
+- search_knowledge_base(query) -- TF-IDF LIKE search over curator_note.
+
+Per B2 (user decision): the per-session Bearer token from section 10.0 number 2 is **not yet implemented** -- the localhost binding is the current sole security boundary. Spec text in section 10.0 is preserved for future hardening. The gora serve CLI stub (Phase 9 of v1 refactor) returns *MCP server is not yet implemented* from crates/agora/src/main.rs.
+
+### 19.7 Audit Log Schema (replaces section 4.6 compile-only entries)
+
+Per the E8 user decision (expand to match section 4.6), the compiler (compiler/compile.py) now writes audit entries with the full section 4.6 schema -- every entry includes 	imestamp, ction, ctor, 	arget_type, 	arget_id, 
+eason, details. Action types cover: compile (every nightly run), AUTO_FLAG (velocity circuit breaker), POLL_CREATED, POLL_CLOSED, IMMUNITY_APPLIED, IMMUNITY_REMOVED, ARCHIVED, RESTORED, BLACKLIST_UPDATED, REACTION_SCRUBBED, SIGNATURE_REJECTED (client-side). The root audit_log object carries log_format_version: 1. Rotation per section 4.6: at 10,000 entries, the oldest 2,000 move to 
+egistry/governance/audit_log_archive.{YYYYMMDD}.json (new archive file per day; existing archive appended to).
+
+### 19.8 Triage Poll Resolution Bugs (fixed 2026-07-05)
+
+Per the A4 fixes during the 2026-07-05 audit:
+
+- **Tied polls** (keep_votes == remove_votes with 	otal_votes > 0): now treated as KEEP-win, with an audit entry noting the tie. Items with **zero total votes** remain under_review (no resolution) and an audit entry is written explaining the no-vote situation.
+- **Organic nomaly_window_start is now preserved** across nightly runs -- it is only set when the item first transitions to under_review. Previously every nightly build overwrote it with 
+ow, so the 7-day poll timer never elapsed.
+- **KEEP-win now writes immunity_cooldown_until** -- a 30-day ISO timestamp populated on the 
+egistry_items row. (Previously the column was always NULL.)
+
+### 19.9 Deferred / Removed Features
+
+- **Anonymous Crash Telemetry (section 12) -- removed (E5):** the opt-in prompt UI and the crash_telemetry_opt_in setting have been deleted. The local_crash_telemetry table is still populated locally (for section 19.4 signal B/C), but no aggregation endpoint exists and nothing leaves the device. The spec text in section 12 is kept for historical reference only.
+- **Raw Modrinth Tab (section 6.3 / desktop/src/pages/ModrinthRaw.tsx) -- removed (E4):** instead, Modrinth search results are federated directly into the Browse grid via the rowse_search command (desktop/src-tauri/src/commands.rs), with the Modrinth-on setting still gated by the modrinth_enabled toggle in Settings.
+- **Strict allowedElements markdown rendering (section 4.1c number 2):** the original spec mandated a strict allow-list (p, strong, em, code, a, pre, ul, ol, li). In practice this broke Modrinth about-page rendering (which legitimately uses tables, headings, images, <center> elements). The current implementation keeps 
+ehypeRaw + 
+ehypeSanitize (with a tightened schema that strips <script>/<iframe>/<input>/<video>/<form>/etc. but allows structural + image tags). See web/src/components/MarkdownRenderer.tsx and desktop/src/pages/ModDetail.tsx SANITIZE_SCHEMA.
+
+### 19.10 CLI (crates/agora/) -- Current Capability Set
+
+The standalone gora CLI binary (Phase 9 of v1 refactor) implements: instances list/details, mods install/remove, health <instance>, 
+egistry status/sync, snapshots list/create/restore, import <path> (mrpack/zip/directory), launch <instance> (MSA check + health gate + direct Java spawn), uth login/status/logout.
+
+Not yet implemented: gora serve (MCP server mode -- returns stub), the --yes health-confirm skip flag (currently always gates on health). The CLI mod-download path enforces a host allowlist + redirect policy (MOD_ALLOWED_HOSTS in crates/agora/src/main.rs) parallel to the desktop MOD_DOWNLOAD_ALLOWLIST.
+
+### 19.11 Implementation Phase Status
+
+Cross-referenced against section 17 phase definitions:
+
+| Phase | Status | Notes |
+|---|---|---|
+| 0 (Repo & Data plumbing) | Done | registry/, loader-manifests/, crash-signatures/, .github/workflows/. |
+| 1 (Compiler) | Done | All of section 3 incl. trust filtering, velocity breaker, Raid Shield, NLP scrubbing, audit log (post-E8 expansion), Modrinth hydration, Ed25519 signing, GitHub Release Asset deploy. |
+| 2 (Tauri skeleton + instance engine) | Done (with v1 crate migration in progress) | agora-core holds most logic; desktop still has thick mod_install/instances/crash_investigator/mcp modules pending migration. |
+| 3 (Browse, discovery, search) | Done | Browse + Modrinth federated into single page; For-You algorithm; debounce + removed per-item log spam during 2026-07-05 audit. |
+| 4 (Crash diagnostics) | Done | Pre-launch interceptor, regex triage, GitHub issue search, preview-before-submit, manual log viewer, section 19.4 dynamic investigator wired (A5). |
+| 5 (Governance & Triage) | Done | Triage Center tab, Curator Shield, Flag Review, Transparency Log. |
+| 6 (MCP Server) | Done | All 6 currently-implemented tools functional; per-session auth deferred (B2 approval pending user re-decision). |
+| 7 (Dev Mode sandboxed builds) | Not started | Spec section 11. |
+| 8 (Web directory) | Done | Static Next.js, registry.db fetched at CI build via scripts/fetch_registry_db.py, react-markdown with tightened sanitize schema, CSP header in 
+ext.config.js. |
+| 9 (Polish & Hardening) | Partial | Auto-update done, i18n engine present but ~99 percent of UI strings still hard-coded English (separate cleanup session), code signing not started, telemetry removed (E5), disk pre-check fixed (cross-platform now), atomic writes fixed for instance manifest (A8). |
+
+### 19.12 Future Cleanup Backlog (low-priority)
+
+- Migrate crash_investigator.rs, mod_install.rs, instances.rs, mojang.rs, mcp.rs, ersion_cache.rs from desktop to agora-core (finish v1 refactor Phase 1).
+- Implement the 4 missing MCP tools (
+ead_latest_crash, 
+ead_mod_manifest, enable_mod, search_knowledge_base) per E2 superset.
+- Add the MCP Bearer token (section 10.0 number 2) per user re-decision.
+- Delete the unused crates/agora-core/src/catalog/ trait + ModrinthSource impl (zero callers) -- was speculative design from a prior planning iteration.
+- Delete the unused crates/agora-core/src/ctx.rs Ctx struct + state.rs AppState re-export (zero callers) -- replaced by ad-hoc per-module DB connection patterns; a proper Ctx struct may be reintroduced when finishing the v1 refactor.
+
+---
+
+**This MASTER_SPEC.md is the single authoritative spec. The previously-separate plan files (1782081355093-crash-investigator-plan.md, 1782611768583-agora-v1-launcher-refactor.md, dependency-aware-mod-ops-plan.md) have been deleted; their key decisions are captured in section 19 above. BACKLOG.md remains the canonical per-phase task tracker.**

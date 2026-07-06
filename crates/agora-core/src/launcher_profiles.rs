@@ -85,6 +85,9 @@ fn read_or_recover(profiles_path: &std::path::Path) -> LauncherResult<Value> {
                     return Ok(v);
                 }
             }
+            // TODO: surface this in the UI as a notification banner (spec 8.3.1 Recovery step 2):
+            //   "launcher_profiles.json was corrupted and has been regenerated with your curated profiles."
+            eprintln!("[launcher_profiles] WARNING: live file + .bak both invalid; regenerated minimal profiles.");
             Ok(minimal_profiles())
         }
     }
