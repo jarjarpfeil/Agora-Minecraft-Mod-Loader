@@ -500,16 +500,11 @@ pub fn clear_copilot_token() -> LauncherResult<()> {
 pub async fn chat_completion(
     messages: Vec<ChatMessage>,
     token: &CopilotToken,
-    model_override: Option<&str>, // Added to allow flexible model selection
 ) -> LauncherResult<ChatResponse> {
     check_network_enabled("network_github_oauth_enabled", "GitHub Copilot is disabled in Privacy settings.")?;
 
-    // Modernize the client version headers to match 2026 proxy expectations
-    let client_version = "vscode/1.115.0";
-    let user_agent = "GitHubCopilotChat/1.115.0";
-
     let client = reqwest::Client::builder()
-        .user_agent(user_agent)
+        .user_agent("GitHubCopilotChat/1.95.0") // Keep verified extension UA to ensure modern routing
         .build()
         .map_err(|_| LauncherError::Generic {
             code: "ERR_AI_HTTP_CLIENT".to_string(),
@@ -530,8 +525,8 @@ pub async fn chat_completion(
         }
     }
 
-    // Default to "auto" for dynamic server-side routing and credit optimization
-    let model = model_override.unwrap_or("auto");
+    // Direct assignment instead of candidate arrays and loops
+    let model = "gpt-4o";
     let auth_token = token.copilot_token.as_deref().unwrap_or(&token.access_token);
     let auth_source = if token.copilot_token.is_some() { "session" } else { "oauth" };
 
@@ -556,8 +551,8 @@ pub async fn chat_completion(
     let resp = client
         .post(&token.endpoint)
         .header("Authorization", format!("Bearer {}", auth_token))
-        .header("Editor-Version", client_version)
-        .header("User-Agent", user_agent)
+        .header("Editor-Version", "vscode/1.95.0")
+        .header("User-Agent", "GitHubCopilotChat/1.95.0")
         .header("Openai-Intent", "conversation-edits")
         .header("X-Initiator", "agent")
         .header("Content-Type", "application/json")
@@ -604,7 +599,6 @@ pub async fn chat_completion(
             .unwrap_or("")
             .to_string();
 
-        // The API returns the actual resolved model here (e.g., "gpt-5-mini" or "claude-sonnet-4.5")
         let response_model = parsed
             .get("model")
             .and_then(|m| m.as_str())
@@ -617,6 +611,7 @@ pub async fn chat_completion(
         });
     }
 
+    // Handle generic failures cleanly without loop fallbacks
     let body_text = resp.text().await.unwrap_or_default();
     eprintln!("[copilot] error body: {}", body_text);
 
