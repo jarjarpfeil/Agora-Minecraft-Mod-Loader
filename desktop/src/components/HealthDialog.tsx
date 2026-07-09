@@ -229,7 +229,7 @@ export function HealthDialog({ instanceId, instanceName, onClose, onLaunch }: He
         <div className="flex gap-2 justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           {effectiveScore === 'red' && activeBlockers.length > 0 ? (
-            <Button disabled>Blocked</Button>
+            <Button variant="destructive" onClick={handleLaunchAnyway}>Launch Anyway</Button>
           ) : effectiveScore === 'yellow' || effectiveScore === 'green' ? (
             <Button onClick={handleLaunchAnyway}>Launch Anyway</Button>
           ) : null}

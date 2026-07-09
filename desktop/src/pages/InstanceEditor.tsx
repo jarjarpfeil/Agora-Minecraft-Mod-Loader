@@ -5,6 +5,8 @@ import { ConsoleView } from '../components/ConsoleView';
 import {
   getInstanceDetail,
   removeModFromInstance,
+  enableInstanceMod,
+  disableInstanceMod,
   addManualMod,
   exportInstancePack,
   pickOpenFile,
@@ -18,6 +20,7 @@ import {
   getRemovalPlan,
   unlockInstance,
   lockInstance,
+  renameInstance,
   revertInstance,
   listSnapshots,
   createSnapshot,
@@ -35,6 +38,7 @@ import {
   type SortOption,
   type PackModRow,
   type DependentInfo,
+  type InstalledMod,
   type Snapshot,
   type LoadoutProfile,
 } from '../lib/tauri';
@@ -60,7 +64,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
   const { advancedMode } = useAdvancedMode();
 
   // Sub-sidebar active tab
-  const [activeTab, setActiveTab] = useState<'mods' | 'snapshots' | 'loadout-profiles' | 'import' | 'console' | 'java-args' | 'advanced'>('mods');
+  const [activeTab, setActiveTab] = useState<'mods' | 'resourcepacks' | 'shaders' | 'datapacks' | 'snapshots' | 'loadout-profiles' | 'import' | 'console' | 'java-args' | 'advanced'>('mods');
 
   // Snapshots state (Phase 6)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -184,6 +188,21 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
       setError(formatError(e));
     } finally {
       setRemoveBusy(null);
+    }
+  };
+
+  const handleToggleMod = async (mod: InstalledMod) => {
+    setError(null);
+    try {
+      if (mod.enabled) {
+        await disableInstanceMod(instanceId, mod.filename);
+      } else {
+        await enableInstanceMod(instanceId, mod.filename);
+      }
+      const result = await getInstanceDetail(instanceId);
+      setDetail(result);
+    } catch (e) {
+      setError(formatError(e));
     }
   };
 
@@ -368,6 +387,19 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
     }
   };
 
+  const handleRename = async () => {
+    const newName = window.prompt('Rename instance', row?.name ?? '');
+    if (!newName || newName.trim() === '' || newName.trim() === row?.name) return;
+    setError(null);
+    try {
+      await renameInstance(instanceId, newName.trim());
+      await refreshDetail();
+      setStatus(`Renamed to "${newName.trim()}".`);
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
   const handleRevert = async () => {
     if (!confirm('Revert to the snapshot taken when this instance was unlocked? This removes any mods you added since then.')) {
       return;
@@ -509,12 +541,21 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
       <section className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold">{row?.name}</h2>
+            <h2 className="text-2xl font-bold">
+              {row?.name}
+              {' '}
+              <button
+                onClick={handleRename}
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                Rename
+              </button>
+            </h2>
             <p className="text-xs text-muted-foreground mt-1">
               MC {row?.minecraft_version} · {manifest?.loader} {manifest?.loader_version}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {manifest?.is_locked ? '🔒 Locked' : '🔓 Unlocked'}
+              {row?.is_locked ? '🔒 Locked' : '🔓 Unlocked'}
               {row?.last_launched_at && (
                 <span className="ml-2">· Last launched {row.last_launched_at}</span>
               )}
@@ -531,13 +572,6 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
               className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium"
             >
               📦 Install all mods from pack
-            </button>
-            <button
-              disabled
-              className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm font-medium cursor-not-allowed text-muted-foreground"
-              title="JVM settings edit — backend command not yet implemented"
-            >
-              ⚙️ Edit Settings (TODO)
             </button>
             <button
               onClick={handleImportPack}
@@ -564,10 +598,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
 
         {/* Lock / Unlock / Revert controls (§6.5) */}
         <div className="mt-3 flex items-center gap-3 text-sm">
-          <span className="text-muted-foreground">
-            {manifest?.is_locked ? '🔒 Locked' : '🔓 Unlocked'}
-          </span>
-          {manifest?.is_locked ? (
+          {row?.is_locked ? (
             <button
               onClick={handleUnlock}
               className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium"
@@ -601,7 +632,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
 
       {/* Sub-sidebar tabs */}
       <div className="flex border-b border-border gap-0">
-        {(['mods', 'snapshots', 'loadout-profiles', 'import', 'console'] as const).map((tab) => (
+        {(['mods', 'resourcepacks', 'shaders', 'datapacks', 'snapshots', 'loadout-profiles', 'import', 'console'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -612,7 +643,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
                 : 'border-transparent text-muted-foreground hover:text-foreground',
             ].join(' ')}
           >
-            {tab === 'mods' ? 'Mods' : tab === 'snapshots' ? 'Snapshots' : tab === 'loadout-profiles' ? 'Loadout Profiles' : tab === 'import' ? 'Import' : 'Console'}
+            {tab === 'mods' ? `Mods (${mods.length})` : tab === 'resourcepacks' ? `Resource Packs (${manifest?.resourcepacks?.length ?? 0})` : tab === 'shaders' ? `Shaders (${manifest?.shaders?.length ?? 0})` : tab === 'datapacks' ? `Data Packs (${manifest?.datapacks?.length ?? 0})` : tab === 'snapshots' ? 'Snapshots' : tab === 'loadout-profiles' ? 'Loadout Profiles' : tab === 'import' ? 'Import' : 'Console'}
           </button>
         ))}
         {advancedMode && (
@@ -779,35 +810,54 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
           <div className="flex gap-2">
             <button
               onClick={handleImportMod}
-              className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium"
+              disabled={!!row?.is_locked}
+              className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              title={row?.is_locked ? 'Unlock the instance to add mods.' : undefined}
             >
               📥 Import Mod
             </button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          Drag and drop a .jar mod, or a .mrpack / .agora-pack.json pack file, here to install it.
-        </p>
+        {row?.is_locked ? (
+          <p className="text-xs text-muted-foreground mb-3">
+            Instance is locked. Unlock it to add or remove mods.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground mb-3">
+            Drag and drop a .jar mod, or a .mrpack / .agora-pack.json pack file, here to install it.
+          </p>
+        )}
         {mods.length === 0 ? (
           <p className="text-sm text-muted-foreground">No mods installed.</p>
         ) : (
           <div className="space-y-2">
             {mods.map((mod) => (
-              <div key={mod.filename} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
+              <div key={mod.filename} className={`flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm ${!mod.enabled ? 'opacity-50' : ''}`}>
                 <div className="min-w-0 flex-1">
-                  <span className="font-medium truncate block">{mod.filename}</span>
+                  <span className={`font-medium truncate block ${!mod.enabled ? 'line-through' : ''}`}>{mod.filename}</span>
                   <div className="text-xs text-muted-foreground flex gap-2 mt-0.5">
                     {mod.version && <span>v{mod.version}</span>}
                     <span className="rounded-full bg-brand-600/10 text-brand-600 dark:text-brand-400 px-1.5 py-0.5 text-[10px] uppercase">{mod.source}</span>
                     <span>Installed {mod.installed_at}</span>
+                    {!mod.enabled && <span className="text-yellow-600 dark:text-yellow-400 font-medium">disabled</span>}
                   </div>
                 </div>
+                {!row?.is_locked && (
+                  <button
+                    onClick={() => handleToggleMod(mod)}
+                    className="ml-2 text-xs text-foreground hover:text-primary whitespace-nowrap"
+                    title={mod.enabled ? 'Disable mod' : 'Enable mod'}
+                  >
+                    {mod.enabled ? '🔌 Disable' : '🔌 Enable'}
+                  </button>
+                )}
                 <button
                   onClick={() => handleRemove(mod.filename)}
-                  disabled={removeBusy === mod.filename}
-                  className="ml-3 text-xs text-destructive hover:underline disabled:opacity-50 whitespace-nowrap"
+                  disabled={removeBusy === mod.filename || !!row?.is_locked}
+                  className="ml-2 text-xs text-destructive hover:underline disabled:opacity-50 whitespace-nowrap"
+                  title={row?.is_locked ? 'Unlock the instance to remove mods.' : undefined}
                 >
-                  {removeBusy === mod.filename ? 'Removing…' : 'Remove'}
+                  {removeBusy === mod.filename ? 'Removing…' : row?.is_locked ? '🔒' : 'Remove'}
                 </button>
               </div>
             ))}
@@ -819,6 +869,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
       {!showAdd ? (
         <button
           onClick={() => {
+            if (row?.is_locked) return;
             setShowAdd(true);
             setBrowseFilter('');
             setSelectedAddItem(null);
@@ -827,9 +878,11 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
             setAddError(null);
             handleBrowse();
           }}
-          className="rounded-lg border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent w-full"
+          disabled={!!row?.is_locked}
+          className="rounded-lg border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed w-full"
+          title={row?.is_locked ? 'Unlock the instance to add mods.' : undefined}
         >
-          + Add Mod
+          {row?.is_locked ? '🔒 Instance Locked' : '+ Add Mod'}
         </button>
       ) : (
         <section className="rounded-xl border border-border bg-card p-4 space-y-4">
@@ -1013,6 +1066,131 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
         </>
       )}
 
+      {activeTab === 'resourcepacks' && (
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h3 className="font-semibold text-sm mb-3">Resource Packs ({(manifest?.resourcepacks ?? []).length})</h3>
+          {(manifest?.resourcepacks ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No resource packs installed.</p>
+          ) : (
+            <div className="space-y-2">
+              {(manifest?.resourcepacks ?? []).map((rp) => (
+                <div key={rp.filename} className={`flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm ${!rp.enabled ? 'opacity-50' : ''}`}>
+                  <div className="min-w-0 flex-1">
+                    <span className={`font-medium truncate block ${!rp.enabled ? 'line-through' : ''}`}>{rp.filename}</span>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {rp.version && <span>v{rp.version}</span>}
+                      {!rp.enabled && <span className="ml-2 text-yellow-600 dark:text-yellow-400 font-medium">disabled</span>}
+                    </div>
+                  </div>
+                  {!row?.is_locked && (
+                    <button
+                      onClick={() => handleToggleMod(rp)}
+                      className="ml-2 text-xs text-foreground hover:text-primary whitespace-nowrap"
+                    >
+                      {rp.enabled ? '🔌 Disable' : '🔌 Enable'}
+                    </button>
+                  )}
+                  {!row?.is_locked && (
+                    <button
+                      onClick={() => handleToggleMod(rp)}
+                      className="ml-2 text-xs text-foreground hover:text-primary whitespace-nowrap"
+                    >
+                      {rp.enabled ? '🔌 Disable' : '🔌 Enable'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemove(rp.filename)}
+                    disabled={!!row?.is_locked}
+                    className="ml-2 text-xs text-destructive hover:underline disabled:opacity-50 whitespace-nowrap"
+                    title={row?.is_locked ? 'Unlock the instance to remove content.' : undefined}
+                  >
+                    {row?.is_locked ? '🔒' : 'Remove'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'shaders' && (
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h3 className="font-semibold text-sm mb-3">Shaders ({(manifest?.shaders ?? []).length})</h3>
+          {(manifest?.shaders ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No shaders installed.</p>
+          ) : (
+            <div className="space-y-2">
+              {(manifest?.shaders ?? []).map((s) => (
+                <div key={s.filename} className={`flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm ${!s.enabled ? 'opacity-50' : ''}`}>
+                  <div className="min-w-0 flex-1">
+                    <span className={`font-medium truncate block ${!s.enabled ? 'line-through' : ''}`}>{s.filename}</span>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {s.version && <span>v{s.version}</span>}
+                      {!s.enabled && <span className="ml-2 text-yellow-600 dark:text-yellow-400 font-medium">disabled</span>}
+                    </div>
+                  </div>
+                  {!row?.is_locked && (
+                    <button
+                      onClick={() => handleToggleMod(s)}
+                      className="ml-2 text-xs text-foreground hover:text-primary whitespace-nowrap"
+                    >
+                      {s.enabled ? '🔌 Disable' : '🔌 Enable'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemove(s.filename)}
+                    disabled={!!row?.is_locked}
+                    className="ml-2 text-xs text-destructive hover:underline disabled:opacity-50 whitespace-nowrap"
+                    title={row?.is_locked ? 'Unlock the instance to remove content.' : undefined}
+                  >
+                    {row?.is_locked ? '🔒' : 'Remove'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'datapacks' && (
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h3 className="font-semibold text-sm mb-3">Data Packs ({(manifest?.datapacks ?? []).length})</h3>
+          {(manifest?.datapacks ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No data packs installed.</p>
+          ) : (
+            <div className="space-y-2">
+              {(manifest?.datapacks ?? []).map((dp) => (
+                <div key={dp.filename} className={`flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm ${!dp.enabled ? 'opacity-50' : ''}`}>
+                  <div className="min-w-0 flex-1">
+                    <span className={`font-medium truncate block ${!dp.enabled ? 'line-through' : ''}`}>{dp.filename}</span>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {dp.version && <span>v{dp.version}</span>}
+                      {!dp.enabled && <span className="ml-2 text-yellow-600 dark:text-yellow-400 font-medium">disabled</span>}
+                    </div>
+                  </div>
+                  {!row?.is_locked && (
+                    <button
+                      onClick={() => handleToggleMod(dp)}
+                      className="ml-2 text-xs text-foreground hover:text-primary whitespace-nowrap"
+                    >
+                      {dp.enabled ? '🔌 Disable' : '🔌 Enable'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemove(dp.filename)}
+                    disabled={!!row?.is_locked}
+                    className="ml-2 text-xs text-destructive hover:underline disabled:opacity-50 whitespace-nowrap"
+                    title={row?.is_locked ? 'Unlock the instance to remove content.' : undefined}
+                  >
+                    {row?.is_locked ? '🔒' : 'Remove'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {activeTab === 'snapshots' && (
         <section className="rounded-xl border border-border bg-card p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -1029,7 +1207,8 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
                 onClick={async () => {
                   setError(null);
                   try {
-                    await createSnapshot(instanceId, snapshotLabelInput || undefined);
+                    const label = snapshotLabelInput.trim() || `Snapshot ${new Date().toLocaleString()}`;
+                    await createSnapshot(instanceId, label);
                     const result = await listSnapshots(instanceId);
                     setSnapshots(result);
                     setSnapshotLabelInput('');
@@ -1053,7 +1232,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
               {snapshots.map((snap) => (
                 <div key={snap.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
                   <div className="min-w-0 flex-1">
-                    <span className="font-medium block">{snap.label ?? 'Unnamed'}</span>
+                    <span className="font-medium block">{snap.label}</span>
                     <span className="text-xs text-muted-foreground">
                       {snap.created_at} · {snap.file_count} file{snap.file_count !== 1 ? 's' : ''}
                     </span>
@@ -1067,6 +1246,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
                           await restoreSnapshot(instanceId, snap.id);
                           const result = await listSnapshots(instanceId);
                           setSnapshots(result);
+                          setDetail(await getInstanceDetail(instanceId));
                           setStatus('Snapshot restored.');
                         } catch (e) {
                           setError(formatError(e));
@@ -1137,14 +1317,14 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
               />
               <button
                 onClick={async () => {
-                  if (!profileNameInput.trim()) return;
                   setError(null);
                   try {
-                    await createLoadoutProfile(instanceId, profileNameInput.trim());
+                    const name = profileNameInput.trim() || `Current Setup ${new Date().toLocaleString()}`;
+                    await createLoadoutProfile(instanceId, name);
                     const result = await listLoadoutProfiles(instanceId);
                     setProfiles(result);
                     setProfileNameInput('');
-                    setStatus(`Profile "${profileNameInput.trim()}" created.`);
+                    setStatus(`Profile "${name}" created.`);
                   } catch (e) {
                     setError(formatError(e));
                   }
@@ -1156,26 +1336,9 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
             </div>
           </div>
 
-          <button
-            onClick={async () => {
-              setError(null);
-              try {
-                await createLoadoutProfile(instanceId, `Current Setup ${new Date().toLocaleString()}`);
-                const result = await listLoadoutProfiles(instanceId);
-                setProfiles(result);
-                setStatus('Current mod setup saved as profile.');
-              } catch (e) {
-                setError(formatError(e));
-              }
-            }}
-            className="rounded-lg border border-input bg-background hover:bg-accent px-4 py-2 text-sm font-medium w-full"
-          >
-            + Save Current as Profile
-          </button>
-
           {profiles.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No loadout profiles yet. Create one or save the current mod setup.
+              No loadout profiles yet. Enter a name and click Create Profile.
             </p>
           ) : (
             <div className="space-y-2">
@@ -1194,6 +1357,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
                           await applyLoadoutProfile(instanceId, prof.name);
                           const result = await listLoadoutProfiles(instanceId);
                           setProfiles(result);
+                          setDetail(await getInstanceDetail(instanceId));
                           setStatus(`Profile "${prof.name}" applied.`);
                         } catch (e) {
                           setError(formatError(e));

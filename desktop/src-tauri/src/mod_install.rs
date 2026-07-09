@@ -929,6 +929,64 @@ async fn resolve_modrinth_versions_by_id(
     Ok(candidates)
 }
 
+/// Read the instance manifest and return `Err(InstanceLocked)` if `is_locked` is true.
+pub(crate) fn check_not_locked(app: &tauri::AppHandle, instance_id: &str) -> LauncherResult<()> {
+    let manifest_path = paths::instance_manifest_path(app, instance_id)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    if !manifest_path.exists() {
+        return Ok(());
+    }
+    let text =
+        std::fs::read_to_string(&manifest_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let manifest: InstanceManifest =
+        serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    if manifest.is_locked {
+        return Err(LauncherError::InstanceLocked);
+    }
+    Ok(())
+}
+
+/// Map a content_type string to the instance subdirectory name.
+pub(crate) fn content_subdir(content_type: &str) -> &str {
+    match content_type {
+        "resourcepack" => "resourcepacks",
+        "shader" => "shaderpacks",
+        "datapack" => "datapacks",
+        "world" => "saves",
+        _ => "mods", // includes "mod" and unknown types
+    }
+}
+
+/// Push an installed item to the correct array in the manifest.
+pub(crate) fn push_to_content_array(manifest: &mut InstanceManifest, item: &InstalledMod) {
+    match item.content_type.as_str() {
+        "resourcepack" => manifest.resourcepacks.push(item.clone()),
+        "shader" => manifest.shaders.push(item.clone()),
+        "datapack" => manifest.datapacks.push(item.clone()),
+        "world" => manifest.worlds.push(item.clone()),
+        _ => manifest.mods.push(item.clone()),
+    }
+}
+
+/// Remove an entry with the given filename from whichever manifest array it
+/// resides in.  Returns `true` if found and removed.
+fn remove_from_content_array(manifest: &mut InstanceManifest, filename: &str) -> bool {
+    for arr in [
+        &mut manifest.mods,
+        &mut manifest.resourcepacks,
+        &mut manifest.shaders,
+        &mut manifest.datapacks,
+        &mut manifest.worlds,
+    ] {
+        let before = arr.len();
+        arr.retain(|m| m.filename != filename);
+        if arr.len() < before {
+            return true;
+        }
+    }
+    false
+}
+
 /// Install a specific mod version into an instance's `mods/` directory.
 pub async fn install_mod_version(
     app: &tauri::AppHandle,
@@ -936,6 +994,8 @@ pub async fn install_mod_version(
     item_id: &str,
     candidate: &ModVersionCandidate,
 ) -> LauncherResult<InstalledMod> {
+    check_not_locked(app, instance_id)?;
+
     // 1. Load the registry item to get the pinned SHA-256.
     let item = load_registry_item(app, item_id)?;
     let pinned_sha = item.sha256.trim().to_string();
@@ -977,14 +1037,14 @@ pub async fn install_mod_version(
     // 3b. Compute the actual SHA-256 of the downloaded bytes for the manifest.
     let installed_sha256 = download::sha256_hex(&bytes);
 
-    // 4. Ensure mods/ directory exists and write the file.
+    // 4. Ensure target subdirectory exists and write the file.
     let instance_dir = paths::instance_dir(app, instance_id)
         .map_err(|_| LauncherError::InstanceCreateFailed)?;
-    let mods_dir = instance_dir.join("mods");
-    std::fs::create_dir_all(&mods_dir).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let target_dir = instance_dir.join(content_subdir(&item.content_type));
+    std::fs::create_dir_all(&target_dir).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
-    let mod_path = mods_dir.join(&candidate.filename);
-    std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let item_path = target_dir.join(&candidate.filename);
+    std::fs::write(&item_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     // 5. Update the instance manifest atomically.
     let manifest_path = paths::instance_manifest_path(app, instance_id)
@@ -1005,7 +1065,7 @@ pub async fn install_mod_version(
         });
     };
 
-    let metadata = crash_investigator::parse_jar_metadata(&mod_path);
+    let metadata = crash_investigator::parse_jar_metadata(&item_path);
     let installed_mod = InstalledMod {
         filename: candidate.filename.clone(),
         registry_id: Some(item_id.to_string()),
@@ -1019,9 +1079,12 @@ pub async fn install_mod_version(
         depends_on: metadata.depends_on,
         optional_deps: metadata.optional_deps,
         incompatible_deps: metadata.incompatible_deps,
+        enabled: true,
+        content_type: if item.content_type.is_empty() { "mod".to_string() } else { item.content_type.clone() },
     };
 
-    manifest.mods.push(installed_mod.clone());
+    // Add to the correct array
+    push_to_content_array(&mut manifest, &installed_mod);
 
     // Atomic write: .tmp then rename.
     let tmp_path = manifest_path.with_extension("json.tmp");
@@ -1044,6 +1107,8 @@ pub async fn remove_mod_from_instance(
     instance_id: &str,
     filename: &str,
 ) -> LauncherResult<()> {
+    check_not_locked(app, instance_id)?;
+
     // Zip Slip protection: reject filenames containing path traversal or separators.
     if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
         return Err(LauncherError::Generic {
@@ -1052,15 +1117,18 @@ pub async fn remove_mod_from_instance(
         });
     }
 
-    // 1. Resolve and optionally delete the jar file.
+    // 1. Delete the file from whichever content subdirectory it lives in.
     let instance_dir = paths::instance_dir(app, instance_id)
         .map_err(|_| LauncherError::InstanceCreateFailed)?;
-    let mods_dir = instance_dir.join("mods");
-    let mod_path = mods_dir.join(filename);
-
+    let subdirs = ["mods", "resourcepacks", "shaderpacks", "datapacks", "saves"];
+    let filename_owned = filename.to_string();
     tokio::task::spawn_blocking(move || {
-        if mod_path.exists() {
-            std::fs::remove_file(&mod_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        for sub in &subdirs {
+            let candidate = instance_dir.join(sub).join(&filename_owned);
+            if candidate.exists() {
+                std::fs::remove_file(&candidate).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                break;
+            }
         }
         Ok::<_, LauncherError>(())
     })
@@ -1092,9 +1160,7 @@ pub async fn remove_mod_from_instance(
         let mut manifest: InstanceManifest = serde_json::from_str(&text)
             .map_err(|_| LauncherError::InstanceCreateFailed)?;
 
-        let before = manifest.mods.len();
-        manifest.mods.retain(|m| m.filename != filename);
-        if manifest.mods.len() < before {
+        if remove_from_content_array(&mut manifest, filename) {
             // Atomic write: .tmp then rename.
             let tmp_path = manifest_path.with_extension("json.tmp");
             let write_text = serde_json::to_string_pretty(&manifest)
@@ -1111,6 +1177,126 @@ pub async fn remove_mod_from_instance(
                 message: "Manifest write task failed.".to_string(),
             })??;
         }
+    }
+
+    Ok(())
+}
+
+/// Find the content subdirectory containing `filename` (or `filename.disabled`
+/// when `enable` is true), rename it to the opposite state, and return
+/// `Some(subdir_name)` on success or `None` if no matching file was found.
+fn rename_in_content_dir(base: &Path, filename: &str, enable: bool) -> Option<String> {
+    const SUBDIRS: &[&str] = &["mods", "resourcepacks", "shaderpacks", "datapacks", "saves"];
+    for sub in SUBDIRS {
+        let dir = base.join(sub);
+        if enable {
+            let source = dir.join(format!("{}.disabled", filename));
+            let dest = dir.join(filename);
+            if source.exists() && !dest.exists() {
+                std::fs::rename(&source, &dest).ok()?;
+                return Some(sub.to_string());
+            }
+        } else {
+            let source = dir.join(filename);
+            let dest = dir.join(format!("{}.disabled", filename));
+            if source.exists() && !dest.exists() {
+                std::fs::rename(&source, &dest).ok()?;
+                return Some(sub.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Set `enabled` on the manifest entry matching `filename` across all arrays.
+/// Returns whether the entry was found.
+fn set_enabled_in_all_arrays(manifest: &mut InstanceManifest, filename: &str, enabled: bool) -> bool {
+    for arr in [
+        &mut manifest.mods,
+        &mut manifest.resourcepacks,
+        &mut manifest.shaders,
+        &mut manifest.datapacks,
+        &mut manifest.worlds,
+    ] {
+        if let Some(entry) = arr.iter_mut().find(|m| m.filename == filename) {
+            entry.enabled = enabled;
+            return true;
+        }
+    }
+    false
+}
+
+/// Disable a mod by renaming `mods/<filename>` to `mods/<filename>.disabled` and
+/// setting `enabled: false` in the manifest. Minecraft ignores `.disabled` files,
+/// so the mod is not loaded by either direct spawn or the Mojang launcher.
+pub fn disable_instance_mod(
+    app: &tauri::AppHandle,
+    instance_id: &str,
+    filename: &str,
+) -> LauncherResult<()> {
+    let sanitized = paths::sanitize_id(instance_id);
+    let instance_dir = paths::instance_dir(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+    if rename_in_content_dir(&instance_dir, filename, false).is_none() {
+        return Err(LauncherError::Generic {
+            code: "ERR_MOD_FILE_NOT_FOUND".to_string(),
+            message: format!("File '{filename}' not found in any content directory."),
+        });
+    }
+
+    // Update manifest
+    let manifest_path = paths::instance_manifest_path(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    if manifest_path.exists() {
+        let text =
+            std::fs::read_to_string(&manifest_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let mut manifest: InstanceManifest =
+            serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        set_enabled_in_all_arrays(&mut manifest, filename, false);
+
+        let tmp_path = manifest_path.with_extension("json.tmp");
+        let write_text = serde_json::to_string_pretty(&manifest)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        std::fs::write(&tmp_path, write_text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        std::fs::rename(&tmp_path, &manifest_path)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    }
+
+    Ok(())
+}
+
+/// Re-enable a disabled mod by renaming `mods/<filename>.disabled` back to
+/// `mods/<filename>` and setting `enabled: true` in the manifest.
+pub fn enable_instance_mod(
+    app: &tauri::AppHandle,
+    instance_id: &str,
+    filename: &str,
+) -> LauncherResult<()> {
+    let sanitized = paths::sanitize_id(instance_id);
+    let instance_dir = paths::instance_dir(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+
+    if rename_in_content_dir(&instance_dir, filename, true).is_none() {
+        return Ok(()); // already enabled or file not found
+    }
+
+    // Update manifest
+    let manifest_path = paths::instance_manifest_path(app, &sanitized)
+        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    if manifest_path.exists() {
+        let text =
+            std::fs::read_to_string(&manifest_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let mut manifest: InstanceManifest =
+            serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        set_enabled_in_all_arrays(&mut manifest, filename, true);
+
+        let tmp_path = manifest_path.with_extension("json.tmp");
+        let write_text = serde_json::to_string_pretty(&manifest)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        std::fs::write(&tmp_path, write_text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        std::fs::rename(&tmp_path, &manifest_path)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
     }
 
     Ok(())
@@ -1134,6 +1320,8 @@ pub async fn add_manual_mod(
     instance_id: &str,
     source_path: &str,
 ) -> LauncherResult<InstalledMod> {
+    check_not_locked(app, instance_id)?;
+
     use std::path::Path;
 
     let src = Path::new(source_path);
@@ -1233,8 +1421,10 @@ pub async fn add_manual_mod(
             depends_on: metadata.depends_on,
             optional_deps: metadata.optional_deps,
             incompatible_deps: metadata.incompatible_deps,
+            enabled: true,
+            content_type: "mod".to_string(),
         };
-        manifest.mods.push(installed_mod.clone());
+        push_to_content_array(&mut manifest, &installed_mod);
 
         let tmp_path = manifest_path.with_extension("json.tmp");
         let text = serde_json::to_string_pretty(&manifest)
@@ -1946,6 +2136,8 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
                     depends_on: metadata.depends_on,
                     optional_deps: metadata.optional_deps,
                     incompatible_deps: metadata.incompatible_deps,
+                    enabled: true,
+                    content_type: "mod".to_string(),
                 });
             }
         } else {
@@ -1971,6 +2163,8 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
                     depends_on: metadata.depends_on,
                     optional_deps: metadata.optional_deps,
                     incompatible_deps: metadata.incompatible_deps,
+                    enabled: true,
+                    content_type: "mod".to_string(),
                 });
             } else {
                 auth::log_line(&format!("import_mrpack: bundled file not found in zip: '{path}'"));
@@ -2248,7 +2442,7 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                match crate::modrinth_raw::list_raw_modrinth_versions(app, Some(&instance_id), mid).await {
+                match crate::modrinth_raw::list_raw_modrinth_versions(app, Some(&instance_id), mid, Some("mod")).await {
                     Ok(candidates) => {
                         let candidate = candidates
                             .iter()

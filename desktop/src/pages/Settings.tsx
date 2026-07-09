@@ -17,6 +17,10 @@ import {
   githubLogout,
   isAuthExpired,
   listInstances,
+  msaBeginLogin,
+  msaFinishLogin,
+  msaGetStatus,
+  msaLogout,
   setMcpApproval,
   setSetting,
   startMcpServer,
@@ -24,7 +28,7 @@ import {
   getMCPToken,
   regenerateMCPToken,
 } from '../lib/tauri';
-import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus, McpTokenData } from '../lib/tauri';
+import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus, McpTokenData, MsaCredentials } from '../lib/tauri';
 import { Privacy } from './Privacy';
 import { useAdvancedMode } from '../components/AdvancedModeContext';
 
@@ -83,6 +87,17 @@ export function Settings() {
   const [ghError, setGhError] = useState<string | null>(null);
   const ghSessionRef = useRef(0);
 
+  // MSA auth state
+  const [msaCreds, setMsaCreds] = useState<MsaCredentials | null>(null);
+  const [msaLoading, setMsaLoading] = useState(true);
+  const [msaAuthUri, setMsaAuthUri] = useState<string | null>(null);
+  const [msaCode, setMsaCode] = useState('');
+  const [msaError, setMsaError] = useState<string | null>(null);
+  const [msaBusy, setMsaBusy] = useState(false);
+
+  // Launch mode state
+  const [directLaunch, setDirectLaunch] = useState(false);
+
   const { advancedMode, toggleAdvanced } = useAdvancedMode();
   const isWindows = typeof navigator !== 'undefined' && navigator.platform.includes('Win');
 
@@ -128,6 +143,36 @@ export function Settings() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Load MSA status on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const creds = await msaGetStatus();
+        if (!cancelled) setMsaCreds(creds);
+      } catch {
+        if (!cancelled) setMsaCreds(null);
+      } finally {
+        if (!cancelled) setMsaLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load launch_mode setting
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mode = await getSetting('launch_mode');
+        if (!cancelled) setDirectLaunch(mode === 'direct');
+      } catch {
+        // Default to delegation
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Load MCP status + instances when aiMcp is enabled
@@ -261,6 +306,63 @@ export function Settings() {
       setGhDevice(null);
       setGhResult(null);
     } catch (e) {
+      alert(formatError(e));
+    }
+  };
+
+  const handleMsaSignIn = async () => {
+    setMsaError(null);
+    setMsaBusy(true);
+    try {
+      const resp = await msaBeginLogin();
+      setMsaAuthUri(resp.auth_uri);
+      try {
+        const { open } = await import('@tauri-apps/plugin-shell');
+        open(resp.auth_uri).catch(() => {});
+      } catch {
+        // Browser open best-effort
+      }
+    } catch (e) {
+      setMsaError(formatError(e));
+      setMsaBusy(false);
+    }
+  };
+
+  const handleMsaComplete = async () => {
+    if (!msaCode.trim()) return;
+    setMsaError(null);
+    setMsaBusy(true);
+    try {
+      // Extract code from URL if the user pasted the full redirect URL
+      let code = msaCode.trim();
+      const urlMatch = code.match(/[?&]code=([^&]+)/);
+      if (urlMatch) code = decodeURIComponent(urlMatch[1]);
+      const creds = await msaFinishLogin(code, null);
+      setMsaCreds(creds);
+      setMsaAuthUri(null);
+      setMsaCode('');
+    } catch (e) {
+      setMsaError(formatError(e));
+    } finally {
+      setMsaBusy(false);
+    }
+  };
+
+  const handleMsaSignOut = async () => {
+    try {
+      await msaLogout();
+      setMsaCreds(null);
+    } catch (e) {
+      alert(formatError(e));
+    }
+  };
+
+  const toggleLaunchMode = async (value: boolean) => {
+    setDirectLaunch(value);
+    try {
+      await setSetting('launch_mode', value ? 'direct' : 'delegation');
+    } catch (e) {
+      setDirectLaunch(!value);
       alert(formatError(e));
     }
   };
@@ -835,6 +937,102 @@ export function Settings() {
               </>
             )}
           </div> */}
+
+          {/* Microsoft Account */}
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <h3 className="font-semibold">Microsoft Account</h3>
+            {msaLoading ? (
+              <p className="text-xs text-muted-foreground">Checking connection…</p>
+            ) : msaCreds ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-green-600 dark:text-green-400">
+                    ● Signed in as <strong>{msaCreds.username}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  UUID: {msaCreds.uuid}<br />
+                  Expires: {msaCreds.expires}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Required for direct launch mode. Used to authenticate with Minecraft services.
+                </p>
+                <button
+                  onClick={handleMsaSignOut}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Sign in with your Microsoft account to enable direct in-app launching (without the Mojang launcher).
+                </p>
+
+                {msaAuthUri ? (
+                  <div className="rounded-lg border border-border bg-muted p-3 space-y-2">
+                    <p className="text-xs">A browser window should open. If not, use this link:</p>
+                    <p className="text-xs font-semibold text-primary break-all">{msaAuthUri}</p>
+                    <p className="text-xs text-muted-foreground">
+                      After signing in, you'll be redirected to a URL. Paste the full redirect URL or the <code className="bg-muted px-1 py-0.5 rounded">?code=</code> value below:
+                    </p>
+                    <input
+                      value={msaCode}
+                      onChange={(e) => setMsaCode(e.target.value)}
+                      placeholder="Paste the redirect URL or code here"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-mono"
+                    />
+                    {msaError && <p className="text-xs text-destructive">{msaError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleMsaComplete}
+                        disabled={msaBusy || !msaCode.trim()}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {msaBusy ? 'Completing…' : 'Complete Sign In'}
+                      </button>
+                      <button
+                        onClick={() => { setMsaAuthUri(null); setMsaCode(''); setMsaError(null); }}
+                        className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:bg-accent"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleMsaSignIn}
+                    disabled={msaBusy}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {msaBusy ? 'Starting…' : 'Sign in with Microsoft'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Launch Mode */}
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <h3 className="font-semibold">Launch Mode</h3>
+            <label className="flex items-center justify-between">
+              <span className="text-sm">Use in-app launcher (direct Java launch)</span>
+              <input
+                type="checkbox"
+                checked={directLaunch}
+                onChange={(e) => toggleLaunchMode(e.target.checked)}
+                className="h-5 w-5 accent-brand-600"
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              <strong>Off (default):</strong> Delegates to the official Mojang launcher — handles auth and JVM execution.
+              The Mojang launcher opens with your instance pre-selected via <code className="bg-muted px-1 py-0.5 rounded">--profile</code>.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              <strong>On:</strong> Agora launches Minecraft directly — shows game console output in-app and gives you more control. Requires a Microsoft Account sign-in above for full online play.
+            </p>
+          </div>
 
           <div className="rounded-xl border border-border bg-card p-4 space-y-3">
             <h3 className="font-semibold">Launcher Path</h3>

@@ -5,7 +5,10 @@ import {
   checkInstanceHealth,
   createInstance,
   deleteInstance,
+  getSetting,
+  killProcess,
   launchInstance,
+  launchInstanceDirect,
   listInstances,
   listLoaderVersions,
   listManifestLoaders,
@@ -16,6 +19,7 @@ import {
   type InstanceRow,
   type LoaderVersionSummary,
 } from '../lib/tauri';
+import { ConsoleView } from '../components/ConsoleView';
 import { CrashInvestigator } from '../components/CrashInvestigator';
 import { HealthDialog } from '../components/HealthDialog';
 
@@ -29,6 +33,11 @@ export function Instances({ onEditInstance }: { onEditInstance: (id: string) => 
     crashFilename: string | null;
     manualLogText: string | null;
   } | null>(null);
+
+  // Direct launch state
+  const [directLaunch, setDirectLaunch] = useState(false);
+  const [runningPid, setRunningPid] = useState<number | null>(null);
+  const [runningInstanceId, setRunningInstanceId] = useState<string | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -70,6 +79,29 @@ export function Instances({ onEditInstance }: { onEditInstance: (id: string) => 
       cancelled = true;
     };
   }, [instances]);
+
+  // Load launch mode setting on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mode = await getSetting('launch_mode');
+        if (!cancelled) setDirectLaunch(mode === 'direct');
+      } catch {
+        // Default to delegation
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Listen for game-exited to clear running state
+  useEffect(() => {
+    const unlisten = listen<{ instance_id: string; exit_code: number }>('game-exited', (_e) => {
+      setRunningPid(null);
+      setRunningInstanceId(null);
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, []);
 
   // State for the manual crash-log paste modal.
   const [pasteLog, setPasteLog] = useState<{ open: boolean; instanceId: string } | null>(null);
@@ -119,7 +151,7 @@ export function Instances({ onEditInstance }: { onEditInstance: (id: string) => 
         <div className="rounded-xl p-6 border border-dashed border-border text-center">
           <p className="text-muted-foreground">No instances yet.</p>
           <p className="text-sm text-muted-foreground mt-2">
-            Create a custom instance to install a verified modloader and launch via the official Mojang launcher.
+            Create a custom instance to install a verified modloader and launch via the official Mojang launcher or the in-app direct launcher.
           </p>
         </div>
       ) : (
@@ -131,6 +163,13 @@ export function Instances({ onEditInstance }: { onEditInstance: (id: string) => 
               onChanged={refresh}
               onEdit={() => onEditInstance(instance.instance_id)}
               onOpenCrashInvestigator={openCrashInvestigator}
+              directLaunch={directLaunch}
+              runningPid={runningPid}
+              runningInstanceId={runningInstanceId}
+              onRunningChanged={(id, pid) => {
+                setRunningInstanceId(id);
+                setRunningPid(pid);
+              }}
             />
           ))}
         </ul>
@@ -170,16 +209,26 @@ function InstanceCard({
   onChanged,
   onEdit,
   onOpenCrashInvestigator,
+  directLaunch,
+  runningPid,
+  runningInstanceId,
+  onRunningChanged,
 }: {
   instance: InstanceRow;
   onChanged: () => void;
   onEdit: () => void;
   onOpenCrashInvestigator: (id: string) => void;
+  directLaunch: boolean;
+  runningPid: number | null;
+  runningInstanceId: string | null;
+  onRunningChanged: (instanceId: string | null, pid: number | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [healthReport, setHealthReport] = useState<HealthReport | null>(null);
   const [showHealth, setShowHealth] = useState(false);
+
+  const isRunning = runningInstanceId === instance.instance_id;
 
   const launch = async () => {
     setBusy(true);
@@ -195,12 +244,27 @@ function InstanceCard({
         setBusy(false);
         return;
       }
-      // All clear — launch directly
-      await launchInstance(instance.instance_id);
+      // All clear — launch
+      if (directLaunch) {
+        const pid = await launchInstanceDirect(instance.instance_id);
+        onRunningChanged(instance.instance_id, pid);
+      } else {
+        await launchInstance(instance.instance_id);
+      }
     } catch (e) {
       setError(formatError(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const kill = async () => {
+    if (runningPid == null) return;
+    try {
+      await killProcess(runningPid);
+      onRunningChanged(null, null);
+    } catch (e) {
+      setError(formatError(e));
     }
   };
 
@@ -245,9 +309,13 @@ function InstanceCard({
             {instance.loader} {instance.loader_version} · MC {instance.minecraft_version}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            {instance.last_launched_at
-              ? `Last launched ${instance.last_launched_at}`
-              : 'Never launched'}
+            {isRunning ? (
+              <span className="text-green-600 dark:text-green-400">● Running (PID {runningPid})</span>
+            ) : instance.last_launched_at ? (
+              `Last launched ${instance.last_launched_at}`
+            ) : (
+              'Never launched'
+            )}
           </p>
         </div>
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -260,13 +328,22 @@ function InstanceCard({
       )}
 
       <div className="mt-4 flex gap-2">
-        <button
-          onClick={launch}
-          disabled={busy}
-          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          ▶ Launch
-        </button>
+        {isRunning && directLaunch ? (
+          <button
+            onClick={kill}
+            className="rounded-lg bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:bg-destructive/90"
+          >
+            ■ Kill
+          </button>
+        ) : (
+          <button
+            onClick={launch}
+            disabled={busy || (runningInstanceId != null && runningInstanceId !== instance.instance_id)}
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {busy ? 'Launching…' : directLaunch ? '▶ Launch (Direct)' : '▶ Launch'}
+          </button>
+        )}
         <button
           onClick={() => onOpenCrashInvestigator(instance.instance_id)}
           disabled={busy}
@@ -289,6 +366,12 @@ function InstanceCard({
           Delete
         </button>
       </div>
+
+      {isRunning && directLaunch && (
+        <div className="mt-3">
+          <ConsoleView instanceId={instance.instance_id} />
+        </div>
+      )}
     </li>
     </>
   );

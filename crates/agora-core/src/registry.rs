@@ -648,6 +648,80 @@ pub fn get_manifest_dependencies(conn: &Connection, item_id: String) -> Launcher
     }
 }
 
+/// Return manual dependency information for ALL items that have curated
+/// dependencies in the `mod_manual_dependencies` table.
+///
+/// Defensively returns an empty map if the table does not exist (older
+/// registry.db builds predate this table).
+pub fn get_all_manifest_dependencies(
+    conn: &Connection,
+) -> LauncherResult<std::collections::HashMap<String, ManifestDeps>> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='mod_manual_dependencies'",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if !has_table {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT item_id, required_json, optional_json, incompatible_json \
+             FROM mod_manual_dependencies",
+        )
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let item_id: String = row.get(0)?;
+            let required_json: Option<String> = row.get(1)?;
+            let optional_json: Option<String> = row.get(2)?;
+            let incompatible_json: Option<String> = row.get(3)?;
+
+            let required: Vec<String> = match required_json {
+                Some(s) if !s.is_empty() => match serde_json::from_str(&s) {
+                    Ok(v) => v,
+                    Err(_) => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+            let optional: Vec<String> = match optional_json {
+                Some(s) if !s.is_empty() => match serde_json::from_str(&s) {
+                    Ok(v) => v,
+                    Err(_) => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+            let incompatible: Vec<String> = match incompatible_json {
+                Some(s) if !s.is_empty() => match serde_json::from_str(&s) {
+                    Ok(v) => v,
+                    Err(_) => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+
+            Ok((item_id, ManifestDeps { required, optional, incompatible }))
+        })
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
+
+    let mut out = std::collections::HashMap::new();
+    for r in rows {
+        if let Ok((item_id, deps)) = r {
+            out.insert(item_id, deps);
+        }
+    }
+    Ok(out)
+}
+
 /// List all mod JAR aliases from the `mod_jar_aliases` table.
 ///
 /// Returns `(registry_id, alias)` tuples. Defensively returns an empty vec

@@ -950,6 +950,8 @@ pub async fn install_raw_modrinth(
         depends_on: metadata.depends_on,
         optional_deps: metadata.optional_deps,
         incompatible_deps: metadata.incompatible_deps,
+        enabled: true,
+        content_type: "mod".to_string(),
     };
 
     manifest.mods.push(installed_mod.clone());

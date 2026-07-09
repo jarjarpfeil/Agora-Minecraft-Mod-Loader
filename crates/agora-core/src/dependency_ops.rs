@@ -608,6 +608,8 @@ mod tests {
             depends_on: deps.iter().map(|s| s.to_string()).collect(),
             optional_deps: opt_deps.iter().map(|s| s.to_string()).collect(),
             incompatible_deps: Vec::new(),
+            enabled: true,
+            content_type: "mod".to_string(),
         }
     }
 

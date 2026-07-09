@@ -98,6 +98,12 @@ pub fn parse_jar_metadata(jar_path: &Path) -> JarMetadata {
                         if let Some(suggests) = value.get("suggests") {
                             extract_fabric_deps(suggests, &mut optional_deps);
                         }
+                        if let Some(breaks) = value.get("breaks") {
+                            extract_fabric_deps(breaks, &mut incompatible_deps);
+                        }
+                        if let Some(conflicts) = value.get("conflicts") {
+                            extract_fabric_deps(conflicts, &mut incompatible_deps);
+                        }
                     }
                     Err(_) => {}
                 }

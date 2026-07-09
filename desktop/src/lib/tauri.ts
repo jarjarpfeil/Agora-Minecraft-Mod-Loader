@@ -86,6 +86,8 @@ export interface InstalledMod {
   version: string | null;
   sha256: string;
   installed_at: string;
+  enabled: boolean;
+  content_type: string;
 }
 
 export interface InstanceManifest {
@@ -97,6 +99,10 @@ export interface InstanceManifest {
   loader_version: string;
   is_locked: boolean;
   mods: InstalledMod[];
+  resourcepacks: InstalledMod[];
+  shaders: InstalledMod[];
+  datapacks: InstalledMod[];
+  worlds: InstalledMod[];
   user_preferences: Record<string, unknown>;
 }
 
@@ -197,6 +203,8 @@ export const unlockInstance = (instanceId: string) =>
   invoke<void>('unlock_instance', { instanceId });
 export const lockInstance = (instanceId: string) =>
   invoke<void>('lock_instance', { instanceId });
+export const renameInstance = (instanceId: string, newName: string) =>
+  invoke<void>('rename_instance', { instanceId, newName });
 export const revertInstance = (instanceId: string) =>
   invoke<void>('revert_instance', { instanceId });
 export const launchInstance = (instanceId: string) =>
@@ -204,6 +212,9 @@ export const launchInstance = (instanceId: string) =>
 
 export const launchInstanceDirect = (instanceId: string) =>
   invoke<number>('launch_instance_direct', { instanceId });
+
+export const killProcess = (pid: number) =>
+  invoke<void>('kill_process', { pid });
 
 export type HealthScore = 'green' | 'yellow' | 'red';
 
@@ -384,6 +395,10 @@ export const installModVersion = (
 
 export const removeModFromInstance = (instanceId: string, filename: string) =>
   invoke<void>('remove_mod_from_instance', { instanceId, filename });
+export const disableInstanceMod = (instanceId: string, filename: string) =>
+  invoke<void>('disable_instance_mod', { instanceId, filename });
+export const enableInstanceMod = (instanceId: string, filename: string) =>
+  invoke<void>('enable_instance_mod', { instanceId, filename });
 
 export const addManualMod = (instanceId: string, sourcePath: string) =>
   invoke<InstalledMod>('add_manual_mod', { instanceId, sourcePath });
@@ -477,10 +492,11 @@ export const listModrinthLoaders = () =>
   invoke<ModrinthLoaderInfo[]>('list_modrinth_loaders');
 export const listModrinthGameVersions = () =>
   invoke<ModrinthGameVersionInfo[]>('list_modrinth_game_versions');
-export const listRawModrinthVersions = (instanceId: string | null, projectId: string) =>
+export const listRawModrinthVersions = (instanceId: string | null, projectId: string, projectType?: string) =>
   invoke<RawModrinthVersionCandidate[]>('list_raw_modrinth_versions', {
     instanceId,
     projectId,
+    projectType: projectType ?? null,
   });
 export const installRawModrinth = (
   instanceId: string,
@@ -495,6 +511,7 @@ export interface ModrinthProjectFull {
     description: string;
     body: string | null;
     icon_url: string | null;
+    project_type: string;
     page_url: string | null;
     license_id: string | null;
     source_updated_at: string | null;
@@ -811,8 +828,8 @@ export interface GcResult {
 export const msaBeginLogin = () =>
   invoke<{ auth_uri: string }>('msa_begin_login');
 
-export const msaFinishLogin = (code: string) =>
-  invoke<MsaCredentials>('msa_finish_login', { code });
+export const msaFinishLogin = (code: string, oauthState?: string | null) =>
+  invoke<MsaCredentials>('msa_finish_login', { code, oauthState });
 
 export const msaGetStatus = () =>
   invoke<MsaCredentials | null>('msa_get_status');

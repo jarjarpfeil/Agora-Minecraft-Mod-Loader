@@ -53,6 +53,7 @@ pub struct ModrinthProjectFull {
     pub description: String,
     pub body: Option<String>,
     pub icon_url: Option<String>,
+    pub project_type: String,
     pub page_url: Option<String>,
     pub license_id: Option<String>,
     pub source_updated_at: Option<String>,
@@ -597,6 +598,7 @@ pub async fn fetch_project_full(
         description: resp.description,
         body: resp.body,
         icon_url: resp.icon_url,
+        project_type: resp.project_type,
         page_url,
         license_id: resp.license.and_then(|l| l.id),
         source_updated_at: resp.updated,
@@ -692,11 +694,14 @@ pub async fn list_raw_modrinth_versions(
     app: &tauri::AppHandle,
     instance_id: Option<&str>,
     project_id: &str,
+    project_type: Option<&str>,
 ) -> LauncherResult<Vec<RawModrinthVersionCandidate>> {
     require_modrinth_enabled(app)?;
 
     // If an instance is provided, scope the request to its MC version + loader
-    // so the API does not return incompatible noise.
+    // so the API does not return incompatible noise. Only include the loader
+    // filter for mod-type content — shaders, resource packs, and data packs are
+    // loader-agnostic and would return zero results if filtered by loader.
     let mut url = format!(
         "https://api.modrinth.com/v2/project/{pid}/version",
         pid = urlencoding::encode(project_id),
@@ -706,13 +711,15 @@ pub async fn list_raw_modrinth_versions(
         let inst = load_instance_info(app, iid)?;
         let gv = serde_json::to_string(&[inst.minecraft_version.as_str()])
             .unwrap_or_else(|_| "[]".to_string());
-        let lv = serde_json::to_string(&[inst.loader.as_str()])
-            .unwrap_or_else(|_| "[]".to_string());
-        // Modrinth expects query params game_versions=[...]&loaders=[...]
         url.push_str("?game_versions=");
         url.push_str(&urlencoding::encode(&gv));
-        url.push_str("&loaders=");
-        url.push_str(&urlencoding::encode(&lv));
+        let pt = project_type.unwrap_or("mod");
+        if pt == "mod" || pt == "modpack" {
+            let lv = serde_json::to_string(&[inst.loader.as_str()])
+                .unwrap_or_else(|_| "[]".to_string());
+            url.push_str("&loaders=");
+            url.push_str(&urlencoding::encode(&lv));
+        }
     }
 
     let client = reqwest::Client::builder()
@@ -878,9 +885,11 @@ pub async fn install_raw_modrinth(
         depends_on: metadata.depends_on,
         optional_deps: metadata.optional_deps,
         incompatible_deps: metadata.incompatible_deps,
+        enabled: true,
+        content_type: if project_type.is_empty() || project_type == "modpack" { "mod".to_string() } else { project_type.to_string() },
     };
 
-    manifest.mods.push(installed_mod.clone());
+    crate::mod_install::push_to_content_array(&mut manifest, &installed_mod);
 
     let tmp_path = manifest_path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(&manifest)

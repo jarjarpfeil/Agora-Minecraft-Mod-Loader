@@ -8,7 +8,7 @@ use crate::error::{LauncherError, LauncherResult};
 use crate::instances::{self, CreateInstanceRequest, InstanceDetail, LoaderVersionSummary};
 use crate::loader_manifests;
 use crate::mcp;
-use crate::mod_install;
+use crate::mod_install::{self, check_not_locked};
 use crate::models::{InstanceManifest, InstanceRow, InstalledMod, ModVersionCandidate};
 use crate::modrinth_raw;
 use crate::paths;
@@ -261,6 +261,17 @@ pub async fn lock_instance(
     instance_id: String,
 ) -> LauncherResult<()> {
     instances::lock_instance(&app, &instance_id).await
+}
+
+/// Rename an instance.
+#[tauri::command]
+pub async fn rename_instance(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    new_name: String,
+) -> LauncherResult<()> {
+    instances::rename_instance(&app, &instance_id, &new_name).await
 }
 
 /// Revert an unlocked instance to its lock snapshot.
@@ -538,6 +549,46 @@ async fn download_lib(
     })?;
 
     Ok(cache_path.to_path_buf())
+}
+
+/// Kill a process by PID (used to stop a directly-launched game).
+#[tauri::command]
+pub fn kill_process(pid: u32) -> LauncherResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F", "/T"])
+            .output()
+            .map_err(|e| LauncherError::Generic {
+                code: "ERR_KILL_FAILED".to_string(),
+                message: format!("Failed to spawn taskkill: {e}"),
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(LauncherError::Generic {
+                code: "ERR_KILL_FAILED".to_string(),
+                message: format!("taskkill failed for PID {pid}: {stderr}"),
+            });
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let output = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .output()
+            .map_err(|e| LauncherError::Generic {
+                code: "ERR_KILL_FAILED".to_string(),
+                message: format!("Failed to spawn kill: {e}"),
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(LauncherError::Generic {
+                code: "ERR_KILL_FAILED".to_string(),
+                message: format!("kill -9 failed for PID {pid}: {stderr}"),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Run the pre-launch health scan on an instance. Returns a [`HealthReport`]
@@ -1006,6 +1057,38 @@ pub async fn add_manual_mod(
     mod_install::add_manual_mod(&app, &instance_id, &source_path).await
 }
 
+/// Disable a mod by renaming `mods/<filename>` to `mods/<filename>.disabled`.
+#[tauri::command]
+pub async fn disable_instance_mod(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<()> {
+    check_not_locked(&app, &instance_id)?;
+    tokio::task::spawn_blocking(move || {
+        mod_install::disable_instance_mod(&app, &instance_id, &filename)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Re-enable a disabled mod by renaming `mods/<filename>.disabled` back.
+#[tauri::command]
+pub async fn enable_instance_mod(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    instance_id: String,
+    filename: String,
+) -> LauncherResult<()> {
+    check_not_locked(&app, &instance_id)?;
+    tokio::task::spawn_blocking(move || {
+        mod_install::enable_instance_mod(&app, &instance_id, &filename)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
 /// Open a native file picker and return the chosen file path, or `None` if cancelled.
 #[tauri::command]
 pub async fn pick_open_file(
@@ -1099,8 +1182,9 @@ pub async fn list_raw_modrinth_versions(
     _state: tauri::State<'_, LauncherState>,
     instance_id: Option<String>,
     project_id: String,
+    project_type: Option<String>,
 ) -> LauncherResult<Vec<modrinth_raw::RawModrinthVersionCandidate>> {
-    modrinth_raw::list_raw_modrinth_versions(&app, instance_id.as_deref(), &project_id).await
+    modrinth_raw::list_raw_modrinth_versions(&app, instance_id.as_deref(), &project_id, project_type.as_deref()).await
 }
 
 /// Install an uncurated Modrinth mod file, verified against the SHA-1 hash
@@ -1463,10 +1547,14 @@ pub async fn get_removal_plan(
         let target = manifest
             .mods
             .iter()
+            .chain(manifest.resourcepacks.iter())
+            .chain(manifest.shaders.iter())
+            .chain(manifest.datapacks.iter())
+            .chain(manifest.worlds.iter())
             .find(|m| m.filename == filename)
             .ok_or_else(|| LauncherError::Generic {
                 code: "ERR_MOD_NOT_FOUND".to_string(),
-                message: format!("Mod '{}' not found in instance manifest.", filename),
+                message: format!("'{}' not found in instance manifest.", filename),
             })?
             .clone();
         Ok(dependency_ops::build_removal_plan(&manifest.mods, &target))
@@ -1497,10 +1585,13 @@ pub async fn get_install_plan(
         // Load the target instance's installed mods to determine which deps are missing.
         let manifest = load_manifest(&app, &instance_id)?;
 
-        Ok(dependency_ops::build_install_plan(
+        let aliases = registry::get_all_mod_aliases(&conn)?;
+        let jar_deps: agora_core::dependency_ops::JarDeps = jar_metadata.into();
+        Ok(dependency_ops::build_install_plan_with_aliases(
             manifest_deps,
-            &jar_metadata,
+            &jar_deps,
             &manifest.mods,
+            &dependency_ops::AliasMap::from_pairs(&aliases),
         ))
     })
     .await

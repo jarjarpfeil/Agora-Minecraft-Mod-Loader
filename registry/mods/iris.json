@@ -4,6 +4,11 @@
   "content_type": "mod",
   "author": "IrisShaders",
   "license": "LGPL-3.0",
+  "mod_dependencies": {
+    "required": ["sodium"],
+    "optional": [],
+    "incompatible": ["optifine"]
+  },
   "download_strategy": "github_release",
   "source_identifier": "IrisShaders/Iris",
   "sha256": "47612b3175fece07f6c3e91992412c5b16ca88a9068cb72fecbcf653eb5ffcd7",

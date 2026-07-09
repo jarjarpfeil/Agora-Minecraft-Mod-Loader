@@ -285,6 +285,15 @@ pub fn set_locked(conn: &Connection, instance_id: &str, locked: bool) -> anyhow:
     Ok(())
 }
 
+/// Rename an instance in the DB.
+pub fn rename_instance(conn: &Connection, instance_id: &str, new_name: &str) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE user_instances SET name = ?1 WHERE instance_id = ?2",
+        rusqlite::params![new_name, instance_id],
+    )?;
+    Ok(())
+}
+
 /// Delete an instance row.
 pub fn delete_instance(conn: &Connection, instance_id: &str) -> anyhow::Result<()> {
     conn.execute(

@@ -1,7 +1,11 @@
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+use zip::write::FileOptions;
+use zip::CompressionMethod;
 
 const RESTORE_MARKER: &str = ".agora_restore_in_progress";
 
@@ -10,8 +14,10 @@ const TRACKED_ENTRIES: &[&str] = &[
     "config",
     "resourcepacks",
     "shaderpacks",
+    "datapacks",
     "saves",
     "options.txt",
+    "instance_manifest.json",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,22 +41,33 @@ struct SnapshotFileEntry {
     size: u64,
 }
 
-fn snapshot_dir(instance_dir: &Path, id: &str) -> PathBuf {
-    instance_dir.join(".agora_snapshots").join(id)
+fn snapshots_dir(instance_dir: &Path) -> PathBuf {
+    instance_dir.join(".agora_snapshots")
+}
+
+fn snapshot_zip_path(instance_dir: &Path, id: &str) -> PathBuf {
+    snapshots_dir(instance_dir).join(format!("{id}.zip"))
 }
 
 fn pre_restore_dir(instance_dir: &Path) -> PathBuf {
     instance_dir.join(".agora_pre_restore")
 }
 
-/// Create a snapshot of an instance directory. Snapshots are stored in
-/// `<instance_dir>/.agora_snapshots/<id>/` as hardlinks (cheap, no duplication).
+/// Create a snapshot of an instance directory, stored as a single compressed
+/// `.zip` under `<instance_dir>/.agora_snapshots/<id>.zip`.
 pub fn create_snapshot(instance_dir: &Path, label: Option<&str>) -> Result<Snapshot, String> {
     let id = uuid::Uuid::new_v4().to_string();
-    let snap_dir = snapshot_dir(instance_dir, &id);
+    let zip_path = snapshot_zip_path(instance_dir, &id);
 
-    fs::create_dir_all(&snap_dir)
-        .map_err(|e| format!("failed to create snapshot dir: {}", e))?;
+    fs::create_dir_all(snapshots_dir(instance_dir))
+        .map_err(|e| format!("failed to create snapshots dir: {e}"))?;
+
+    let file = fs::File::create(&zip_path)
+        .map_err(|e| format!("failed to create snapshot zip: {e}"))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = FileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .unix_permissions(0o644);
 
     let mut files: Vec<SnapshotFileEntry> = Vec::new();
     let mut total_size: u64 = 0;
@@ -60,22 +77,23 @@ pub fn create_snapshot(instance_dir: &Path, label: Option<&str>) -> Result<Snaps
         if !src.exists() {
             continue;
         }
-        let dst = snap_dir.join(entry_name);
 
         if src.is_file() {
-            if let Some(parent) = dst.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("failed to create parent dir: {}", e))?;
-            }
-            hardlink_or_copy(&src, &dst)?;
-            let size = fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
+            let contents =
+                fs::read(&src).map_err(|e| format!("failed to read {entry_name}: {e}"))?;
+            zip.start_file(*entry_name, options)
+                .map_err(|e| format!("failed to start zip entry {entry_name}: {e}"))?;
+            zip.write_all(&contents)
+                .map_err(|e| format!("failed to write {entry_name}: {e}"))?;
             files.push(SnapshotFileEntry {
                 relative_path: entry_name.to_string(),
-                size,
+                size: contents.len() as u64,
             });
-            total_size += size;
+            total_size += contents.len() as u64;
         } else if src.is_dir() {
-            walk_and_link(&src, &dst, entry_name, &mut files, &mut total_size)?;
+            walk_and_zip(
+                &src, entry_name, &mut zip, options.clone(), &mut files, &mut total_size,
+            )?;
         }
     }
 
@@ -92,88 +110,121 @@ pub fn create_snapshot(instance_dir: &Path, label: Option<&str>) -> Result<Snaps
         files,
     };
 
-    let manifest_path = snap_dir.join("manifest.json");
-    fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&manifest).unwrap(),
-    )
-    .map_err(|e| format!("failed to write manifest: {}", e))?;
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("failed to serialize manifest: {e}"))?;
+    zip.start_file("manifest.json", options)
+        .map_err(|e| format!("failed to start manifest entry: {e}"))?;
+    zip.write_all(manifest_json.as_bytes())
+        .map_err(|e| format!("failed to write manifest: {e}"))?;
+
+    zip.finish()
+        .map_err(|e| format!("failed to finalize snapshot zip: {e}"))?;
 
     Ok(snapshot)
 }
 
-fn walk_and_link(
+fn walk_and_zip(
     src: &Path,
-    dst: &Path,
     prefix: &str,
+    zip: &mut zip::ZipWriter<fs::File>,
+    options: FileOptions,
     files: &mut Vec<SnapshotFileEntry>,
     total_size: &mut u64,
 ) -> Result<(), String> {
-    fs::create_dir_all(dst)
-        .map_err(|e| format!("failed to create dir {}: {}", dst.display(), e))?;
-
     let entries =
         fs::read_dir(src).map_err(|e| format!("failed to read dir {}: {}", src.display(), e))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("failed to read entry: {}", e))?;
+        let entry = entry.map_err(|e| format!("failed to read entry: {e}"))?;
         let entry_type = entry
             .file_type()
-            .map_err(|e| format!("file type error: {}", e))?;
+            .map_err(|e| format!("file type error: {e}"))?;
         let entry_name = entry.file_name().to_string_lossy().to_string();
         let src_path = entry.path();
-        let dst_path = dst.join(&entry_name);
-        let relative = format!("{}/{}", prefix, entry_name);
+        let relative = format!("{prefix}/{entry_name}");
 
         if entry_type.is_dir() {
-            walk_and_link(&src_path, &dst_path, &relative, files, total_size)?;
+            walk_and_zip(&src_path, &relative, zip, options.clone(), files, total_size)?;
         } else if entry_type.is_file() {
-            hardlink_or_copy(&src_path, &dst_path)?;
-            let size = fs::metadata(&dst_path).map(|m| m.len()).unwrap_or(0);
+            let contents = fs::read(&src_path)
+                .map_err(|e| format!("failed to read {}: {e}", src_path.display()))?;
+            zip.start_file(relative.clone(), options)
+                .map_err(|e| format!("failed to start zip entry {relative}: {e}"))?;
+            zip.write_all(&contents)
+                .map_err(|e| format!("failed to write {relative}: {e}"))?;
             files.push(SnapshotFileEntry {
                 relative_path: relative,
-                size,
+                size: contents.len() as u64,
             });
-            *total_size += size;
+            *total_size += contents.len() as u64;
         }
     }
 
     Ok(())
 }
 
-fn hardlink_or_copy(src: &Path, dst: &Path) -> Result<(), String> {
-    if fs::hard_link(src, dst).is_err() {
-        fs::copy(src, dst).map_err(|e| format!("copy fallback failed: {}", e))?;
-    }
-    Ok(())
-}
-
-/// Restore an instance to a snapshot. CURRENT files are moved to `.agora_pre_restore/`
-/// (as a safety net), then snapshot files are linked back.
+/// Restore an instance to a snapshot.  Current files are moved to
+/// `.agora_pre_restore/` (safety net), then snapshot files are extracted.
 pub fn restore_snapshot(instance_dir: &Path, snapshot_id: &str) -> Result<(), String> {
-    let snap_dir = snapshot_dir(instance_dir, snapshot_id);
-    if !snap_dir.exists() {
-        return Err(format!("snapshot {} not found", snapshot_id));
+    let zip_path = snapshot_zip_path(instance_dir, snapshot_id);
+    if !zip_path.exists() {
+        return Err(format!("snapshot {snapshot_id} not found"));
     }
 
-    let manifest_path = snap_dir.join("manifest.json");
+    let extract_dir = instance_dir.join(".agora_restore_extract");
+    if extract_dir.exists() {
+        fs::remove_dir_all(&extract_dir)
+            .map_err(|e| format!("failed to remove old extract dir: {e}"))?;
+    }
+    fs::create_dir_all(&extract_dir)
+        .map_err(|e| format!("failed to create extract dir: {e}"))?;
+
+    let mut archive = {
+        let file = fs::File::open(&zip_path)
+            .map_err(|e| format!("failed to open snapshot zip: {e}"))?;
+        zip::ZipArchive::new(file)
+            .map_err(|e| format!("failed to read snapshot zip: {e}"))?
+    };
+
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("failed to read zip entry {i}: {e}"))?;
+        let out_path = extract_dir.join(entry.mangled_name());
+        if entry.is_dir() {
+            fs::create_dir_all(&out_path)
+                .map_err(|e| format!("failed to create dir {}: {e}", out_path.display()))?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("failed to create parent: {e}"))?;
+            }
+            let mut contents = Vec::new();
+            entry
+                .read_to_end(&mut contents)
+                .map_err(|e| format!("failed to read zip entry: {e}"))?;
+            fs::write(&out_path, &contents)
+                .map_err(|e| format!("failed to write {}: {e}", out_path.display()))?;
+        }
+    }
+
+    let manifest_path = extract_dir.join("manifest.json");
     let content = fs::read_to_string(&manifest_path)
-        .map_err(|e| format!("failed to read manifest: {}", e))?;
+        .map_err(|e| format!("failed to read manifest: {e}"))?;
     let manifest: SnapshotManifest =
-        serde_json::from_str(&content).map_err(|e| format!("failed to parse manifest: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("failed to parse manifest: {e}"))?;
 
     let pre_dir = pre_restore_dir(instance_dir);
     if pre_dir.exists() {
         fs::remove_dir_all(&pre_dir)
-            .map_err(|e| format!("failed to remove pre-restore dir: {}", e))?;
+            .map_err(|e| format!("failed to remove pre-restore dir: {e}"))?;
     }
     fs::create_dir_all(&pre_dir)
-        .map_err(|e| format!("failed to create pre-restore dir: {}", e))?;
+        .map_err(|e| format!("failed to create pre-restore dir: {e}"))?;
 
-    // Write marker BEFORE moving files to detect interruption
     let marker_path = instance_dir.join(RESTORE_MARKER);
     fs::write(&marker_path, b"restore in progress")
-        .map_err(|e| format!("failed to write restore marker: {}", e))?;
+        .map_err(|e| format!("failed to write restore marker: {e}"))?;
 
     for entry_name in TRACKED_ENTRIES {
         let src = instance_dir.join(entry_name);
@@ -181,30 +232,30 @@ pub fn restore_snapshot(instance_dir: &Path, snapshot_id: &str) -> Result<(), St
             let dst = pre_dir.join(entry_name);
             if let Some(parent) = dst.parent() {
                 fs::create_dir_all(parent)
-                    .map_err(|e| format!("failed to create parent: {}", e))?;
+                    .map_err(|e| format!("failed to create parent: {e}"))?;
             }
             fs::rename(&src, &dst)
-                .map_err(|e| format!("failed to move {}: {}", entry_name, e))?;
+                .map_err(|e| format!("failed to move {entry_name}: {e}"))?;
         }
     }
 
     for file_entry in &manifest.files {
-        let src = snap_dir.join(&file_entry.relative_path);
+        let src = extract_dir.join(&file_entry.relative_path);
         let dst = instance_dir.join(&file_entry.relative_path);
-
         if let Some(parent) = dst.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| format!("failed to create dir: {}", e))?;
+                .map_err(|e| format!("failed to create dir: {e}"))?;
         }
-
-        hardlink_or_copy(&src, &dst)?;
+        fs::copy(&src, &dst)
+            .map_err(|e| format!("failed to copy {}: {e}", file_entry.relative_path))?;
     }
 
-    // Remove marker — restore completed successfully
     if marker_path.exists() {
         fs::remove_file(&marker_path)
-            .map_err(|e| format!("failed to remove restore marker: {}", e))?;
+            .map_err(|e| format!("failed to remove restore marker: {e}"))?;
     }
+
+    let _ = fs::remove_dir_all(&extract_dir);
 
     Ok(())
 }
@@ -214,37 +265,50 @@ pub fn list_snapshots(instance_dir: &Path) -> Result<Vec<Snapshot>, String> {
     let marker = instance_dir.join(RESTORE_MARKER);
     if marker.exists() {
         return Err(
-            "Previous restore was interrupted. Check .agora_pre_restore/ for backed-up files.".into(),
+            "Previous restore was interrupted. Check .agora_pre_restore/ for backed-up files."
+                .into(),
         );
     }
 
-    let snapshots_dir = instance_dir.join(".agora_snapshots");
-    if !snapshots_dir.exists() {
+    let dir = snapshots_dir(instance_dir);
+    if !dir.is_dir() {
         return Ok(Vec::new());
     }
 
     let mut snapshots = Vec::new();
 
-    let entries = fs::read_dir(&snapshots_dir)
-        .map_err(|e| format!("failed to read snapshots dir: {}", e))?;
+    let entries =
+        fs::read_dir(&dir).map_err(|e| format!("failed to read snapshots dir: {e}"))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("failed to read entry: {}", e))?;
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        let entry = entry.map_err(|e| format!("failed to read entry: {e}"))?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("zip") {
             continue;
         }
 
-        let manifest_path = entry.path().join("manifest.json");
-        if !manifest_path.exists() {
+        let file = match fs::File::open(&path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let mut archive = match zip::ZipArchive::new(file) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+
+        let mut manifest_entry = match archive.by_name("manifest.json") {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let mut content = String::new();
+        if manifest_entry.read_to_string(&mut content).is_err() {
             continue;
         }
 
-        let content = fs::read_to_string(&manifest_path)
-            .map_err(|e| format!("failed to read manifest: {}", e))?;
-        let manifest: SnapshotManifest = serde_json::from_str(&content)
-            .map_err(|e| format!("failed to parse manifest: {}", e))?;
-
-        snapshots.push(manifest.snapshot);
+        if let Ok(manifest) = serde_json::from_str::<SnapshotManifest>(&content) {
+            snapshots.push(manifest.snapshot);
+        }
     }
 
     snapshots.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -253,13 +317,24 @@ pub fn list_snapshots(instance_dir: &Path) -> Result<Vec<Snapshot>, String> {
 
 /// Delete a snapshot.
 pub fn delete_snapshot(instance_dir: &Path, snapshot_id: &str) -> Result<(), String> {
-    let snap_dir = snapshot_dir(instance_dir, snapshot_id);
-    if !snap_dir.exists() {
-        return Err(format!("snapshot {} not found", snapshot_id));
+    let zip_path = snapshot_zip_path(instance_dir, snapshot_id);
+    if !zip_path.exists() {
+        return Err(format!("snapshot {snapshot_id} not found"));
     }
 
-    fs::remove_dir_all(&snap_dir)
-        .map_err(|e| format!("failed to delete snapshot: {}", e))?;
+    fs::remove_file(&zip_path)
+        .map_err(|e| format!("failed to delete snapshot zip: {e}"))?;
+
+    let dir = snapshots_dir(instance_dir);
+    if dir.exists()
+        && dir
+            .read_dir()
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(false)
+    {
+        let _ = fs::remove_dir(&dir);
+    }
+
     Ok(())
 }
 
@@ -302,11 +377,9 @@ mod tests {
 
         let snap = create_snapshot(&inst, None).unwrap();
 
-        // Modify original files
         fs::write(inst.join("mods").join("test.jar"), b"modified").unwrap();
         fs::write(inst.join("options.txt"), b"modified").unwrap();
 
-        // Restore
         restore_snapshot(&inst, &snap.id).unwrap();
 
         assert_eq!(
@@ -318,7 +391,6 @@ mod tests {
             b"render_distance=12"
         );
 
-        // Pre-restore safety net exists
         assert!(inst.join(".agora_pre_restore").exists());
     }
 
@@ -327,28 +399,30 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let inst = make_instance(&tmp);
 
-        let _snap = create_snapshot(&inst, None).unwrap();
+        let snap = create_snapshot(&inst, None).unwrap();
 
-        // Modify original
         fs::write(inst.join("mods").join("test.jar"), b"changed").unwrap();
 
-        // Snapshot files should still have original content
-        let snap_dir = snapshot_dir(&inst, &_snap.id);
-        let content = fs::read(snap_dir.join("mods").join("test.jar")).unwrap();
+        let zip_path = snapshot_zip_path(&inst, &snap.id);
+        let file = fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut entry = archive.by_name("mods/test.jar").unwrap();
+        let mut content = Vec::new();
+        entry.read_to_end(&mut content).unwrap();
         assert_eq!(content, b"mod content");
     }
 
     #[test]
-    fn delete_snapshot_removes_dir() {
+    fn delete_snapshot_removes_zip() {
         let tmp = TempDir::new().unwrap();
         let inst = make_instance(&tmp);
 
         let snap = create_snapshot(&inst, None).unwrap();
-        let snap_dir = snapshot_dir(&inst, &snap.id);
-        assert!(snap_dir.exists());
+        let zip_path = snapshot_zip_path(&inst, &snap.id);
+        assert!(zip_path.exists());
 
         delete_snapshot(&inst, &snap.id).unwrap();
-        assert!(!snap_dir.exists());
+        assert!(!zip_path.exists());
     }
 
     #[test]

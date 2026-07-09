@@ -52,6 +52,9 @@ impl JvmConfig {
     }
 }
 
+fn default_true() -> bool { true }
+fn default_mod_content_type() -> String { "mod".to_string() }
+
 /// An installed mod tracked by `instance_manifest.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledMod {
@@ -66,6 +69,16 @@ pub struct InstalledMod {
     pub java_packages: Vec<String>,
     #[serde(default)]
     pub mod_jar_id: Option<String>,
+    /// Whether this mod is enabled. Disabled mods have their `.jar` renamed to
+    /// `.jar.disabled` so the game does not load them, but the manifest entry is
+    /// preserved for easy re-enabling.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Content type discriminator: `"mod"`, `"resourcepack"`, `"shader"`,
+    /// `"datapack"`, or `"world"`.  Legacy manifests without this field
+    /// deserialize as `"mod"`.
+    #[serde(default = "default_mod_content_type")]
+    pub content_type: String,
     /// REQUIRED dependencies only (Fabric `depends`, Forge type=required);
     /// see `optional_deps` and `incompatible_deps` for non-required dep types.
     #[serde(default)]
@@ -108,6 +121,14 @@ pub struct InstanceManifest {
     #[serde(default)]
     pub is_locked: bool,
     pub mods: Vec<InstalledMod>,
+    #[serde(default)]
+    pub resourcepacks: Vec<InstalledMod>,
+    #[serde(default)]
+    pub shaders: Vec<InstalledMod>,
+    #[serde(default)]
+    pub datapacks: Vec<InstalledMod>,
+    #[serde(default)]
+    pub worlds: Vec<InstalledMod>,
     #[serde(default)]
     pub user_preferences: serde_json::Value,
 }
@@ -250,8 +271,14 @@ mod tests {
                     depends_on: vec!["core-lib".to_string()],
                     optional_deps: vec!["opt-mod".to_string()],
                     incompatible_deps: vec!["bad-mod".to_string()],
+                    enabled: true,
+                    content_type: "mod".to_string(),
                 },
             ],
+            resourcepacks: vec![],
+            shaders: vec![],
+            datapacks: vec![],
+            worlds: vec![],
             user_preferences: serde_json::json!({"key": "value"}),
         };
 

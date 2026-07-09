@@ -4,6 +4,11 @@
   "content_type": "mod",
   "author": "CaffeineMC",
   "license": "PolyForm Shield License 1.0.0",
+  "mod_dependencies": {
+    "required": ["fabric-api"],
+    "optional": [],
+    "incompatible": ["optifine"]
+  },
   "download_strategy": "modrinth_id",
   "source_identifier": "AANobbMI",
   "modrinth_id": "AANobbMI",

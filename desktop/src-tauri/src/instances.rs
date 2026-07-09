@@ -147,7 +147,7 @@ fn prepare_instance_dir<R: tauri::Runtime>(
         });
     }
 
-    for sub in ["mods", "config", "crash-reports", "logs", "saves", "screenshots"] {
+    for sub in ["mods", "resourcepacks", "shaderpacks", "datapacks", "config", "crash-reports", "logs", "saves", "screenshots"] {
         std::fs::create_dir_all(dir.join(sub)).map_err(|_| LauncherError::InstanceCreateFailed)?;
     }
 
@@ -160,6 +160,10 @@ fn prepare_instance_dir<R: tauri::Runtime>(
         loader_version: req.loader_version.clone(),
         is_locked: false,
         mods: Vec::new(),
+        resourcepacks: Vec::new(),
+        shaders: Vec::new(),
+        datapacks: Vec::new(),
+        worlds: Vec::new(),
         user_preferences: serde_json::json!({}),
     };
     write_manifest(app, instance_id, &manifest)?;
@@ -306,6 +310,25 @@ pub async fn lock_instance<R: tauri::Runtime>(
     tokio::task::spawn_blocking(move || {
         let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
         agora_core::db::set_locked(&conn, &id, true).map_err(|_| LauncherError::LocalStateFailed)
+    })
+    .await
+    .map_err(|_| LauncherError::LocalStateFailed)?
+}
+
+/// Rename an instance in the local state DB.
+pub async fn rename_instance<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    instance_id: &str,
+    new_name: &str,
+) -> LauncherResult<()> {
+    let sanitized = paths::sanitize_id(instance_id);
+    let app = app.clone();
+    let id = sanitized.clone();
+    let name = new_name.to_string();
+    tokio::task::spawn_blocking(move || {
+        let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
+        agora_core::db::rename_instance(&conn, &id, &name)
+            .map_err(|_| LauncherError::LocalStateFailed)
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?

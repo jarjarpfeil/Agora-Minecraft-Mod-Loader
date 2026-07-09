@@ -49,7 +49,7 @@ export function DependencyPrompt({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-border p-6 shadow-xl">
+      <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl">
         <h3 className="text-lg font-bold mb-1">{title}</h3>
         {description && (
           <p className="text-xs text-muted-foreground mb-4">{description}</p>

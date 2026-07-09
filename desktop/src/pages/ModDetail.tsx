@@ -122,6 +122,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   const [modrinthVersions, setModrinthVersions] = useState<RawModrinthVersionCandidate[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState<string | null>(null);
+  const [modrinthEnabled, setModrinthEnabled] = useState<boolean | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<RawModrinthVersionCandidate | null>(null);
   // Versions tab install: instance picker
   const [versionsTabInstances, setVersionsTabInstances] = useState<InstanceRow[]>([]);
@@ -180,7 +181,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                 setItem({
                   id: project.id,
                   name: project.title,
-                  content_type: 'mod',
+                  content_type: project.project_type === 'modpack' ? 'pack' : project.project_type,
                   download_strategy: 'modrinth_id',
                   source_identifier: project.id,
                   sha256: '',
@@ -386,8 +387,11 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       try {
         const enabled = await isModrinthEnabled();
         if (cancelled) return;
+        setModrinthEnabled(enabled);
         if (!enabled) {
-          setVersionsError('Enable Modrinth integration in Settings to view live versions.');
+          if (item?.download_strategy !== 'github_release') {
+            setVersionsError('Enable Modrinth integration in Settings to view live versions.');
+          }
           return;
         }
         setVersionsLoading(true);
@@ -478,7 +482,10 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   }, [itemId, githubTabPage, githubTabLoadingMore, githubTabHasMore]);
 
   useEffect(() => {
-    if (activeTab !== 'versions' || !item || item.modrinth_id) return;
+    if (activeTab !== 'versions' || !item) return;
+    // When the mod has a modrinth_id, only skip GitHub versions if Modrinth
+    // IS enabled, or if the mod doesn't use github_release as its strategy.
+    if (item.modrinth_id && (modrinthEnabled !== false || item.download_strategy !== 'github_release')) return;
     let cancelled = false;
     (async () => {
       setGithubTabLoading(true);
@@ -499,7 +506,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab, item, itemId]);
+  }, [activeTab, item, itemId, modrinthEnabled]);
 
   // Infinite scroll for GitHub tab versions
   useEffect(() => {
@@ -589,7 +596,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     setLoadingMoreVersions(false);
     try {
       if (isModrinthInstall) {
-        const vers = await listRawModrinthVersions(selectedInstanceId, item.modrinth_id!);
+        const vers = await listRawModrinthVersions(selectedInstanceId, item.modrinth_id!, item.content_type);
         setModrinthCandidates(vers);
       } else {
         const page = await listModVersions(selectedInstanceId, itemId);
@@ -614,7 +621,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
           selectedInstanceId,
           item.modrinth_id!,
           selectedModrinthCandidate,
-          item.content_type === 'pack' ? 'modpack' : 'mod',
+          item.content_type === 'mod' ? 'mod' : item.content_type === 'pack' ? 'modpack' : item.content_type,
         );
         setPhase('done');
         setInstallMsg(`Installed ${selectedModrinthCandidate.filename} to ${instances.find((i) => i.instance_id === selectedInstanceId)?.name ?? selectedInstanceId}.`);
@@ -772,7 +779,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
         versionsTabInstanceId,
         item.modrinth_id,
         selectedVersion,
-        item.content_type === 'pack' ? 'modpack' : 'mod',
+        item.content_type === 'mod' ? 'mod' : item.content_type === 'pack' ? 'modpack' : item.content_type,
       );
       setVersionInstallPhase('done');
       setVersionInstallMsg(`Installed ${selectedVersion.filename}.`);
@@ -781,6 +788,10 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       setVersionInstallMsg(formatError(e));
     }
   };
+
+  const hasModrinthId = !!item.modrinth_id;
+  const canShowModrinthVersions = hasModrinthId && modrinthEnabled !== false;
+  const canShowGithubVersions = !hasModrinthId || (hasModrinthId && modrinthEnabled === false && item.download_strategy === 'github_release');
 
   return (
     <div className="space-y-6">
@@ -1342,7 +1353,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
         <section className="rounded-xl border border-border bg-card p-4">
           <h3 className="font-semibold text-sm mb-3">Versions</h3>
 
-          {item.modrinth_id ? (
+          {canShowModrinthVersions ? (
             versionsLoading ? (
               <p className="text-sm text-muted-foreground">Loading versions…</p>
             ) : versionsError ? (
@@ -1456,8 +1467,8 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                 )}
               </div>
             )
-          ) : (
-            // No modrinth_id — fetch real GitHub release versions
+          ) : canShowGithubVersions ? (
+            // Fallback to GitHub releases (no modrinth_id, or modrinth disabled + github_release strategy)
             githubTabLoading ? (
               <p className="text-sm text-muted-foreground">Loading versions…</p>
             ) : githubTabError ? (
@@ -1559,7 +1570,9 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                 )}
               </div>
             )
-          )}
+          ) : versionsError ? (
+            <p className="text-sm text-muted-foreground">{versionsError}</p>
+          ) : null}
         </section>
       )}
 

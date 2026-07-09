@@ -813,12 +813,10 @@ mod tests {
                 GitHubAsset {
                     id: 1,
                     name: "registry.db".to_string(),
-                    browser_download_url: String::new(),
                 },
                 GitHubAsset {
                     id: 2,
                     name: "registry.db.sig".to_string(),
-                    browser_download_url: String::new(),
                 },
             ],
         };
