@@ -230,6 +230,23 @@ function InstanceCard({
 
   const isRunning = runningInstanceId === instance.instance_id;
 
+  // Canonical approved-launch function — used both after a clean health check
+  // and after the user confirms via HealthDialog.
+  const launchApproved = async () => {
+    try {
+      if (directLaunch) {
+        const pid = await launchInstanceDirect(instance.instance_id);
+        onRunningChanged(instance.instance_id, pid);
+      } else {
+        await launchInstance(instance.instance_id);
+      }
+    } catch (e) {
+      setError(formatError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const launch = async () => {
     setBusy(true);
     setError(null);
@@ -245,15 +262,9 @@ function InstanceCard({
         return;
       }
       // All clear — launch
-      if (directLaunch) {
-        const pid = await launchInstanceDirect(instance.instance_id);
-        onRunningChanged(instance.instance_id, pid);
-      } else {
-        await launchInstance(instance.instance_id);
-      }
+      await launchApproved();
     } catch (e) {
       setError(formatError(e));
-    } finally {
       setBusy(false);
     }
   };
@@ -271,9 +282,12 @@ function InstanceCard({
   const handleLaunchFromHealth = () => {
     setShowHealth(false);
     setHealthReport(null);
+    // The user confirmed via the dialog; proceed with the approved launch.
+    setBusy(true);
+    launchApproved();
   };
 
-  const handleCloseHealth = () => {
+  const handleCancelHealth = () => {
     setShowHealth(false);
     setHealthReport(null);
   };
@@ -297,8 +311,8 @@ function InstanceCard({
       <HealthDialog
         instanceId={instance.instance_id}
         instanceName={instance.name}
-        onClose={handleCloseHealth}
-        onLaunch={handleLaunchFromHealth}
+        onConfirm={handleLaunchFromHealth}
+        onCancel={handleCancelHealth}
       />
     )}
     <li className="rounded-xl border border-border bg-card p-4">

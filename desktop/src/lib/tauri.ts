@@ -221,6 +221,8 @@ export type HealthScore = 'green' | 'yellow' | 'red';
 export interface HealthWarning {
   kind: string;
   mod_id: string | null;
+  /** Filename on disk when this finding references an installed mod, null otherwise. */
+  filename: string | null;
   message: string;
   suggested_action: string | null;
 }
@@ -228,6 +230,8 @@ export interface HealthWarning {
 export interface HealthBlocker {
   kind: string;
   mod_id: string | null;
+  /** Filename on disk when this finding references an installed mod, null otherwise. */
+  filename: string | null;
   message: string;
   suggested_action: string | null;
 }
@@ -1021,8 +1025,8 @@ export const browseSearch = (
     loader: loader ?? null,
   });
 
-export const browseLoadMore = () =>
-  invoke<BrowsePage>('browse_load_more');
+export const browseLoadMore = (pageIndex: number) =>
+  invoke<BrowsePage>('browse_load_more', { pageIndex });
 
 export const browsePage = (page: number) =>
   invoke<BrowsePage>('browse_page', { page });

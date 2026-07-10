@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/command-palette';
 import { Home } from './pages/Home';
@@ -68,11 +68,21 @@ export default function App() {
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const [aiChatEnabled, setAiChatEnabled] = useState<boolean>(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const handleNavigate = (tab: Tab) => {
-    setSelectedModId(null);
-    setEditingInstanceId(null);
-    setActiveTab(tab);
-  };
+
+  const handleNavigate = useCallback(
+    (tab: Tab, instanceId?: string) => {
+      setSelectedModId(null);
+      if (instanceId) {
+        // Open a specific instance editor directly.
+        setEditingInstanceId(instanceId);
+        setActiveTab('instances');
+      } else {
+        setEditingInstanceId(null);
+        setActiveTab(tab);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +128,23 @@ export default function App() {
     return () => window.removeEventListener('agora-navigate', handler);
   }, [handleNavigate]);
 
+  // Ctrl+K / Cmd+K opens the command palette.
+  // Prevents capture when the user is typing in a text input or textarea.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) {
+          return; // let the native shortcut pass through
+        }
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   if (onboardingComplete === null) {
     return <BrandedSplash />;
   }
@@ -148,7 +175,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden">
         <OfflineBanner />
-        <Sidebar tabs={tabs} activeTab={effectiveTab} onSelectTab={(t) => { setSelectedModId(null); setEditingInstanceId(null); setActiveTab(t); }} />
+        <Sidebar tabs={tabs} activeTab={effectiveTab} onSelectTab={(t) => { setSelectedModId(null); setEditingInstanceId(null); setActiveTab(t); }} onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
         <main className="flex-1 overflow-y-auto p-6 bg-background">
           {editingInstanceId !== null ? (
             <InstanceEditor instanceId={editingInstanceId} onBack={() => setEditingInstanceId(null)} onOpenInstanceEditor={(id) => setEditingInstanceId(id)} />

@@ -18,6 +18,9 @@ interface OnboardingProps {
 
 export function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState<Step>('welcome');
+  // Persisted across Back/Forward so a registry auto-download triggered on
+  // the first entry is not re-triggered when the user revisits the step.
+  const registryAutoDownloaded = useRef(false);
 
   const finish = async () => {
     try {
@@ -41,7 +44,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <GithubStep onContinue={() => setStep('registry')} onBack={() => setStep('services')} />
           )}
           {step === 'registry' && (
-            <RegistryStep onFinish={finish} onBack={() => setStep('github')} />
+            <RegistryStep onFinish={finish} onBack={() => setStep('github')} hasAutoDownloaded={registryAutoDownloaded} />
           )}
         </div>
       </div>
@@ -323,19 +326,48 @@ function GithubStep({
           <p className="mt-2 text-sm">
             Code:{' '}
             <span className="font-mono font-bold tracking-widest">{device.user_code}</span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(device.user_code).catch(() => {
+                  /* best-effort */
+                });
+              }}
+              className="ml-2 rounded border border-border px-2 py-0.5 text-[10px] font-medium hover:bg-accent"
+              aria-label="Copy code to clipboard"
+            >
+              Copy
+            </button>
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              openUrl(device.verification_uri).catch(() => {
-                /* best-effort: URL shown above for manual copy */
-              });
-            }}
-            disabled={polling}
-            className="mt-3 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
-          >
-            Open in browser
-          </button>
+          {device.expires_in && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Code expires in {Math.floor(device.expires_in / 60)}:{String(device.expires_in % 60).padStart(2, '0')}
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                openUrl(device.verification_uri).catch(() => {
+                  /* best-effort: URL shown above for manual copy */
+                });
+              }}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+            >
+              Open in browser
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(device.verification_uri).catch(() => {
+                  /* best-effort */
+                });
+              }}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+            >
+              Copy URL
+            </button>
+          </div>
           {polling && (
             <p className="mt-2 text-xs text-muted-foreground">Waiting for authorization…</p>
           )}
@@ -347,20 +379,42 @@ function GithubStep({
 
       <div className="flex justify-between">
         <button
-          onClick={onBack}
+          onClick={() => {
+            // Invalidate the polling session before navigating away so
+            // an in-flight poll cannot auto-advance onboarding later.
+            sessionIdRef.current += 1;
+            onBack();
+          }}
           className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:underline"
-          disabled={polling}
         >
           Back
         </button>
         <div className="flex gap-2">
-          <button
-            onClick={onContinue}
-            disabled={polling}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:underline disabled:opacity-50"
-          >
-            I'll do this later
-          </button>
+          {polling && (
+            <button
+              onClick={() => {
+                // Explicit Cancel — invalidates the current session.
+                sessionIdRef.current += 1;
+                setPolling(false);
+                setDevice(null);
+              }}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent"
+            >
+              Cancel
+            </button>
+          )}
+          {!polling && (
+            <button
+              onClick={() => {
+                // Invalidate the polling session before navigating away.
+                sessionIdRef.current += 1;
+                onContinue();
+              }}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:underline"
+            >
+              I'll do this later
+            </button>
+          )}
           <button
             onClick={signIn}
             disabled={polling}
@@ -377,12 +431,14 @@ function GithubStep({
 function RegistryStep({
   onFinish,
   onBack,
+  hasAutoDownloaded,
 }: {
   onFinish: () => void;
   onBack: () => void;
+  /** Shared with the parent so the flag survives Back/Forward navigation. */
+  hasAutoDownloaded: { current: boolean };
 }) {
   const { state, status, loading, error, actions } = useRegistryState();
-  const hasAutoDownloaded = useRef(false);
 
   // Auto-download once when we first detect the registry is missing.
   // The effect must react to state changes because on the first render

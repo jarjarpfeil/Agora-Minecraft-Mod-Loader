@@ -159,8 +159,22 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
   // This is the ONLY hook call in this component, so the hook count is stable.
   const registry = useRegistryState();
 
-  // Bail out BEFORE any other hooks when the registry is missing.
-  if (registry.state === 'missing') {
+  // Bail out BEFORE any other hooks when the registry is unavailable.
+  //
+  // Conditions for showing the recovery shell:
+  //   - State is exactly 'missing' (no cache, no loading)
+  //   - State is 'loading' AND no cached database exists (registry download in
+  //     progress but we have nothing to show)
+  //   - State is 'unknown' with an error (status-read failed)
+  //
+  // Once the user has a cached database they can browse cached content, even
+  // while an update downloads in the background ('loading' with cache).
+  const showRecovery =
+    registry.state === 'missing' ||
+    (registry.state === 'loading' && !registry.hasCachedDb) ||
+    (registry.state === 'unknown' && registry.error !== null);
+
+  if (showRecovery) {
     return (
       <RegistryRecoveryShell
         state={registry.state}
@@ -218,6 +232,9 @@ function BrowseContent({
   const [searchLoading, setSearchLoading] = useState(true);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [loadMoreLoading, setLoadMoreLoading] = useState(false);
+  // Tracks the 0-indexed page displayed. Starts at 0; incremented after each
+  // successful load-more. Reset to 0 on a new search.
+  const [currentPage, setCurrentPage] = useState(0);
 
   // ---- Request generation counter ----
   const generationRef = useRef(0);
@@ -310,6 +327,7 @@ function BrowseContent({
     setItems([]);
     setHasMore(false);
     setLoadMoreLoading(false);
+    setCurrentPage(0);
     inFlightLoadMoreRef.current = null;
 
     let cancelled = false;
@@ -381,9 +399,10 @@ function BrowseContent({
         if (entries[0]?.isIntersecting && hasMore && !loadMoreLoading) {
           const capturedGeneration = generationRef.current;
           inFlightLoadMoreRef.current = capturedGeneration;
+          const nextPage = currentPage + 1;
           setLoadMoreLoading(true);
 
-          browseLoadMore()
+          browseLoadMore(nextPage)
             .then((page) => {
               // Only apply if the captured generation is still current
               if (capturedGeneration === generationRef.current) {
@@ -399,6 +418,7 @@ function BrowseContent({
                   return [...prev, ...newItems];
                 });
                 setHasMore(page.hasMore);
+                setCurrentPage(nextPage);
               }
             })
             .catch(() => {
@@ -417,7 +437,7 @@ function BrowseContent({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMore, searchLoading, loadMoreLoading]);
+  }, [hasMore, searchLoading, loadMoreLoading, currentPage]);
 
   // ---- Render ----
   return (

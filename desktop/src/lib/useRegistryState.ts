@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   checkRegistryUpdate,
   formatError,
@@ -88,6 +88,12 @@ export function useRegistryState(): {
     if (mountedRef.current) setError(null);
   }, []);
 
+  // Stable actions object — does not change every render.
+  const actions = useMemo(
+    () => ({ sync, refreshStatus, clearError }),
+    [sync, refreshStatus, clearError],
+  );
+
   // Initial load
   useEffect(() => {
     refreshStatus().finally(() => {
@@ -119,6 +125,6 @@ export function useRegistryState(): {
     loading,
     error,
     hasCachedDb,
-    actions: { sync, refreshStatus, clearError },
+    actions,
   };
 }

@@ -4,9 +4,10 @@ interface SidebarProps {
   tabs: { id: Tab; label: string; icon: string }[];
   activeTab: Tab;
   onSelectTab: (tab: Tab) => void;
+  onOpenCommandPalette?: () => void;
 }
 
-export function Sidebar({ tabs, activeTab, onSelectTab }: SidebarProps) {
+export function Sidebar({ tabs, activeTab, onSelectTab, onOpenCommandPalette }: SidebarProps) {
   return (
     <aside className="w-64 flex flex-col border-r border-border bg-card">
       <div className="p-6 border-b border-border">
@@ -20,6 +21,7 @@ export function Sidebar({ tabs, activeTab, onSelectTab }: SidebarProps) {
             <button
               key={tab.id}
               onClick={() => onSelectTab(tab.id)}
+              aria-current={isActive ? 'page' : undefined}
               className={[
                 'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                 isActive
@@ -33,6 +35,18 @@ export function Sidebar({ tabs, activeTab, onSelectTab }: SidebarProps) {
           );
         })}
       </nav>
+      <div className="p-3 border-t border-border space-y-1">
+        <button
+          onClick={onOpenCommandPalette}
+          className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          aria-label="Open command palette"
+        >
+          <kbd className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-mono">
+            <span>⌘</span><span>K</span>
+          </kbd>
+          <span>Quick actions</span>
+        </button>
+      </div>
       <div className="p-4 text-xs text-muted-foreground border-t border-border">
         v0.1.0 · Community curated
       </div>

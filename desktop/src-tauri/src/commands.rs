@@ -83,6 +83,7 @@ pub async fn browse_items(
             modrinth_enabled.unwrap_or(false),
             mc_version.as_deref(),
             loader.as_deref(),
+            None,
             limit.unwrap_or(100),
         )
     })
@@ -2388,7 +2389,7 @@ pub async fn browse_search(
         let rconn = db::registry_connection(&app)
             .map_err(|e| LauncherError::Generic { code: "ERR_DB".into(), message: e.to_string() })?;
         let sort_enum = to_sort_option(sort.as_deref().unwrap_or("net_score"));
-        let items = registry::browse_items(&rconn, content_type.as_deref(), category.as_deref(), &sort_enum, me, mc_version.as_deref(), loader.as_deref(), 100)
+        let items = registry::browse_items(&rconn, content_type.as_deref(), category.as_deref(), &sort_enum, me, mc_version.as_deref(), loader.as_deref(), query.as_deref(), 100)
             .map_err(|e| LauncherError::Generic { code: "ERR_REGISTRY".into(), message: e.to_string() })?;
         (me, items)
     };
@@ -2421,7 +2422,7 @@ pub async fn browse_search(
 
 
     let offset = browse_cache::PAGE_SIZE;
-    let has_more = total_hits > offset;
+    let has_more_modrinth = total_hits > offset;
 
     browse_cache::load_initial(
         &s.browse_cache,
@@ -2437,54 +2438,53 @@ pub async fn browse_search(
             modrinth_enabled,
         },
         offset,
-        has_more,
+        has_more_modrinth, // stored separately for load-more use
     ).await;
 
-    let result = browse_cache::get_page(&s.browse_cache, 0).await;
-
-
-
-
-
+    let mut result = browse_cache::get_page(&s.browse_cache, 0).await;
+    // has_more is true when there are more cached items than one page
+    // OR more Modrinth results to fetch.
+    let more_cached = result.has_more;
+    let more_modrinth = has_more_modrinth;
+    result.has_more = more_cached || more_modrinth;
 
     Ok(result)
 }
 
-/// Load more results into the browse cache — returns cached pages first,
-/// then fetches Modrinth pages when the cache is exhausted.
+/// Load a specific page from the browse cache, fetching additional Modrinth
+/// data when the requested page is not yet cached.
 #[tauri::command]
 pub async fn browse_load_more(
     state: tauri::State<'_, LauncherState>,
+    // The 0-indexed page the frontend wants to display next.
+    page_index: usize,
 ) -> LauncherResult<BrowsePage> {
     let s = state.lock().await;
-    let total = {
-        let cache = s.browse_cache.read().await;
-        cache.total
-    };
 
-    // Calculate the next page index from the total cached items.
-    let next_page = total / browse_cache::PAGE_SIZE;
-
-    // If the next page is already in the cache, return it directly.
+    // 1. If the requested page is already cached, return it immediately.
     {
         let cache = s.browse_cache.read().await;
-        if next_page * browse_cache::PAGE_SIZE < cache.items.len() {
-            let page = browse_cache::get_page(&s.browse_cache, next_page).await;
+        if page_index * browse_cache::PAGE_SIZE < cache.items.len() {
+            let mut page = browse_cache::get_page(&s.browse_cache, page_index).await;
+            // has_more = more cached items beyond this page, OR more Modrinth to fetch
+            let more_cached = (page_index + 1) * browse_cache::PAGE_SIZE < cache.items.len();
+            let more_modrinth = cache.has_more_modrinth && cache.filters.modrinth_enabled;
+            page.has_more = more_cached || more_modrinth;
             return Ok(page);
         }
     }
 
-    // No more cached content. If Modrinth is disabled, we're done.
-    {
-        let cache = s.browse_cache.read().await;
-        if !cache.has_more_modrinth || !cache.filters.modrinth_enabled {
-            return Ok(BrowsePage { items: vec![], total: cache.total, page: 0, has_more: false });
-        }
-    }
-
-    // Fetch the next Modrinth page.
+    // 2. Requested page not cached. If Modrinth has more, fetch the next page.
     let (filters, modrinth_offset) = {
         let cache = s.browse_cache.read().await;
+        if !cache.has_more_modrinth || !cache.filters.modrinth_enabled {
+            return Ok(BrowsePage {
+                items: vec![],
+                total: cache.total,
+                page: page_index,
+                has_more: false,
+            });
+        }
         (cache.filters.clone(), cache.modrinth_offset)
     };
 
@@ -2503,13 +2503,13 @@ pub async fn browse_load_more(
         project_type: modrinth_pt,
     };
 
-    let page = agora_core::modrinth::search_modrinth_http(&params).await
+    let modrinth_page = agora_core::modrinth::search_modrinth_http(&params).await
         .map_err(|e| LauncherError::Generic { code: "ERR_MODRINTH".into(), message: e.to_string() })?;
 
     let new_offset = modrinth_offset + browse_cache::PAGE_SIZE;
-    let has_more = (page.total_hits as usize) > new_offset;
+    let has_more_modrinth = (modrinth_page.total_hits as usize) > new_offset;
 
-    let new_items: Vec<browse_cache::BrowseItem> = page.results.into_iter().map(|mr| {
+    let new_items: Vec<browse_cache::BrowseItem> = modrinth_page.results.into_iter().map(|mr| {
         browse_cache::BrowseItem {
             id: mr.project_id.clone(),
             source: "modrinth".to_string(),
@@ -2522,16 +2522,26 @@ pub async fn browse_load_more(
         }
     }).collect();
 
-    let response_items = new_items.clone();
-    browse_cache::append_items(&s.browse_cache, new_items, new_offset, has_more).await;
+    browse_cache::append_items(&s.browse_cache, new_items, new_offset, has_more_modrinth).await;
 
-    let total = s.browse_cache.read().await.total;
-    Ok(BrowsePage {
-        items: response_items,
-        total,
-        page: modrinth_offset / browse_cache::PAGE_SIZE,
-        has_more,
-    })
+    // 3. Return the requested page from the updated cache.
+    {
+        let cache = s.browse_cache.read().await;
+        if page_index * browse_cache::PAGE_SIZE < cache.items.len() {
+            let mut page = browse_cache::get_page(&s.browse_cache, page_index).await;
+            let more_cached = (page_index + 1) * browse_cache::PAGE_SIZE < cache.items.len();
+            let more_modrinth = cache.has_more_modrinth;
+            page.has_more = more_cached || more_modrinth;
+            Ok(page)
+        } else {
+            Ok(BrowsePage {
+                items: vec![],
+                total: cache.total,
+                page: page_index,
+                has_more: has_more_modrinth,
+            })
+        }
+    }
 }
 
 /// Get a specific page from the browse cache.

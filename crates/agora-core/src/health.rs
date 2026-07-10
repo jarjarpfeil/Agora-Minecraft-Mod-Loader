@@ -21,6 +21,10 @@ pub enum HealthScore {
 pub struct Warning {
     pub kind: WarningKind,
     pub mod_id: Option<String>,
+    /// The actual `.jar` filename on disk, when the finding concerns a specific
+    /// installed mod. `None` for findings where no installed JAR is involved
+    /// (e.g. a missing required dependency).
+    pub filename: Option<String>,
     pub message: String,
     pub suggested_action: Option<String>,
 }
@@ -38,6 +42,9 @@ pub enum WarningKind {
 pub struct Blocker {
     pub kind: BlockerKind,
     pub mod_id: Option<String>,
+    /// The actual `.jar` filename on disk, when the finding concerns a specific
+    /// installed mod. `None` for findings where no installed JAR is involved.
+    pub filename: Option<String>,
     pub message: String,
     pub suggested_action: Option<String>,
 }
@@ -164,6 +171,7 @@ pub fn health(
             warnings.push(Warning {
                 kind: WarningKind::DuplicateModId,
                 mod_id: Some(id.clone()),
+                filename: files.first().cloned(),
                 message: format!(
                     "Multiple JARs declare mod ID '{}': {}",
                     id,
@@ -192,6 +200,7 @@ pub fn health(
                 blockers.push(Blocker {
                     kind: BlockerKind::MissingRequiredDependency,
                     mod_id: Some(display_name.clone()),
+                    filename: None, // dependency is not installed
                     message: format!(
                         "'{}' requires '{}' but it is not installed.",
                         source, display_name
@@ -231,6 +240,7 @@ pub fn health(
                 blockers.push(Blocker {
                     kind: BlockerKind::IncompatibleMod,
                     mod_id: Some(incompat.clone()),
+                    filename: Some(source.clone()), // disable the source mod
                     message: format!(
                         "'{}' is incompatible with '{}' but both are installed.",
                         source, incompat
@@ -273,6 +283,7 @@ pub fn health(
                             blockers.push(Blocker {
                                 kind: BlockerKind::CuratedConflict,
                                 mod_id: None,
+                                filename: None, // no single actionable file
                                 message: format!(
                                     "Known conflict between '{}' and '{}' (severity: {}). {}",
                                     conflict.mod_a_id,
@@ -305,6 +316,7 @@ pub fn health(
                 warnings.push(Warning {
                     kind: WarningKind::MissingOptionalDependency,
                     mod_id: Some(display_name.clone()),
+                    filename: None, // dependency is not installed
                     message: format!(
                         "'{}' recommends '{}' but it is not installed. The mod may work without it.",
                         source, display_name
@@ -326,6 +338,7 @@ pub fn health(
             warnings.push(Warning {
                 kind: WarningKind::UnknownMod,
                 mod_id: ij.jar.mod_jar_id.clone(),
+                filename: Some(ij.filename.clone()),
                 message: format!(
                     "'{}' is in the mods folder but not tracked in the instance manifest.",
                     ij.filename

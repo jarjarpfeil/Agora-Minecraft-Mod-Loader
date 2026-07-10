@@ -99,6 +99,7 @@ pub fn browse_items(
     modrinth_enabled: bool,
     mc_version: Option<&str>,
     loader: Option<&str>,
+    query: Option<&str>,
     limit: i64,
 ) -> LauncherResult<Vec<RegistryItem>> {
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -107,6 +108,13 @@ pub fn browse_items(
     if let Some(ct) = content_type {
         where_parts.push("ri.content_type = ?".to_string());
         params.push(Box::new(ct.to_string()));
+    }
+    if let Some(q) = query {
+        let trimmed = q.trim();
+        if !trimmed.is_empty() {
+            where_parts.push("ri.name LIKE ?".to_string());
+            params.push(Box::new(format!("%{}%", trimmed)));
+        }
     }
     if let Some(cat) = category {
         where_parts.push("ic.category_id = ?".to_string());
@@ -1222,7 +1230,7 @@ mod tests {
         let dir = temp_registry_db();
         let conn = registry_connection(&dir.path().join("registry.db")).unwrap();
         let sort = SortOption::NetScore;
-        let items = browse_items(&conn, None, None, &sort, true, None, None, 100).unwrap();
+        let items = browse_items(&conn, None, None, &sort, true, None, None, None, 100).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "Test Mod 1");
     }
@@ -1232,7 +1240,7 @@ mod tests {
         let dir = temp_registry_db();
         let conn = registry_connection(&dir.path().join("registry.db")).unwrap();
         let sort = SortOption::NetScore;
-        let items = browse_items(&conn, Some("mod"), None, &sort, true, None, None, 100).unwrap();
+        let items = browse_items(&conn, Some("mod"), None, &sort, true, None, None, None, 100).unwrap();
         assert_eq!(items.len(), 1);
     }
 
@@ -1241,7 +1249,7 @@ mod tests {
         let dir = temp_registry_db();
         let conn = registry_connection(&dir.path().join("registry.db")).unwrap();
         let sort = SortOption::NetScore;
-        let items = browse_items(&conn, None, Some("fabric"), &sort, true, None, None, 100).unwrap();
+        let items = browse_items(&conn, None, Some("fabric"), &sort, true, None, None, None, 100).unwrap();
         assert_eq!(items.len(), 1);
     }
 

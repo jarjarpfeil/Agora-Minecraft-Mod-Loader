@@ -138,7 +138,7 @@ pub fn for_you_items<R: tauri::Runtime>(
     // No interest signal at all → degrade to net_score browse.
     if interest.is_empty() {
         let sort = SortOption::NetScore;
-        return browse_items(&conn, None, None, &sort, modrinth_enabled, mc_version, loader, limit);
+        return browse_items(&conn, None, None, &sort, modrinth_enabled, mc_version, loader, None, limit);
     }
 
     // Candidate items: uninstalled items sharing >=1 interest category, ranked

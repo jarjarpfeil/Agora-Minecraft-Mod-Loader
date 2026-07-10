@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from 'react';
 import {
   checkInstanceHealth,
   disableModForTest,
-  launchInstance,
   getSetting,
   setSetting,
   type HealthReport,
@@ -16,15 +15,17 @@ import { Switch } from '@/components/ui/switch';
 interface HealthDialogProps {
   instanceId: string;
   instanceName: string;
-  onClose: () => void;
-  onLaunch: () => void;
+  /** User decided to launch despite warnings/blockers. Parent performs the actual launch. */
+  onConfirm: () => void;
+  /** User cancelled or closed the dialog. No launch. */
+  onCancel: () => void;
 }
 
 function silenceKey(item: HealthWarning | HealthBlocker): string {
   return `health_silenced_${item.kind}_${item.mod_id ?? 'global'}`;
 }
 
-export function HealthDialog({ instanceId, instanceName, onClose, onLaunch }: HealthDialogProps) {
+export function HealthDialog({ instanceId, instanceName, onConfirm, onCancel }: HealthDialogProps) {
   const [report, setReport] = useState<HealthReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,15 +79,6 @@ export function HealthDialog({ instanceId, instanceName, onClose, onLaunch }: He
     });
   }, []);
 
-  const handleLaunchAnyway = useCallback(async () => {
-    try {
-      await launchInstance(instanceId);
-      onLaunch();
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    }
-  }, [instanceId, onLaunch]);
-
   if (loading) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -102,7 +94,7 @@ export function HealthDialog({ instanceId, instanceName, onClose, onLaunch }: He
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
         <Card className="w-full max-w-lg p-6 bg-card border-border">
           <p className="text-destructive mb-4">Health check failed: {error}</p>
-          <Button onClick={onClose} variant="outline">Close</Button>
+          <Button onClick={onCancel} variant="outline">Close</Button>
         </Card>
       </div>
     );
@@ -166,13 +158,13 @@ export function HealthDialog({ instanceId, instanceName, onClose, onLaunch }: He
                       )}
                     </div>
                     <div className="flex items-center gap-3 mt-2">
-                      {/* Disable button for mods we can disable */}
-                      {(b.kind === 'missing_required_dependency' || b.kind === 'incompatible_mod' || b.kind === 'curated_conflict') && b.mod_id && (
+                      {/* Disable button — only when a real filename exists */}
+                      {(b.kind === 'missing_required_dependency' || b.kind === 'incompatible_mod' || b.kind === 'curated_conflict') && b.filename && (
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={fixing === key}
-                          onClick={() => handleFixDisable(b.mod_id!, key)}
+                          onClick={() => handleFixDisable(b.filename!, key)}
                         >
                           {fixing === key ? 'Fixing...' : 'Disable'}
                         </Button>
@@ -225,13 +217,13 @@ export function HealthDialog({ instanceId, instanceName, onClose, onLaunch }: He
           </p>
         )}
 
-        {/* Actions */}
+        {/* Actions — dialog only returns a decision */}
         <div className="flex gap-2 justify-end">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
           {effectiveScore === 'red' && activeBlockers.length > 0 ? (
-            <Button variant="destructive" onClick={handleLaunchAnyway}>Launch Anyway</Button>
+            <Button variant="destructive" onClick={onConfirm}>Launch Anyway</Button>
           ) : effectiveScore === 'yellow' || effectiveScore === 'green' ? (
-            <Button onClick={handleLaunchAnyway}>Launch Anyway</Button>
+            <Button onClick={onConfirm}>Launch Anyway</Button>
           ) : null}
         </div>
       </Card>

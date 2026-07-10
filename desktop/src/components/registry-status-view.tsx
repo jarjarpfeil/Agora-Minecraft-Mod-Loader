@@ -60,7 +60,7 @@ function DefaultCard({
 }
 
 function BannerView({ state, status: _status, error, actions }: BannerProps) {
-  if (state === 'ready' || state === 'unknown') return null;
+  if (state === 'ready') return null;
 
   const isSyncing = state === 'loading';
 
