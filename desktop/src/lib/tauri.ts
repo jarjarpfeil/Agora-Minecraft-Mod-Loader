@@ -411,6 +411,8 @@ export const pickOpenFile = (title: string, extensions: string[]) =>
 
 export const importInstancePack = (sourcePath: string) =>
   invoke<string>('import_instance_pack', { sourcePath });
+export const importModrinthPackByUrl = (downloadUrl: string) =>
+  invoke<string>('import_modrinth_pack_by_url', { downloadUrl });
 
 // --- Raw (uncurated) Modrinth integration (§6.3) ---
 

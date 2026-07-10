@@ -419,8 +419,8 @@ export function Settings() {
 
   const handleStartServer = async () => {
     try {
-      await startMcpServer();
-      await fetchMcpStatus();
+      const status = await startMcpServer();
+      setMcpStatus(status);
     } catch (e) {
       alert(formatError(e));
     }

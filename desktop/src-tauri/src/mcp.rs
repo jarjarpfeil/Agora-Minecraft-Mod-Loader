@@ -1,9 +1,9 @@
-﻿#![allow(dead_code)]
+#![allow(dead_code)]
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -60,7 +60,9 @@ struct JsonRpcRequest {
 #[derive(Debug, Serialize)]
 struct JsonRpcResponse {
     jsonrpc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<JsonRpcError>,
     id: serde_json::Value,
 }
@@ -641,24 +643,16 @@ fn handle_disable_mod(app: &AppHandle, instance_id: &str, filename: &str) -> ser
 // search_crash_signatures implementation
 // ---------------------------------------------------------------------------
 
-fn handle_search_crash_signatures(app: &AppHandle, crash_text: &str) -> serde_json::Value {
-    let matches: Vec<serde_json::Value> = match tokio::runtime::Handle::try_current() {
-        Ok(handle) => {
-            let app_clone = app.clone();
-            let text = crash_text.to_string();
-            match handle.block_on(async {
-                tokio::task::spawn_blocking(move || {
-                    perform_signature_search(&app_clone, &text)
-                }).await
-            }) {
-                Ok(Ok(m)) => m,
-                Ok(Err(_)) => Vec::new(),
-                Err(_) => Vec::new(),
-            }
-        }
-        Err(_) => {
-            perform_signature_search(app, crash_text).unwrap_or_default()
-        }
+async fn handle_search_crash_signatures(app: &AppHandle, crash_text: &str) -> serde_json::Value {
+    let app_clone = app.clone();
+    let text = crash_text.to_string();
+    let matches: Vec<serde_json::Value> = match tokio::task::spawn_blocking(move || {
+        perform_signature_search(&app_clone, &text)
+    })
+    .await
+    {
+        Ok(Ok(m)) => m,
+        Ok(Err(_)) | Err(_) => Vec::new(),
     };
 
     serde_json::json!({ "matches": matches })
@@ -1276,6 +1270,13 @@ async fn handle_connection(
         ("POST", "/messages") => {
             handle_post_messages(full_path, store, app, headers, read_half, write_half).await
         }
+        // Streamable HTTP transport (POST to /mcp or POST to /sse).
+        // Modern MCP clients (Kilo Code, etc.) try Streamable HTTP first by POSTing
+        // directly to the server URL before falling back to the legacy SSE transport.
+        // We handle both /mcp and /sse POST paths to support either URL in config.
+        ("POST", "/mcp") | ("POST", "/sse") => {
+            handle_streamable_http(app, headers, read_half, write_half).await
+        }
         _ => {
             let mut w = tokio::io::BufWriter::new(write_half);
             let _ = w
@@ -1358,6 +1359,97 @@ async fn handle_sse(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Streamable HTTP transport handler
+// ---------------------------------------------------------------------------
+//
+// Per the 2025-03-26 MCP spec, Streamable HTTP clients POST JSON-RPC requests
+// to a single endpoint (e.g. /mcp or the same /sse URL) and receive the
+// JSON-RPC response directly in the HTTP response body (200 OK).
+// No separate SSE session is required for request/response pairs.
+
+async fn handle_streamable_http(
+    app: AppHandle,
+    headers: HashMap<String, String>,
+    mut read_half: tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>,
+    mut write_half: tokio::net::tcp::OwnedWriteHalf,
+) -> std::io::Result<()> {
+    // Read POST body
+    let content_length = headers
+        .get("content-length")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+
+    let mut body = Vec::with_capacity(content_length);
+    if content_length > 0 {
+        body.resize(content_length, 0u8);
+        let _ = read_half.read_exact(&mut body).await;
+    }
+
+    if body.is_empty() {
+        // No body — return 204 No Content.
+        let _ = write_half
+            .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+            .await;
+        return Ok(());
+    }
+
+    let request: JsonRpcRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => {
+            let resp = JsonRpcResponse::error(
+                serde_json::Value::Null,
+                -32700,
+                &format!("JSON parse error: {}", e),
+            );
+            let resp_bytes = serde_json::to_vec(&resp).unwrap_or_default();
+            let _ = write_half
+                .write_all(
+                    format!(
+                        "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        resp_bytes.len(),
+                        String::from_utf8_lossy(&resp_bytes)
+                    )
+                    .as_bytes(),
+                )
+                .await;
+            return Ok(());
+        }
+    };
+
+    // Notifications (no id) must not receive a response per JSON-RPC 2.0 spec.
+    if request.id.is_none() {
+        let _ = write_half
+            .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
+            .await;
+        return Ok(());
+    }
+
+    let result = handle_mcp_method(&app, &request.method, request.params.as_ref());
+    let response = JsonRpcResponse::success(
+        request.id.clone().unwrap_or(serde_json::Value::Null),
+        result,
+    );
+    let resp_bytes = response.to_json_bytes();
+
+    let _ = write_half
+        .write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                resp_bytes.len(),
+                String::from_utf8_lossy(&resp_bytes)
+            )
+            .as_bytes(),
+        )
+        .await;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Legacy SSE POST /messages handler
+// ---------------------------------------------------------------------------
+
 async fn handle_post_messages(
     full_path: String,
     store: SessionStore,
@@ -1433,6 +1525,15 @@ async fn handle_post_messages(
         return Ok(());
     }
 
+    // Notifications (no id) must not receive a response per JSON-RPC 2.0 spec.
+    // Return 202 Accepted with no body and no SSE push.
+    if request.id.is_none() {
+        let _ = write_half
+            .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
+            .await;
+        return Ok(());
+    }
+
     // Dispatch the JSON-RPC method
     let response = match request.method.as_str() {
         "initialize" | "tools/list" | "tools/call" | "resources/list" | "resources/read" => {
@@ -1448,20 +1549,16 @@ async fn handle_post_messages(
 
     let resp_bytes = response.to_json_bytes();
 
-    // Send response as HTTP
+    // Per the legacy SSE transport spec, POST /messages returns 202 Accepted
+    // and the actual JSON-RPC response travels via the SSE channel.
+    // We also acknowledge via HTTP for clients that read the body directly.
     let _ = write_half
         .write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                resp_bytes.len(),
-                String::from_utf8_lossy(&resp_bytes)
-            )
-            .as_bytes(),
+            b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n"
         )
         .await;
 
-    // Also send the response via the SSE channel for the client to receive
-    // (the spec says POST responses go via the SSE stream)
+    // Send the response via the SSE channel (the primary delivery path).
     {
         let sender = store.lock().unwrap().get(&session_id).cloned();
         if let Some(sender) = sender {
@@ -1484,6 +1581,8 @@ impl JsonRpcResponse {
 
 pub struct McpServer {
     shutdown_tx: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    stopped_rx: std::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+    running: Arc<AtomicBool>,
     port: u16,
 }
 
@@ -1492,8 +1591,19 @@ impl McpServer {
         self.port
     }
 
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+
     pub fn stop(&self) {
+        self.running.store(false, Ordering::SeqCst);
         let _ = self.shutdown_tx.lock().unwrap().take().map(|tx| tx.send(()));
+    }
+
+    /// Take the one-shot completion signal for the listener task. This is
+    /// consumed by the lifecycle commands before replacing a stopped server.
+    pub fn take_stopped_rx(&self) -> Option<tokio::sync::oneshot::Receiver<()>> {
+        self.stopped_rx.lock().unwrap().take()
     }
 }
 
@@ -1507,8 +1617,11 @@ pub async fn start_server(app: AppHandle) -> Result<McpServer, std::io::Error> {
     let session_store: SessionStore = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel::<()>();
+    let running = Arc::new(AtomicBool::new(true));
 
     let app_for_loop = app.clone();
+    let running_for_loop = Arc::clone(&running);
 
     tokio::spawn(async move {
         loop {
@@ -1551,10 +1664,14 @@ pub async fn start_server(app: AppHandle) -> Result<McpServer, std::io::Error> {
                 }
             }
         }
+        running_for_loop.store(false, Ordering::SeqCst);
+        let _ = stopped_tx.send(());
     });
 
     Ok(McpServer {
         shutdown_tx: std::sync::Mutex::new(Some(shutdown_tx)),
+        stopped_rx: std::sync::Mutex::new(Some(stopped_rx)),
+        running,
         port,
     })
 }
@@ -1711,6 +1828,26 @@ mod tests {
         }
         // Next request should be denied.
         assert!(!rl.allow());
+    }
+
+    #[test]
+    fn test_server_stop_marks_listener_stopped_and_exposes_completion_signal() {
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
+        let (_stopped_tx, stopped_rx) = tokio::sync::oneshot::channel();
+        let server = McpServer {
+            shutdown_tx: std::sync::Mutex::new(Some(shutdown_tx)),
+            stopped_rx: std::sync::Mutex::new(Some(stopped_rx)),
+            running: Arc::new(AtomicBool::new(true)),
+            port: 39741,
+        };
+
+        assert!(server.is_running());
+        server.stop();
+
+        assert!(!server.is_running());
+        assert!(shutdown_rx.try_recv().is_ok());
+        assert!(server.take_stopped_rx().is_some());
+        assert!(server.take_stopped_rx().is_none());
     }
 }
 

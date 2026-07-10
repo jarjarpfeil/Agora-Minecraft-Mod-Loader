@@ -110,7 +110,11 @@ pub fn merge_items(
                 name: mr.title.clone(),
                 icon_url: mr.icon_url.clone(),
                 description: Some(mr.description.clone()),
-                content_type: mr.project_type.clone(),
+                // Normalize Modrinth project types to app-internal content_type values.
+                content_type: match mr.project_type.as_str() {
+                    "modpack" => "pack".to_string(),
+                    other => other.to_string(),
+                },
             });
         }
     }

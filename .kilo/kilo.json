@@ -32,7 +32,8 @@
       "type": "remote",
       "url": "http://127.0.0.1:39741/sse",
       "enabled": true,
-      "timeout": 10000
+      "timeout": 10000,
+      "headers":{"Authorization":"Bearer 242fd8fd2e18210b292654b4db0b535dbbe7218084f199d8fde2dfa362f81e62"}
     }
   },
   "instructions": ["./AGENTS.md"]

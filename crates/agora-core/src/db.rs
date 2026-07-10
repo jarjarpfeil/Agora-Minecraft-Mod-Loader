@@ -50,14 +50,16 @@ pub fn init_local_state_db(db_path: &std::path::PathBuf) -> anyhow::Result<()> {
     }
 
     // Feature toggles are stored as genuine JSON booleans so that readers
-    // comparing with  == true /  == &Value::Bool(true) match correctly.
+    // comparing with `true` / `&Value::Bool(true)` match correctly. They are
+    // integrations rather than prerequisites, so a new player must opt in
+    // during onboarding before any of them can be used or auto-started.
     for key in [
         "modrinth_enabled",
         "ai_chat_enabled",
         "ai_mcp_enabled",
     ] {
         if get_setting(&conn, key).ok().flatten().is_none() {
-            set_setting(&conn, key, &serde_json::Value::Bool(true))?;
+            set_setting(&conn, key, &serde_json::Value::Bool(false))?;
         }
     }
 
@@ -738,6 +740,14 @@ mod tests {
         set_setting(&conn, "key", &serde_json::json!("value")).unwrap();
         let val = get_setting(&conn, "key").unwrap();
         assert_eq!(val, Some(serde_json::json!("value")));
+    }
+
+    #[test]
+    fn test_optional_integrations_default_to_disabled() {
+        let (conn, _path) = test_db();
+        for key in ["modrinth_enabled", "ai_chat_enabled", "ai_mcp_enabled"] {
+            assert_eq!(get_setting(&conn, key).unwrap(), Some(serde_json::json!(false)));
+        }
     }
 
     #[test]

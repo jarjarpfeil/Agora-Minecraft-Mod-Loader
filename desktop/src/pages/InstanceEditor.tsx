@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAdvancedMode } from '../components/AdvancedModeContext';
 import { DependencyPrompt } from '../components/DependencyPrompt';
 import { ConsoleView } from '../components/ConsoleView';
@@ -108,6 +108,30 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
   const [packProgress, setPackProgress] = useState<
     { modId: string; status: 'pending' | 'installing' | 'done' | 'failed'; error?: string }[] | null
   >(null);
+  const [availablePacks, setAvailablePacks] = useState<RegistryItem[]>([]);
+  const [packDropdownOpen, setPackDropdownOpen] = useState(false);
+  const packDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!packInstallOpen) return;
+    let cancelled = false;
+    browseItems('pack').then((packs) => {
+      if (!cancelled) setAvailablePacks(packs);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [packInstallOpen]);
+
+  // Close pack dropdown on outside click
+  useEffect(() => {
+    if (!packDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (packDropdownRef.current && !packDropdownRef.current.contains(e.target as Node)) {
+        setPackDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [packDropdownOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -698,17 +722,48 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
           </div>
 
           {!packProgress ? (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={packIdInput}
-                onChange={(e) => setPackIdInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleInstallPackMods();
-                }}
-                placeholder="e.g. optimized-survival"
-                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm"
-              />
+            <div className="flex gap-2 relative" ref={packDropdownRef}>
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={packIdInput}
+                  onChange={(e) => {
+                    setPackIdInput(e.target.value);
+                    setPackDropdownOpen(true);
+                  }}
+                  onFocus={() => setPackDropdownOpen(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleInstallPackMods();
+                    if (e.key === 'Escape') setPackDropdownOpen(false);
+                  }}
+                  placeholder="Search packs…"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                />
+                {packDropdownOpen && availablePacks.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-card shadow-lg max-h-48 overflow-y-auto">
+                    {availablePacks
+                      .filter((p) =>
+                        !packIdInput ||
+                        p.id.toLowerCase().includes(packIdInput.toLowerCase()) ||
+                        p.name.toLowerCase().includes(packIdInput.toLowerCase())
+                      )
+                      .slice(0, 50)
+                      .map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            setPackIdInput(p.id);
+                            setPackDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent border-b border-border last:border-b-0"
+                        >
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-muted-foreground ml-2 text-xs">({p.id})</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleInstallPackMods}
                 disabled={!packIdInput.trim()}

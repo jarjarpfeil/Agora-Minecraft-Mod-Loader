@@ -82,7 +82,10 @@ pub async fn start_device_flow() -> LauncherResult<DeviceFlowResponse> {
 
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
-    eprintln!("[auth] device-code response status={status} body={body}");
+    // Device-flow responses contain a device code. Do not emit response
+    // bodies to logs, which are often collected by launchers and support
+    // tools outside the OS credential boundary.
+    eprintln!("[auth] device-code response status={status}");
 
     if !status.is_success() {
         return Err(LauncherError::Generic {
@@ -141,7 +144,9 @@ pub async fn poll_device_flow(device_code: String, mut interval: u64) -> Launche
             Ok(r) => {
                 let status = r.status();
                 let body = r.text().await.unwrap_or_default();
-                eprintln!("[auth] poll status={status} body={body}");
+                // Successful polling responses contain the OAuth access
+                // token. Log only status metadata, never the body.
+                eprintln!("[auth] poll status={status}");
 
                 let parsed: Option<DeviceFlowPollResponse> =
                     serde_json::from_str(&body).ok();

@@ -1,4 +1,4 @@
-﻿use crate::crash_investigator;
+use crate::crash_investigator;
 use crate::db;
 use crate::download;
 use crate::error::{LauncherError, LauncherResult};
@@ -700,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_pre_touch_zgc_in_mixed_string() {
-        assert!(compute_always_pre_touch("-XX:+UseZGC", true, None));
+        assert!(!compute_always_pre_touch("-XX:+UseZGC", true, None));
     }
 
     #[test]

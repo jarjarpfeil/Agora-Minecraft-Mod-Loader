@@ -75,11 +75,32 @@ fn is_mod_download_host(host: &str) -> bool {
     MOD_DOWNLOAD_ALLOWLIST.contains(&host)
 }
 
+/// Parse and validate a mod-download URL before opening a connection.
+///
+/// Redirect validation alone is insufficient: without this gate, a caller can
+/// make the first request to an arbitrary local or private endpoint and only
+/// have *subsequent* redirect targets checked. Keep the scheme, host, and port
+/// constrained to the same HTTPS sources used for normal mod downloads.
+fn validate_mod_download_url(raw_url: &str) -> LauncherResult<reqwest::Url> {
+    let url = reqwest::Url::parse(raw_url).map_err(|_| LauncherError::UntrustedSource)?;
+    let host = url.host_str().ok_or(LauncherError::UntrustedSource)?;
+
+    if url.scheme() != "https"
+        || url.port_or_known_default() != Some(443)
+        || !is_mod_download_host(host)
+    {
+        return Err(LauncherError::UntrustedSource);
+    }
+
+    Ok(url)
+}
+
 /// Download bytes from a mod-download URL with redirect-safe policy.
 ///
 /// Redirects are only followed when the target host is on the mod-download
 /// allowlist, preventing SSRF via compromised/malicious URLs.
 pub(crate) async fn download_mod_bytes(url: &str) -> LauncherResult<Vec<u8>> {
+    let url = validate_mod_download_url(url)?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if let Some(host) = attempt.url().host_str() {
@@ -97,7 +118,7 @@ pub(crate) async fn download_mod_bytes(url: &str) -> LauncherResult<Vec<u8>> {
         })?;
 
     let resp = client
-        .get(url)
+        .get(url.clone())
         .send()
         .await
         .map_err(|_| LauncherError::NetworkOffline)?;
@@ -1507,6 +1528,24 @@ mod tests {
     #[test]
     fn test_disallowed_host_empty() {
         assert!(!is_mod_download_host(""));
+    }
+
+    #[test]
+    fn test_download_url_requires_trusted_https_origin() {
+        assert!(validate_mod_download_url("https://cdn.modrinth.com/data/example.mrpack").is_ok());
+        assert!(validate_mod_download_url("https://github.com/example/mod/releases/download/v1/mod.jar").is_ok());
+        assert!(matches!(
+            validate_mod_download_url("http://cdn.modrinth.com/data/example.mrpack"),
+            Err(LauncherError::UntrustedSource)
+        ));
+        assert!(matches!(
+            validate_mod_download_url("https://127.0.0.1:39741/private"),
+            Err(LauncherError::UntrustedSource)
+        ));
+        assert!(matches!(
+            validate_mod_download_url("https://cdn.modrinth.com:8443/data/example.mrpack"),
+            Err(LauncherError::UntrustedSource)
+        ));
     }
 
     #[test]

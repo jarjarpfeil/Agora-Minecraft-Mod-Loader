@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { CONTENT_TYPES, contentTypeLabel } from '@/lib/db';
-import { GITHUB_REPO_URL } from '@/lib/site';
+import { GITHUB_REPO_URL, GITHUB_RELEASES_URL } from '@/lib/site';
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -45,8 +45,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
               GitHub
             </a>
             <a
-              href="#"
+              href={GITHUB_RELEASES_URL}
               className="hover:text-indigo-600 dark:hover:text-indigo-400"
+              target="_blank"
+              rel="noopener noreferrer"
             >
               Download Desktop
             </a>

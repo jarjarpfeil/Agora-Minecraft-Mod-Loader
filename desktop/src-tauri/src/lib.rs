@@ -149,6 +149,7 @@ pub fn run() {
             commands::export_server_environment,
             commands::kill_process,
             commands::install_pack,
+            commands::import_modrinth_pack_by_url,
             commands::get_curated_annotation,
             commands::get_windows_accent_color
         ])
@@ -179,16 +180,29 @@ pub fn run() {
                     }).await;
                 });
                 // Start MCP server if enabled.
-                if let Ok(conn) = db::local_state_connection(&handle) {
-                    if let Ok(Some(val)) = db::get_setting(&conn, "ai_mcp_enabled") {
-                        if val == serde_json::json!("true") {
+                match db::local_state_connection(&handle) {
+                    Ok(conn) => {
+                        if matches!(
+                            db::get_setting(&conn, "ai_mcp_enabled"),
+                            Ok(Some(serde_json::Value::Bool(true)))
+                        ) {
                             let mcp_app = handle.clone();
                             tauri::async_runtime::spawn(async move {
-                                if let Ok(server) = crate::mcp::start_server(mcp_app.clone()).await {
-                                    mcp_app.manage(server);
+                                match crate::mcp::start_server(mcp_app.clone()).await {
+                                    Ok(server) => {
+                                        if !mcp_app.manage(server) {
+                                            eprintln!("MCP server was already started during application setup.");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to start MCP server: {}", e);
+                                    }
                                 }
                             });
                         }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to open local state for MCP startup: {}", e);
                     }
                 }
             });

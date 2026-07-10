@@ -171,7 +171,7 @@ pub struct ModrinthSearchParams {
     pub offset: Option<u32>,
     pub limit: Option<u32>,
     /// Modrinth project type filter: "mod", "shader", "resourcepack", "modpack", "datapack".
-    /// Defaults to "mod" when None (preserving existing behavior).
+    /// When None the facet is omitted, returning results from all project types.
     pub project_type: Option<String>,
 }
 
@@ -315,7 +315,7 @@ pub struct RawModrinthVersionCandidate {
 ///   - multiple categories → AND (the mod must have every category)
 ///   - multiple loaders    → OR  (mod supports any selected loader)
 ///   - multiple game versions → OR
-///   - `project_type:mod` is always applied (this tab only surfaces mods).
+///   - If `project_type` is set it is applied as a facet; when `None` the facet is omitted (all project types).
 ///
 /// Returns a [`ModrinthSearchPage`] including `total_hits` so the frontend
 /// can drive infinite scroll / "load more" paging.
@@ -388,8 +388,10 @@ pub async fn search_modrinth_http(
     }
 
     // Restrict by project type (mod, shader, resourcepack, modpack, datapack).
-    let ptype = params.project_type.as_deref().unwrap_or("mod");
-    facet_groups.push(vec![format!("project_type:{}", ptype)]);
+    // When None, omit the facet so Modrinth returns all project types.
+    if let Some(pt) = &params.project_type {
+        facet_groups.push(vec![format!("project_type:{}", pt)]);
+    }
 
     let facets_json = serde_json::to_string(&facet_groups).unwrap_or_else(|_| "[]".to_string());
 

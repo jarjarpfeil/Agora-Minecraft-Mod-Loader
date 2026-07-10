@@ -33,6 +33,11 @@ pub struct McpStatus {
 /// Global version list cache for paginated mod version resolution.
 static VERSION_CACHE: LazyLock<SharedVersionCache> = LazyLock::new(version_cache::new_cache);
 
+/// Serializes MCP start/stop requests so a stopped listener is fully released
+/// before another command attempts to bind the fixed local port.
+static MCP_LIFECYCLE: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
+
 #[tauri::command]
 pub async fn greet(name: String) -> String {
     format!("Hello, {}!", name)
@@ -1699,20 +1704,15 @@ pub async fn start_mcp_server(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<McpStatus> {
-    // If already running, return existing status.
-    if let Some(server) = app.try_state::<mcp::McpServer>() {
-        return Ok(McpStatus {
-            running: true,
-            url: format!("http://127.0.0.1:{}", server.port()),
-        });
-    }
+    let _lifecycle_guard = MCP_LIFECYCLE.lock().await;
 
-    // Check if the feature is enabled.
+    // The server is an opt-in integration; reject direct command invocations
+    // when the player has not enabled it in Settings.
     let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
-    let enabled = match db::get_setting(&conn, "ai_mcp_enabled") {
-        Ok(Some(val)) => val == serde_json::json!("true"),
-        _ => false,
-    };
+    let enabled = matches!(
+        db::get_setting(&conn, "ai_mcp_enabled"),
+        Ok(Some(serde_json::Value::Bool(true)))
+    );
     if !enabled {
         return Ok(McpStatus {
             running: false,
@@ -1720,21 +1720,55 @@ pub async fn start_mcp_server(
         });
     }
 
-    // Start the server.
-    let app_for_start = app.clone();
-    match mcp::start_server(app_for_start).await {
-        Ok(server) => {
-            app.manage(server);
-            Ok(McpStatus {
-                running: true,
-                url: "http://127.0.0.1:39741".to_string(),
-            })
+    // If a stopped state is still registered, wait for its listener to exit
+    // and remove it before registering the replacement state.
+    let stale_rx = match app.try_state::<mcp::McpServer>() {
+        Some(server) => {
+            if server.is_running() {
+                return Ok(McpStatus {
+                    running: true,
+                    url: format!("http://127.0.0.1:{}", server.port()),
+                });
+            }
+            server.take_stopped_rx()
         }
-        Err(e) => Err(LauncherError::Generic {
-            code: "ERR_MCP_START_FAILED".to_string(),
-            message: format!("Failed to start MCP server: {}", e),
-        }),
+        None => None,
+    };
+    if let Some(rx) = stale_rx {
+        let _ = rx.await;
     }
+    let _ = app.unmanage::<mcp::McpServer>();
+
+    // Retry with backoff in case the old listener hasn't released the port yet.
+    let mut last_err = String::new();
+    for attempt in 0..5 {
+        match mcp::start_server(app.clone()).await {
+            Ok(server) => {
+                if app.manage(server) {
+                    return Ok(McpStatus {
+                        running: true,
+                        url: "http://127.0.0.1:39741".to_string(),
+                    });
+                }
+                return Err(LauncherError::Generic {
+                    code: "ERR_MCP_START_FAILED".to_string(),
+                    message: "MCP server state was already initialized.".to_string(),
+                });
+            }
+            Err(e) => {
+                last_err = e.to_string();
+                if attempt < 4 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50 * (attempt + 1))).await;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    Err(LauncherError::Generic {
+        code: "ERR_MCP_START_FAILED".to_string(),
+        message: format!("Failed to start MCP server: {}", last_err),
+    })
 }
 
 /// Stop the MCP server if running.
@@ -1743,8 +1777,18 @@ pub async fn stop_mcp_server(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<()> {
-    if let Some(server) = app.try_state::<mcp::McpServer>() {
+    let _lifecycle_guard = MCP_LIFECYCLE.lock().await;
+    let (had_server, stopped_rx) = if let Some(server) = app.try_state::<mcp::McpServer>() {
         server.stop();
+        (true, server.take_stopped_rx())
+    } else {
+        (false, None)
+    };
+    if let Some(rx) = stopped_rx {
+        let _ = rx.await;
+    }
+    if had_server {
+        let _ = app.unmanage::<mcp::McpServer>();
     }
     Ok(())
 }
@@ -1756,16 +1800,17 @@ pub async fn get_mcp_status(
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<McpStatus> {
     if let Some(server) = app.try_state::<mcp::McpServer>() {
-        Ok(McpStatus {
-            running: true,
-            url: format!("http://127.0.0.1:{}", server.port()),
-        })
-    } else {
-        Ok(McpStatus {
-            running: false,
-            url: String::new(),
-        })
+        if server.is_running() {
+            return Ok(McpStatus {
+                running: true,
+                url: format!("http://127.0.0.1:{}", server.port()),
+            });
+        }
     }
+    Ok(McpStatus {
+        running: false,
+        url: String::new(),
+    })
 }
 
 /// Return the baked-in MCP skill guide content.
@@ -2213,7 +2258,7 @@ pub async fn import_instance(app: tauri::AppHandle, _state: tauri::State<'_, Lau
         agora_core::import::import_prism_zip(&source, &instances_dir, symlink_saves)
     } else {
         agora_core::import::import_directory(&source, &instances_dir, symlink_saves)
-    }.map_err(|e| LauncherError::Generic { code: "ERR_IMPORT".into(), message: e.to_string() })
+    }
 }
 
 #[tauri::command]
@@ -2274,6 +2319,41 @@ pub async fn install_pack(
         pack_install::install_simple_pack(&client, &manifest, &instance_dir).await
     }
     .map_err(|e| LauncherError::Generic { code: "ERR_PACK".into(), message: e })
+}
+
+/// Download a Modrinth .mrpack from a URL and import it as a new locked instance.
+/// Returns the new instance ID.
+#[tauri::command]
+pub async fn import_modrinth_pack_by_url(
+    app: tauri::AppHandle,
+    _state: tauri::State<'_, LauncherState>,
+    download_url: String,
+) -> LauncherResult<String> {
+    let bytes = mod_install::download_mod_bytes(&download_url).await?;
+    let ext = if download_url.ends_with(".mrpack") { "mrpack" } else { "zip" };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let temp_path = std::env::temp_dir().join(format!("agora-pack-{}.{}", ts, ext));
+    std::fs::write(&temp_path, &bytes).map_err(|e| LauncherError::Generic {
+        code: "ERR_FILE_WRITE".to_string(),
+        message: format!("Failed to write temp pack file: {e}"),
+    })?;
+    let instance_id = mod_install::import_instance_pack(&app, &temp_path.to_str().unwrap()).await?;
+    let _ = std::fs::remove_file(&temp_path);
+    // Lock the instance so the pack stays intact
+    instances::lock_instance(&app, &instance_id).await?;
+    // Lock the manifest too so check_not_locked and other guards see it as locked
+    if let Ok(mut manifest) = load_manifest(&app, &instance_id) {
+        manifest.is_locked = true;
+        let manifest_path = paths::instance_manifest_path(&app, &instance_id)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let text = serde_json::to_string_pretty(&manifest)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        std::fs::write(&manifest_path, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    }
+    Ok(instance_id)
 }
 
 /// Read the Windows personalization accent color. Returns HSL string or null.
@@ -2342,6 +2422,10 @@ pub async fn browse_search(
     };
 
     let (modrinth_results, total_hits) = if modrinth_enabled {
+        let modrinth_pt = content_type.as_ref().map(|ct| match ct.as_str() {
+            "pack" => "modpack".to_string(),
+            other => other.to_string(),
+        });
         let params = ModrinthSearchParams {
             query: query.clone(),
             categories: category.clone().map(|c| vec![c]),
@@ -2350,7 +2434,7 @@ pub async fn browse_search(
             sort: Some(to_modrinth_sort(sort.as_deref().unwrap_or("relevance"))),
             limit: Some(browse_cache::PAGE_SIZE as u32),
             offset: Some(0),
-            project_type: content_type.clone(),
+            project_type: modrinth_pt,
         };
         // Connection only needed for sync DB check — drop before async HTTP
         match agora_core::modrinth::search_modrinth_http(&params).await {
@@ -2408,6 +2492,10 @@ pub async fn browse_load_more(
     let filters = cache.filters.clone();
     drop(cache);
 
+    let modrinth_pt = filters.content_type.as_ref().map(|ct| match ct.as_str() {
+        "pack" => "modpack".to_string(),
+        other => other.to_string(),
+    });
     let params = ModrinthSearchParams {
         query: Some(filters.query.clone()),
         categories: filters.category.clone().map(|c| vec![c]),
@@ -2416,7 +2504,7 @@ pub async fn browse_load_more(
         sort: Some(to_modrinth_sort(&filters.sort)),
         limit: Some(browse_cache::PAGE_SIZE as u32),
         offset: Some(offset as u32),
-        project_type: filters.content_type.clone(),
+        project_type: modrinth_pt,
     };
 
     let page = agora_core::modrinth::search_modrinth_http(&params).await

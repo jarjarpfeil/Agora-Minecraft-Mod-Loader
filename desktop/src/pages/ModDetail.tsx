@@ -20,6 +20,8 @@ import {
   getAuthStatus,
   getGithubProfile,
   getInstallPlan,
+  listPackMods,
+  importModrinthPackByUrl,
   type RegistryItem,
   type InstanceRow,
   type ModVersionCandidate,
@@ -27,6 +29,7 @@ import {
   type ModReview,
   type FlagRateLimit,
   type InstallPlan,
+  type PackModRow,
   fetchModrinthProject,
   isModrinthEnabled,
   type RawModrinthVersionCandidate,
@@ -1221,7 +1224,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
         {/* Pack-create dialog */}
         {showPackCreate && (
           <PackCreateDialog
-            packName={item.name}
+            item={item}
             onCancel={() => setShowPackCreate(false)}
             onCreated={(newInstanceId) => {
               setShowPackCreate(false);
@@ -1740,15 +1743,26 @@ function BackButton({ onBack }: { onBack: () => void }) {
   );
 }
 
+type PackInstallModProgress = {
+  modId: string;
+  status: 'pending' | 'installing' | 'done' | 'failed';
+  error?: string;
+};
+
+const isModrinthPack = (item: RegistryItem): boolean =>
+  item.download_strategy === 'modrinth_id' || !!item.modrinth_id;
+
 function PackCreateDialog({
-  packName,
+  item,
   onCancel,
   onCreated,
 }: {
-  packName: string;
+  item: RegistryItem;
   onCancel: () => void;
   onCreated: (instanceId: string) => void;
 }) {
+  const isModrinth = isModrinthPack(item);
+  const packName = item.name;
   const [name, setName] = useState(packName);
   const [mcVersion, setMcVersion] = useState('');
   const [availableLoaders, setAvailableLoaders] = useState<string[]>([]);
@@ -1758,7 +1772,46 @@ function PackCreateDialog({
   const [loaderVersion, setLoaderVersion] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [installPhase, setInstallPhase] = useState<'form' | 'installing' | 'done'>('form');
+  const [modProgress, setModProgress] = useState<PackInstallModProgress[]>([]);
+  const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
 
+  // Modrinth pack version selection
+  const [modrinthVersions, setModrinthVersions] = useState<RawModrinthVersionCandidate[]>([]);
+  const [selectedVersionIdx, setSelectedVersionIdx] = useState(-1);
+
+  // Fetch Modrinth versions on mount
+  useEffect(() => {
+    if (!isModrinth) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const projectId = item.modrinth_id || item.id;
+        const versions = await listRawModrinthVersions(null, projectId, 'modpack');
+        if (cancelled) return;
+        setModrinthVersions(versions);
+        if (versions.length > 0) setSelectedVersionIdx(0);
+      } catch (e) {
+        if (!cancelled) setError(formatError(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isModrinth, item.modrinth_id, item.id]);
+
+  // When Modrinth version changes, update MC version + loader presets
+  useEffect(() => {
+    if (!isModrinth || selectedVersionIdx < 0) return;
+    const ver = modrinthVersions[selectedVersionIdx];
+    if (!ver) return;
+    if (ver.mc_versions.length > 0) setMcVersion(ver.mc_versions[0]);
+    // Pick first known loader from version data
+    const knownLoader = ver.loaders.find((l) =>
+      ['fabric', 'quilt', 'forge', 'neoforge'].includes(l)
+    );
+    if (knownLoader) setLoader(knownLoader);
+  }, [isModrinth, selectedVersionIdx, modrinthVersions]);
+
+  // Loader version fetcher
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1774,7 +1827,6 @@ function PackCreateDialog({
     return () => { cancelled = true; };
   }, [loader, mcVersion]);
 
-  // Fetch available manifest loaders and MC versions once on mount
   useEffect(() => {
     let cancelled = false;
     Promise.all([listManifestLoaders(), listManifestMcVersions()]).then(
@@ -1790,7 +1842,6 @@ function PackCreateDialog({
     return () => { cancelled = true; };
   }, []);
 
-  // When loader changes, re-fetch MC versions filtered by that loader.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1798,129 +1849,327 @@ function PackCreateDialog({
       try {
         const filtered = await listManifestMcVersions(loader);
         if (cancelled) return;
-        // Fallback: if filtered results are empty, keep existing list
         setAvailableMcVersions(filtered.length > 0 ? filtered : availableMcVersions);
         if (filtered.length > 0 && !filtered.includes(mcVersion)) {
           setMcVersion(filtered[0]);
         }
       } catch {
-        // Fetch failure — keep existing list (graceful)
       }
     })();
     return () => { cancelled = true; };
   }, [loader]);
 
+  const submitCurated = async (instanceId: string) => {
+    const mods: PackModRow[] = await listPackMods(item.id);
+    if (mods.length === 0) {
+      throw new Error('No mods found for this pack in the registry.');
+    }
+    setModProgress(
+      mods.map((m) => ({ modId: m.mod_id, status: 'pending' as const }))
+    );
+
+    for (let i = 0; i < mods.length; i++) {
+      const mod = mods[i];
+      setModProgress((prev) =>
+        prev?.map((p, idx) =>
+          idx === i ? { ...p, status: 'installing' as const } : p
+        ) ?? prev
+      );
+
+      try {
+        const candidates = await listModVersions(instanceId, mod.mod_id);
+        const items = candidates.items;
+        const candidate =
+          items.find((c) => c.version_compat === 'compatible')
+          ?? items.find((c) => c.version_compat === 'major_match')
+          ?? items[0];
+        if (!candidate) {
+          setModProgress((prev) =>
+            prev?.map((p, idx) =>
+              idx === i
+                ? { ...p, status: 'failed' as const, error: 'No compatible versions found' }
+                : p
+            ) ?? prev
+          );
+          continue;
+        }
+        await installModVersion(instanceId, mod.mod_id, candidate);
+        setModProgress((prev) =>
+          prev?.map((p, idx) =>
+            idx === i ? { ...p, status: 'done' as const } : p
+          ) ?? prev
+        );
+      } catch (e) {
+        setModProgress((prev) =>
+          prev?.map((p, idx) =>
+            idx === i
+              ? { ...p, status: 'failed' as const, error: formatError(e) }
+              : p
+          ) ?? prev
+        );
+      }
+    }
+  };
+
+  const submitModrinth = async () => {
+    if (selectedVersionIdx < 0) {
+      throw new Error('Select a pack version first.');
+    }
+    const ver = modrinthVersions[selectedVersionIdx];
+    if (!ver.download_url) {
+      throw new Error('Selected version has no downloadable file.');
+    }
+    const newId = await importModrinthPackByUrl(ver.download_url);
+    setCreatedInstanceId(newId);
+  };
+
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const instanceId = name
-        .toLowerCase()
-        .replace(/[^a-z0-9-_]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-      if (!instanceId) throw new Error('Enter a valid instance name.');
-      if (!loaderVersion) throw new Error('No pinned loader version selected.');
+      setInstallPhase('installing');
 
-      const request: CreateInstanceRequest = {
-        name,
-        instance_id: instanceId,
-        minecraft_version: mcVersion,
-        loader,
-        loader_version: loaderVersion,
-        jvm_memory_mb: 4096,
-      };
-      const result = await createInstance(request);
-      onCreated(result.instance_id);
+      if (isModrinth) {
+        await submitModrinth();
+      } else {
+        const instanceId = name
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        if (!instanceId) throw new Error('Enter a valid instance name.');
+        if (!loaderVersion) throw new Error('No pinned loader version selected.');
+
+        const request: CreateInstanceRequest = {
+          name,
+          instance_id: instanceId,
+          minecraft_version: mcVersion,
+          loader,
+          loader_version: loaderVersion,
+          jvm_memory_mb: 4096,
+        };
+        const result = await createInstance(request);
+        const createdId = result.instance_id;
+        setCreatedInstanceId(createdId);
+        await submitCurated(createdId);
+      }
+
+      setInstallPhase('done');
     } catch (e) {
       setError(formatError(e));
+    } finally {
       setBusy(false);
     }
   };
 
+  const handleDone = () => {
+    if (createdInstanceId) {
+      onCreated(createdInstanceId);
+    }
+  };
+
+  const selectedModrinthVer = selectedVersionIdx >= 0 ? modrinthVersions[selectedVersionIdx] : null;
+
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl">
-        <h3 className="text-lg font-bold mb-4">Create Instance from Pack: {packName}</h3>
+        {installPhase === 'form' && (
+          <>
+            <h3 className="text-lg font-bold mb-4">
+              {isModrinth ? 'Install Modrinth Pack' : 'Create Instance from Pack'}: {packName}
+            </h3>
+            <div className="space-y-4">
+              {isModrinth && modrinthVersions.length > 0 && (
+                <label className="block">
+                  <span className="text-sm font-medium">Pack Version</span>
+                  <select
+                    value={selectedVersionIdx}
+                    onChange={(e) => setSelectedVersionIdx(Number(e.target.value))}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    {modrinthVersions.map((v, idx) => (
+                      <option key={v.version_id} value={idx}>
+                        {v.name || v.version} {v.mc_versions.length > 0 ? `(MC ${v.mc_versions.join(', ')})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedModrinthVer && selectedModrinthVer.loaders.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Loader: {selectedModrinthVer.loaders.join(', ')}
+                    </p>
+                  )}
+                </label>
+              )}
 
-        <div className="space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium">Instance name</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-            />
-          </label>
+              {!isModrinth && (
+                <>
+                  <label className="block">
+                    <span className="text-sm font-medium">Instance name</span>
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    />
+                  </label>
 
-          <div className="grid grid-cols-2 gap-4">
-            <label className="block">
-              <span className="text-sm font-medium">Minecraft version</span>
-              <select
-                value={mcVersion}
-                onChange={(e) => setMcVersion(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className="block">
+                      <span className="text-sm font-medium">Minecraft version</span>
+                      <select
+                        value={mcVersion}
+                        onChange={(e) => setMcVersion(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      >
+                        {availableMcVersions.map((v) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="text-sm font-medium">Loader</span>
+                      <select
+                        value={loader}
+                        onChange={(e) => setLoader(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      >
+                        {availableLoaders.map((l) => (
+                          <option key={l} value={l}>{l}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-sm font-medium">Loader version</span>
+                    <select
+                      value={loaderVersion}
+                      onChange={(e) => setLoaderVersion(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    >
+                      {loaderVersions.length === 0 && <option value="">No pinned versions</option>}
+                      {loaderVersions.map((v) => (
+                        <option key={v.loader_version} value={v.loader_version}>
+                          {v.loader_version} ({v.file_type})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+            </div>
+
+            {error && (
+              <p className="mt-4 text-sm text-destructive">{error}</p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={onCancel}
+                disabled={busy}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
               >
-                {availableMcVersions.map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="text-sm font-medium">Loader</span>
-              <select
-                value={loader}
-                onChange={(e) => setLoader(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                Cancel
+              </button>
+              <button
+                onClick={submit}
+                disabled={busy}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
-                {availableLoaders.map((l) => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <label className="block">
-            <span className="text-sm font-medium">Loader version</span>
-            <select
-              value={loaderVersion}
-              onChange={(e) => setLoaderVersion(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-            >
-              {loaderVersions.length === 0 && <option value="">No pinned versions</option>}
-              {loaderVersions.map((v) => (
-                <option key={v.loader_version} value={v.loader_version}>
-                  {v.loader_version} ({v.file_type})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <p className="text-xs text-muted-foreground">
-            The pack's mods will not auto-install. Open the instance editor to install them individually.
-          </p>
-        </div>
-
-        {error && (
-          <p className="mt-4 text-sm text-destructive">{error}</p>
+                {busy ? 'Installing…' : isModrinth ? 'Install' : 'Create'}
+              </button>
+            </div>
+          </>
         )}
 
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            disabled={busy}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={busy}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {busy ? 'Creating…' : 'Create'}
-          </button>
-        </div>
+        {installPhase === 'installing' && !error && (
+          <div className="py-8 text-center">
+            <p className="text-lg font-medium">
+              {isModrinth ? 'Downloading and importing pack…' : 'Installing pack mods…'}
+            </p>
+            {modProgress.length > 0 && (
+              <div className="mt-4 space-y-1 max-h-64 overflow-y-auto text-left">
+                {modProgress.map((p, idx) => {
+                  const icon =
+                    p.status === 'done' ? '✓'
+                    : p.status === 'failed' ? '✗'
+                    : p.status === 'installing' ? '⏳'
+                    : '○';
+                  const statusText =
+                    p.status === 'done' ? 'installed'
+                    : p.status === 'failed' ? p.error ?? 'failed'
+                    : p.status === 'installing' ? 'installing…'
+                    : 'pending';
+                  const lineColor =
+                    p.status === 'done' ? 'text-green-600 dark:text-green-400'
+                    : p.status === 'failed' ? 'text-destructive'
+                    : p.status === 'installing' ? 'text-yellow-600 dark:text-yellow-400'
+                    : 'text-muted-foreground';
+                  return (
+                    <div key={idx} className={`text-sm ${lineColor}`}>
+                      <span className="inline-block w-5 text-center">{icon}</span>{' '}
+                      <span className="font-medium">{p.modId}</span> — {statusText}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {installPhase === 'installing' && error && (
+          <div className="py-8 text-center">
+            <p className="text-lg font-medium text-destructive">Installation Failed</p>
+            <p className="text-sm text-muted-foreground mt-2">{error}</p>
+            <button
+              onClick={() => setInstallPhase('form')}
+              className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Back
+            </button>
+          </div>
+        )}
+
+        {installPhase === 'done' && (
+          <>
+            <h3 className="text-lg font-bold mb-4">Installation Complete: {packName}</h3>
+            {modProgress.length > 0 ? (
+              (() => {
+                const done = modProgress.filter((p) => p.status === 'done').length;
+                const failed = modProgress.filter((p) => p.status === 'failed');
+                if (failed.length === 0) {
+                  return <p className="text-sm text-green-600 dark:text-green-400">Installed {done} mod{done !== 1 ? 's' : ''} successfully.</p>;
+                }
+                return (
+                  <>
+                    <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                      Installed {done} of {modProgress.length} mods. {failed.length} failed:
+                    </p>
+                    <ul className="mt-1 text-xs text-destructive space-y-0.5">
+                      {failed.map((f, idx) => (
+                        <li key={idx}>• {f.modId}: {f.error}</li>
+                      ))}
+                    </ul>
+                  </>
+                );
+              })()
+            ) : (
+              <p className="text-sm text-green-600 dark:text-green-400">Pack installed successfully.</p>
+            )}
+
+            {error && (
+              <p className="mt-4 text-sm text-destructive">{error}</p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={handleDone}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Open Instance Editor
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

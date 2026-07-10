@@ -17,3 +17,4 @@ __pycache__
 local_state.db
 tokens.enc
 .cache
+.pnpm-store
