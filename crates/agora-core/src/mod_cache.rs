@@ -56,7 +56,14 @@ impl ModCache {
             size_bytes: data.len() as u64,
             cached_at: chrono::Utc::now().to_rfc3339(),
         };
-        let meta_path = cache_path.with_extension("json");
+        // Metadata belongs to the content-addressed hash directory, alongside
+        // `file.jar`. `list_cached` reads this canonical filename; the old
+        // `file.json` location made newly cached jars invisible to cache
+        // management and size accounting.
+        let meta_path = cache_path
+            .parent()
+            .ok_or_else(|| "Invalid cache path".to_string())?
+            .join("metadata.json");
         fs::write(
             &meta_path,
             serde_json::to_string_pretty(&metadata).unwrap(),
@@ -121,7 +128,15 @@ impl ModCache {
                     continue;
                 }
 
-                let meta_path = hash_entry.path().join("metadata.json");
+                let metadata_path = hash_entry.path().join("metadata.json");
+                // Keep existing player caches discoverable after correcting
+                // the old writer, which placed metadata beside file.jar as
+                // file.json.
+                let meta_path = if metadata_path.exists() {
+                    metadata_path
+                } else {
+                    hash_entry.path().join("file.json")
+                };
                 if meta_path.exists() {
                     let content = fs::read_to_string(&meta_path)
                         .map_err(|e| format!("failed to read metadata: {}", e))?;

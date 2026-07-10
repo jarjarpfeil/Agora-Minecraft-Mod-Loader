@@ -30,13 +30,27 @@ pub struct McpStatus {
     pub url: String,
 }
 
+/// Safe account metadata that may cross the Tauri command boundary. OAuth and
+/// Minecraft bearer tokens remain backend-only in `MsaCredentials`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MsaAccountStatus {
+    pub username: String,
+    pub uuid: String,
+    pub expires: String,
+}
+
+impl From<&agora_core::msa::MsaCredentials> for MsaAccountStatus {
+    fn from(credentials: &agora_core::msa::MsaCredentials) -> Self {
+        Self {
+            username: credentials.username.clone(),
+            uuid: credentials.uuid.clone(),
+            expires: credentials.expires.to_rfc3339(),
+        }
+    }
+}
+
 /// Global version list cache for paginated mod version resolution.
 static VERSION_CACHE: LazyLock<SharedVersionCache> = LazyLock::new(version_cache::new_cache);
-
-/// Serializes MCP start/stop requests so a stopped listener is fully released
-/// before another command attempts to bind the fixed local port.
-static MCP_LIFECYCLE: LazyLock<tokio::sync::Mutex<()>> =
-    LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 #[tauri::command]
 pub async fn greet(name: String) -> String {
@@ -1697,15 +1711,14 @@ pub async fn enable_mod_with_auto_deps(
 }
 
 /// Start the MCP server if not already running.
-/// Checks the `ai_mcp_enabled` setting and manages the server in Tauri state.
+/// Checks the `ai_mcp_enabled` setting and delegates lifecycle ownership to
+/// the permanent MCP manager state.
 /// Returns the server URL.
 #[tauri::command]
 pub async fn start_mcp_server(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<McpStatus> {
-    let _lifecycle_guard = MCP_LIFECYCLE.lock().await;
-
     // The server is an opt-in integration; reject direct command invocations
     // when the player has not enabled it in Settings.
     let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
@@ -1720,54 +1733,14 @@ pub async fn start_mcp_server(
         });
     }
 
-    // If a stopped state is still registered, wait for its listener to exit
-    // and remove it before registering the replacement state.
-    let stale_rx = match app.try_state::<mcp::McpServer>() {
-        Some(server) => {
-            if server.is_running() {
-                return Ok(McpStatus {
-                    running: true,
-                    url: format!("http://127.0.0.1:{}", server.port()),
-                });
-            }
-            server.take_stopped_rx()
-        }
-        None => None,
-    };
-    if let Some(rx) = stale_rx {
-        let _ = rx.await;
-    }
-    let _ = app.unmanage::<mcp::McpServer>();
-
-    // Retry with backoff in case the old listener hasn't released the port yet.
-    let mut last_err = String::new();
-    for attempt in 0..5 {
-        match mcp::start_server(app.clone()).await {
-            Ok(server) => {
-                if app.manage(server) {
-                    return Ok(McpStatus {
-                        running: true,
-                        url: "http://127.0.0.1:39741".to_string(),
-                    });
-                }
-                return Err(LauncherError::Generic {
-                    code: "ERR_MCP_START_FAILED".to_string(),
-                    message: "MCP server state was already initialized.".to_string(),
-                });
-            }
-            Err(e) => {
-                last_err = e.to_string();
-                if attempt < 4 {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(50 * (attempt + 1))).await;
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-    Err(LauncherError::Generic {
+    let manager = app.state::<mcp::McpServerManager>();
+    let port = manager.start(app.clone()).await.map_err(|e| LauncherError::Generic {
         code: "ERR_MCP_START_FAILED".to_string(),
-        message: format!("Failed to start MCP server: {}", last_err),
+        message: format!("Failed to start MCP server: {e}"),
+    })?;
+    Ok(McpStatus {
+        running: true,
+        url: format!("http://127.0.0.1:{port}"),
     })
 }
 
@@ -1777,19 +1750,7 @@ pub async fn stop_mcp_server(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<()> {
-    let _lifecycle_guard = MCP_LIFECYCLE.lock().await;
-    let (had_server, stopped_rx) = if let Some(server) = app.try_state::<mcp::McpServer>() {
-        server.stop();
-        (true, server.take_stopped_rx())
-    } else {
-        (false, None)
-    };
-    if let Some(rx) = stopped_rx {
-        let _ = rx.await;
-    }
-    if had_server {
-        let _ = app.unmanage::<mcp::McpServer>();
-    }
+    app.state::<mcp::McpServerManager>().stop().await;
     Ok(())
 }
 
@@ -1799,13 +1760,11 @@ pub async fn get_mcp_status(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<McpStatus> {
-    if let Some(server) = app.try_state::<mcp::McpServer>() {
-        if server.is_running() {
-            return Ok(McpStatus {
-                running: true,
-                url: format!("http://127.0.0.1:{}", server.port()),
-            });
-        }
+    if let Some(port) = app.state::<mcp::McpServerManager>().port().await {
+        return Ok(McpStatus {
+            running: true,
+            url: format!("http://127.0.0.1:{port}"),
+        });
     }
     Ok(McpStatus {
         running: false,
@@ -2114,14 +2073,14 @@ pub async fn msa_finish_login(
     state: tauri::State<'_, LauncherState>,
     code: String,
     oauth_state: Option<String>,
-) -> LauncherResult<agora_core::msa::MsaCredentials> {
+) -> LauncherResult<MsaAccountStatus> {
     let mut s = state.lock().await;
     let flow = s.login_flow.take().ok_or_else(|| LauncherError::Generic {
         code: "ERR_MSA_NO_FLOW".into(),
         message: "No login flow in progress. Call msa_begin_login first.".into(),
     })?;
     let creds = agora_core::msa::finish_login(&s.client, &code, &flow, oauth_state.as_deref()).await?;
-    Ok(creds)
+    Ok(MsaAccountStatus::from(&creds))
 }
 
 /// Return the current MSA login status, or None if not authenticated.
@@ -2129,22 +2088,24 @@ pub async fn msa_finish_login(
 pub async fn msa_get_status(
     _app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
-) -> LauncherResult<Option<agora_core::msa::MsaCredentials>> {
-    agora_core::msa::load_credentials()
+) -> LauncherResult<Option<MsaAccountStatus>> {
+    Ok(agora_core::msa::load_credentials()?
+        .as_ref()
+        .map(MsaAccountStatus::from))
 }
 /// Refresh expired MSA credentials.
 #[tauri::command]
 pub async fn msa_refresh(
     _app: tauri::AppHandle,
     state: tauri::State<'_, LauncherState>,
-) -> LauncherResult<agora_core::msa::MsaCredentials> {
+) -> LauncherResult<MsaAccountStatus> {
     let s = state.lock().await;
     let creds = agora_core::msa::load_credentials()?.ok_or_else(|| LauncherError::Generic {
         code: "ERR_MSA_NOT_AUTHENTICATED".into(),
         message: "Not signed in. Use msa_begin_login first.".into(),
     })?;
     let refreshed = agora_core::msa::refresh_credentials(&s.client, &creds).await?;
-    Ok(refreshed)
+    Ok(MsaAccountStatus::from(&refreshed))
 }
 
 /// Sign out and clear stored MSA credentials.
@@ -2252,13 +2213,24 @@ pub async fn import_instance(app: tauri::AppHandle, _state: tauri::State<'_, Lau
     let instances_dir = app_data.join("instances");
     std::fs::create_dir_all(&instances_dir).ok();
 
-    if source_path.ends_with(".mrpack") {
-        agora_core::import::import_mrpack(&source, &instances_dir, symlink_saves)
-    } else if source_path.ends_with(".zip") {
-        agora_core::import::import_prism_zip(&source, &instances_dir, symlink_saves)
-    } else {
-        agora_core::import::import_directory(&source, &instances_dir, symlink_saves)
-    }
+    // The core importer owns synchronous filesystem work and, for .mrpack
+    // files, a small dedicated HTTP runtime. Run it off Tauri's async runtime
+    // so importing a pack never attempts to nest Tokio runtimes or freezes UI.
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase);
+    tokio::task::spawn_blocking(move || match extension.as_deref() {
+        Some("mrpack") => agora_core::import::import_mrpack(&source, &instances_dir, symlink_saves),
+        Some("zip") => agora_core::import::import_prism_zip(&source, &instances_dir, symlink_saves),
+        _ => agora_core::import::import_directory(&source, &instances_dir, symlink_saves),
+    })
+    .await
+    .map_err(|_| LauncherError::Generic {
+        code: "ERR_IMPORT_TASK".into(),
+        message: "The import task stopped unexpectedly. Your existing instances were not changed."
+            .into(),
+    })?
 }
 
 #[tauri::command]

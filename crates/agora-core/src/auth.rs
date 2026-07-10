@@ -273,38 +273,36 @@ pub fn keyring_fallback_available() -> bool {
 }
 
 pub fn store_token(token: &str) -> LauncherResult<()> {
-    match keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
-        Ok(entry) => entry
-            .set_password(token)
-            .map_err(|_| LauncherError::Generic {
-                code: "ERR_AUTH_KEYRING_WRITE".to_string(),
-                message: "Failed to store GitHub token in the OS keyring.".to_string(),
-            }),
-        Err(_) => {
-            // Keyring unavailable — fall back to AES-256-GCM encrypted file (§7.5.2).
-            let path = fallback_token_path().ok_or_else(|| LauncherError::Generic {
-                code: "ERR_AUTH_FALLBACK_PATH".to_string(),
-                message: "Could not determine data directory for fallback token storage."
-                    .to_string(),
-            })?;
-
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|_| LauncherError::Generic {
-                    code: "ERR_AUTH_FALLBACK_WRITE".to_string(),
-                    message: "Failed to create fallback token directory.".to_string(),
-                })?;
-            }
-
-            let key = derive_fallback_key();
-            let encrypted = encrypt_token(token, &key)?;
-            std::fs::write(&path, encrypted).map_err(|_| LauncherError::Generic {
-                code: "ERR_AUTH_FALLBACK_WRITE".to_string(),
-                message: "Failed to write fallback token file.".to_string(),
-            })?;
-
-            Ok(())
+    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
+        if entry.set_password(token).is_ok() {
+            return Ok(());
         }
     }
+
+    // Keyring creation or write failed — fall back to AES-256-GCM encrypted
+    // local storage. Secret Service commonly fails at write time on headless
+    // Linux, so only falling back when Entry::new fails strands users.
+    let path = fallback_token_path().ok_or_else(|| LauncherError::Generic {
+        code: "ERR_AUTH_FALLBACK_PATH".to_string(),
+        message: "Could not determine data directory for fallback token storage."
+            .to_string(),
+    })?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| LauncherError::Generic {
+            code: "ERR_AUTH_FALLBACK_WRITE".to_string(),
+            message: "Failed to create fallback token directory.".to_string(),
+        })?;
+    }
+
+    let key = derive_fallback_key();
+    let encrypted = encrypt_token(token, &key)?;
+    std::fs::write(&path, encrypted).map_err(|_| LauncherError::Generic {
+        code: "ERR_AUTH_FALLBACK_WRITE".to_string(),
+        message: "Failed to write fallback token file.".to_string(),
+    })?;
+
+    Ok(())
 }
 
 pub fn get_token() -> Option<String> {

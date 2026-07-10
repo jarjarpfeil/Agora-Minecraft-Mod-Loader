@@ -39,6 +39,7 @@ pub fn run() {
     ));
     tauri::Builder::default()
         .manage(LauncherState::default())
+        .manage(mcp::McpServerManager::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_sql::Builder::new().build())
@@ -188,15 +189,9 @@ pub fn run() {
                         ) {
                             let mcp_app = handle.clone();
                             tauri::async_runtime::spawn(async move {
-                                match crate::mcp::start_server(mcp_app.clone()).await {
-                                    Ok(server) => {
-                                        if !mcp_app.manage(server) {
-                                            eprintln!("MCP server was already started during application setup.");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to start MCP server: {}", e);
-                                    }
+                                let manager = mcp_app.state::<crate::mcp::McpServerManager>();
+                                if let Err(e) = manager.start(mcp_app.clone()).await {
+                                    eprintln!("Failed to start MCP server: {}", e);
                                 }
                             });
                         }
@@ -210,8 +205,8 @@ pub fn run() {
         })
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                if let Some(server) = app.try_state::<crate::mcp::McpServer>() {
-                    server.stop();
+                if let Some(manager) = app.try_state::<crate::mcp::McpServerManager>() {
+                    manager.request_shutdown();
                 }
             }
         })

@@ -2,6 +2,7 @@ use crate::error::{LauncherError, LauncherResult};
 use crate::paths;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
@@ -39,7 +40,10 @@ struct MrpackIndex {
 #[derive(Deserialize)]
 struct MrpackFile {
     path: String,
+    #[serde(default)]
     downloads: Vec<String>,
+    #[serde(default)]
+    hashes: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +60,47 @@ struct PrismComponent {
 
 fn sanitize(name: &str) -> String {
     paths::sanitize_id(name)
+}
+
+const MAX_MRPACK_FILE_BYTES: usize = 500 * 1024 * 1024;
+
+const MRPACK_DOWNLOAD_ALLOWLIST: &[&str] = &[
+    "cdn.modrinth.com",
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+];
+
+fn validate_mrpack_download_url(raw_url: &str) -> LauncherResult<reqwest::Url> {
+    let url = reqwest::Url::parse(raw_url).map_err(|_| LauncherError::UntrustedSource)?;
+    let host = url.host_str().ok_or(LauncherError::UntrustedSource)?;
+    if url.scheme() != "https"
+        || url.port_or_known_default() != Some(443)
+        || !MRPACK_DOWNLOAD_ALLOWLIST.contains(&host)
+    {
+        return Err(LauncherError::UntrustedSource);
+    }
+    Ok(url)
+}
+
+fn verify_mrpack_file_hash(file: &MrpackFile, bytes: &[u8]) -> LauncherResult<()> {
+    let expected = file.hashes.get("sha1").ok_or_else(|| {
+        import_error(
+            "ERR_IMPORT_HASH_MISSING",
+            format!("Pack entry '{}' has no SHA-1 integrity hash.", file.path),
+        )
+    })?;
+    let actual = crate::download::sha1_hex(bytes);
+    if !actual.eq_ignore_ascii_case(expected) {
+        return Err(import_error(
+            "ERR_HASH_MISMATCH",
+            format!(
+                "Pack entry '{}' failed integrity verification: expected {} got {}.",
+                file.path, expected, actual
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// A freshly allocated destination for an import.  Every importer writes into
@@ -339,43 +384,43 @@ pub fn import_mrpack(
                     message: format!("Cannot create dir {parent:?}: {e}"),
                 })?;
             }
-            if !file_entry.downloads.is_empty() {
-                let url = &file_entry.downloads[0];
-                match download_bytes(url) {
-                    Ok(bytes) => {
-                        fs::write(&dest, &bytes).map_err(|e| LauncherError::Generic {
-                            code: "ERR_IMPORT_WRITE".into(),
-                            message: format!("Cannot write {:?}: {e}", dest),
-                        })?;
-                        imported_mods += 1;
-                    }
-                    Err(_) => {
-                        let idx_path = file_entry.path.replace('\\', "/");
-                        if let Ok(mut entry) = archive.by_name(&idx_path) {
-                            let mut buf = Vec::new();
-                            if entry.read_to_end(&mut buf).is_ok() {
-                                fs::write(&dest, &buf).map_err(|e| LauncherError::Generic {
-                                    code: "ERR_IMPORT_WRITE".into(),
-                                    message: format!("Cannot write {:?}: {e}", dest),
-                                })?;
-                                imported_mods += 1;
-                            }
-                        }
-                    }
-                }
-            } else {
+            let mut read_embedded = || -> LauncherResult<Vec<u8>> {
                 let idx_path = file_entry.path.replace('\\', "/");
-                if let Ok(mut entry) = archive.by_name(&idx_path) {
-                    let mut buf = Vec::new();
-                    if entry.read_to_end(&mut buf).is_ok() {
-                        fs::write(&dest, &buf).map_err(|e| LauncherError::Generic {
-                            code: "ERR_IMPORT_WRITE".into(),
-                            message: format!("Cannot write {:?}: {e}", dest),
-                        })?;
-                        imported_mods += 1;
-                    }
+                let mut entry = archive.by_name(&idx_path).map_err(|_| {
+                    import_error(
+                        "ERR_IMPORT_MISSING_FILE",
+                        format!("Pack entry '{}' could not be downloaded or read locally.", file_entry.path),
+                    )
+                })?;
+                if entry.size() > MAX_MRPACK_FILE_BYTES as u64 {
+                    return Err(import_error(
+                        "ERR_IMPORT_FILE_TOO_LARGE",
+                        format!("Pack entry '{}' exceeds the 500MB safety limit.", file_entry.path),
+                    ));
                 }
-            }
+                let mut bytes = Vec::new();
+                entry.read_to_end(&mut bytes).map_err(|e| {
+                    import_error(
+                        "ERR_IMPORT_READ",
+                        format!("Cannot read embedded pack entry '{}': {e}", file_entry.path),
+                    )
+                })?;
+                Ok(bytes)
+            };
+
+            let bytes = if let Some(url) = file_entry.downloads.first() {
+                download_bytes(url).or_else(|download_error| {
+                    read_embedded().map_err(|_| download_error)
+                })?
+            } else {
+                read_embedded()?
+            };
+            verify_mrpack_file_hash(file_entry, &bytes)?;
+            fs::write(&dest, &bytes).map_err(|e| LauncherError::Generic {
+                code: "ERR_IMPORT_WRITE".into(),
+                message: format!("Cannot write {:?}: {e}", dest),
+            })?;
+            imported_mods += 1;
         }
 
         if !index.overrides.is_empty() {
@@ -504,16 +549,34 @@ fn parse_mrpack_deps(deps: &Option<serde_json::Value>) -> (String, String, Strin
 }
 
 fn download_bytes(url: &str) -> LauncherResult<Vec<u8>> {
+    let url = validate_mrpack_download_url(url)?;
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| LauncherError::Generic {
             code: "ERR_IMPORT_RUNTIME".into(),
             message: format!("Cannot build runtime: {e}"),
-        })?;
+    })?;
     rt.block_on(async {
-        let client = reqwest::Client::new();
-        let resp = client
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if let Some(host) = attempt.url().host_str() {
+                    if MRPACK_DOWNLOAD_ALLOWLIST.contains(&host)
+                        && attempt.url().scheme() == "https"
+                        && attempt.url().port_or_known_default() == Some(443)
+                    {
+                        return attempt.follow();
+                    }
+                }
+                attempt.stop()
+            }))
+            .build()
+            .map_err(|e| LauncherError::Generic {
+                code: "ERR_IMPORT_HTTP_CLIENT".into(),
+                message: format!("Could not create import download client: {e}"),
+            })?;
+        let mut resp = client
             .get(url)
             .send()
             .await
@@ -527,13 +590,27 @@ fn download_bytes(url: &str) -> LauncherResult<Vec<u8>> {
                 message: format!("HTTP {}", resp.status()),
             });
         }
-        resp.bytes()
-            .await
-            .map(|b| b.to_vec())
-            .map_err(|e| LauncherError::Generic {
-                code: "ERR_IMPORT_READ_BODY".into(),
-                message: format!("Read body failed: {e}"),
-            })
+        if resp.content_length().unwrap_or(0) > MAX_MRPACK_FILE_BYTES as u64 {
+            return Err(import_error(
+                "ERR_IMPORT_FILE_TOO_LARGE",
+                "Imported pack file exceeds the 500MB safety limit.",
+            ));
+        }
+
+        let mut bytes = Vec::new();
+        while let Some(chunk) = resp.chunk().await.map_err(|e| LauncherError::Generic {
+            code: "ERR_IMPORT_READ_BODY".into(),
+            message: format!("Read body failed: {e}"),
+        })? {
+            if bytes.len().saturating_add(chunk.len()) > MAX_MRPACK_FILE_BYTES {
+                return Err(import_error(
+                    "ERR_IMPORT_FILE_TOO_LARGE",
+                    "Imported pack file exceeds the 500MB safety limit.",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
     })
 }
 
@@ -1030,6 +1107,33 @@ mod tests {
             fs::read(instances_root.join("keep-me").join("sentinel")).unwrap(),
             b"safe"
         );
+    }
+
+    #[test]
+    fn test_mrpack_download_url_rejects_untrusted_origins() {
+        assert!(validate_mrpack_download_url("https://cdn.modrinth.com/data/mod.jar").is_ok());
+        assert!(matches!(
+            validate_mrpack_download_url("http://cdn.modrinth.com/data/mod.jar"),
+            Err(LauncherError::UntrustedSource)
+        ));
+        assert!(matches!(
+            validate_mrpack_download_url("https://127.0.0.1:39741/private"),
+            Err(LauncherError::UntrustedSource)
+        ));
+    }
+
+    #[test]
+    fn test_mrpack_file_requires_matching_sha1() {
+        let bytes = b"mod bytes";
+        let mut hashes = BTreeMap::new();
+        hashes.insert("sha1".to_string(), crate::download::sha1_hex(bytes));
+        let file = MrpackFile {
+            path: "mods/example.jar".to_string(),
+            downloads: Vec::new(),
+            hashes,
+        };
+        assert!(verify_mrpack_file_hash(&file, bytes).is_ok());
+        assert!(verify_mrpack_file_hash(&file, b"tampered").is_err());
     }
 
     #[test]

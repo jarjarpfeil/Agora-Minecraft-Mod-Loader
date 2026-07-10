@@ -1,9 +1,8 @@
 use crate::download;
 use crate::mod_cache::ModCache;
+use crate::override_sanitizer;
 use serde::{Deserialize, Serialize};
-use std::io::Read;
 use std::path::Path;
-use zip::ZipArchive;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackManifest {
@@ -41,14 +40,55 @@ pub struct PackInstallResult {
     pub overrides_extracted: bool,
 }
 
-fn assert_safe_path(base: &Path, candidate: &Path) -> Result<(), String> {
-    let resolved = base.join(candidate);
-    let canonical_base = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
-    let canonical_resolved = std::fs::canonicalize(&resolved).unwrap_or(resolved);
-    if !canonical_resolved.starts_with(&canonical_base) {
-        return Err(format!("Path traversal detected: {}", candidate.display()));
+fn is_valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn validate_override_source(source: &OverrideSource) -> Result<&str, String> {
+    if source.source_type != "github_release" {
+        return Err(format!(
+            "Unsupported override source type: {}",
+            source.source_type
+        ));
     }
-    Ok(())
+
+    let mut identifier_parts = source.identifier.split('/');
+    let owner = identifier_parts.next().unwrap_or_default();
+    let repository = identifier_parts.next().unwrap_or_default();
+    if owner.is_empty()
+        || repository.is_empty()
+        || identifier_parts.next().is_some()
+        || !owner
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        || !repository
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err("Override source identifier must be a GitHub owner/repository pair.".to_string());
+    }
+
+    if source.release_tag.trim().is_empty() || source.asset_name.trim().is_empty() {
+        return Err("Override source must include a release tag and asset name.".to_string());
+    }
+
+    let sha256 = source
+        .sha256
+        .as_deref()
+        .filter(|value| is_valid_sha256(value))
+        .ok_or_else(|| {
+            "Override bundles require a pinned 64-character SHA-256 hash before installation."
+                .to_string()
+        })?;
+
+    Ok(sha256)
+}
+
+fn is_allowed_override_download_host(host: &str) -> bool {
+    matches!(
+        host,
+        "github.com" | "objects.githubusercontent.com" | "release-assets.githubusercontent.com"
+    )
 }
 
 async fn modrinth_version_download_url(
@@ -137,87 +177,87 @@ pub fn parse_pack_manifest(json: &str) -> Result<PackManifest, String> {
             ));
         }
     }
+    if let Some(overrides) = &manifest.override_source {
+        validate_override_source(overrides)?;
+    }
     Ok(manifest)
 }
 
 /// Download the override bundle from GitHub release and extract to target_dir.
 async fn download_and_extract_overrides(
-    client: &reqwest::Client,
+    _client: &reqwest::Client,
     source: &OverrideSource,
     target_dir: &Path,
 ) -> Result<bool, String> {
-    if source.source_type != "github_release" {
-        return Err(format!(
-            "Unsupported override source type: {}",
-            source.source_type
-        ));
-    }
+    let expected_sha256 = validate_override_source(source)?;
 
     let url = format!(
         "https://github.com/{}/releases/download/{}/{}",
-        source.identifier, source.release_tag, source.asset_name
+        source.identifier,
+        urlencoding::encode(&source.release_tag),
+        urlencoding::encode(&source.asset_name)
     );
 
-    let resp = client
+    // Override archives are untrusted input. Keep their initial request and
+    // every redirect on the small GitHub release-asset allowlist.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if let Some(host) = attempt.url().host_str() {
+                if is_allowed_override_download_host(host) {
+                    return attempt.follow();
+                }
+            }
+            attempt.stop()
+        }))
+        .user_agent("AgoraLauncher/1.0")
+        .build()
+        .map_err(|e| format!("Failed to create override download client: {e}"))?;
+
+    let mut resp = client
         .get(&url)
-        .header("User-Agent", "AgoraLauncher/1.0")
         .send()
         .await
-        .map_err(|e| format!("Failed to download override bundle: {}", e))?;
+        .map_err(|e| format!("Failed to download override bundle: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Download override bundle failed: {e}"))?;
 
-    if !resp.status().is_success() {
+    if resp.content_length().unwrap_or(0) > override_sanitizer::MAX_ZIP_SIZE {
+        return Err("Override bundle exceeds the 500MB compressed size limit.".to_string());
+    }
+
+    let mut data = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("Failed to read override bundle: {e}"))?
+    {
+        if data.len().saturating_add(chunk.len()) > override_sanitizer::MAX_ZIP_SIZE as usize {
+            return Err(format!(
+                "Override bundle exceeds the {}MB compressed size limit.",
+                override_sanitizer::MAX_ZIP_SIZE / (1024 * 1024)
+            ));
+        }
+        data.extend_from_slice(&chunk);
+    }
+
+    let actual_sha256 = download::sha256_hex(&data);
+    if !actual_sha256.eq_ignore_ascii_case(expected_sha256) {
         return Err(format!(
-            "Download override bundle returned HTTP {}",
-            resp.status()
+            "SHA-256 mismatch for override bundle: expected {expected_sha256} got {actual_sha256}"
         ));
     }
 
-    let data = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read override bundle: {}", e))?
-        .to_vec();
+    std::fs::create_dir_all(target_dir)
+        .map_err(|e| format!("Failed to create override destination: {e}"))?;
+    let temporary_zip = target_dir.join(format!(".agora-overrides-{}.zip", uuid::Uuid::new_v4()));
+    std::fs::write(&temporary_zip, &data)
+        .map_err(|e| format!("Failed to stage override bundle: {e}"))?;
 
-    if let Some(expected_sha256) = &source.sha256 {
-        let actual = download::sha256_hex(&data);
-        if actual != *expected_sha256 {
-            return Err(format!(
-                "SHA-256 mismatch for override bundle: expected {} got {}",
-                expected_sha256, actual
-            ));
-        }
-    }
-
-    let reader = std::io::Cursor::new(data);
-    let mut archive =
-        ZipArchive::new(reader).map_err(|e| format!("Failed to read override zip: {}", e))?;
-
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("Failed to read zip entry {}: {}", i, e))?;
-
-        let entry_name = entry.name().replace('\\', "/");
-        if entry_name.is_empty() || entry_name.ends_with('/') {
-            continue;
-        }
-
-        let candidate = Path::new(&entry_name);
-        assert_safe_path(target_dir, candidate)?;
-
-        let dest = target_dir.join(candidate);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
-        }
-
-        let mut buf = Vec::new();
-        entry
-            .read_to_end(&mut buf)
-            .map_err(|e| format!("Failed to read entry {}: {}", entry_name, e))?;
-        std::fs::write(&dest, &buf)
-            .map_err(|e| format!("Failed to write {}: {}", dest.display(), e))?;
-    }
+    let extraction = override_sanitizer::extract_overrides(&temporary_zip, target_dir)
+        .map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&temporary_zip);
+    extraction?;
 
     Ok(true)
 }
@@ -370,14 +410,17 @@ mod tests {
                 "identifier": "owner/repo",
                 "release_tag": "v1.0.0",
                 "asset_name": "overrides.zip",
-                "sha256": "abcdef1234567890"
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }
         }"#;
         let manifest = parse_pack_manifest(json).unwrap();
         let overrides = manifest.override_source.unwrap();
         assert_eq!(overrides.source_type, "github_release");
         assert_eq!(overrides.identifier, "owner/repo");
-        assert_eq!(overrides.sha256, Some("abcdef1234567890".to_string()));
+        assert_eq!(
+            overrides.sha256,
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string())
+        );
     }
 
     #[test]
@@ -449,21 +492,24 @@ mod tests {
     }
 
     #[test]
-    fn test_assert_safe_path_allowed() {
-        let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path().join("instance");
-        std::fs::create_dir_all(base.join("mods")).unwrap();
-        std::fs::write(base.join("mods").join("test.jar"), b"test").unwrap();
-        assert_safe_path(&base, Path::new("mods/test.jar")).unwrap();
-    }
-
-    #[test]
-    fn test_assert_safe_path_traversal_rejected() {
-        let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path().join("instance");
-        std::fs::create_dir_all(&base).unwrap();
-        let err = assert_safe_path(&base, Path::new("../outside.txt")).unwrap_err();
-        assert!(err.contains("Path traversal"));
+    fn test_parse_pack_manifest_rejects_override_without_pinned_hash() {
+        let json = r#"{
+            "name": "Unsafe Override Pack",
+            "minecraft_version": "1.21",
+            "loader": "fabric",
+            "loader_version": "0.15.11",
+            "mods": [
+                { "id": "AANobbMI", "source": "modrinth", "version": "0.6.0", "status": "required" }
+            ],
+            "override_source": {
+                "type": "github_release",
+                "identifier": "owner/repo",
+                "release_tag": "v1.0.0",
+                "asset_name": "overrides.zip"
+            }
+        }"#;
+        let err = parse_pack_manifest(json).unwrap_err();
+        assert!(err.contains("SHA-256"));
     }
 
     #[test]

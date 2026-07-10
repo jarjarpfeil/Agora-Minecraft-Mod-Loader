@@ -645,9 +645,9 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                     eprintln!("No input provided");
                     std::process::exit(1);
                 }
-                let code = extract_auth_code(input);
+                let (code, state) = extract_auth_redirect(input)?;
                 let credentials =
-                    agora_core::msa::finish_login(client, &code, &flow, None).await?;
+                    agora_core::msa::finish_login(client, &code, &flow, Some(&state)).await?;
                 if json {
                     println!(
                         "{}",
@@ -736,17 +736,28 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
     Ok(())
 }
 
-fn extract_auth_code(input: &str) -> String {
-    if let Some(pos) = input.find("?code=") {
-        let after = &input[pos + 6..];
-        if let Some(amp) = after.find('&') {
-            after[..amp].to_string()
-        } else {
-            after.to_string()
+/// Extract the authorization code and CSRF state from the complete browser
+/// redirect URL. The direct-launch OAuth flow always creates a state value, so
+/// accepting a bare code would make CLI login fail closed and hide the cause.
+fn extract_auth_redirect(input: &str) -> anyhow::Result<(String, String)> {
+    let url = reqwest::Url::parse(input).map_err(|_| {
+        anyhow::anyhow!(
+            "Paste the complete redirect URL so Agora can verify the OAuth state parameter."
+        )
+    })?;
+    let mut code = None;
+    let mut state = None;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "code" => code = Some(value.into_owned()),
+            "state" => state = Some(value.into_owned()),
+            _ => {}
         }
-    } else {
-        input.to_string()
     }
+
+    let code = code.ok_or_else(|| anyhow::anyhow!("Redirect URL did not include an OAuth code."))?;
+    let state = state.ok_or_else(|| anyhow::anyhow!("Redirect URL did not include an OAuth state."))?;
+    Ok((code, state))
 }
 
 fn find_java() -> anyhow::Result<PathBuf> {
@@ -786,4 +797,24 @@ fn find_java() -> anyhow::Result<PathBuf> {
     anyhow::bail!(
         "Could not find Java. Install JDK 17+ and ensure java is on your PATH."
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_auth_redirect;
+
+    #[test]
+    fn parses_code_and_state_from_redirect_url() {
+        let (code, state) = extract_auth_redirect(
+            "https://login.live.com/oauth20_desktop.srf?code=abc%20123&state=csrf-token",
+        )
+        .unwrap();
+        assert_eq!(code, "abc 123");
+        assert_eq!(state, "csrf-token");
+    }
+
+    #[test]
+    fn rejects_redirect_without_state() {
+        assert!(extract_auth_redirect("https://example.invalid/?code=abc").is_err());
+    }
 }

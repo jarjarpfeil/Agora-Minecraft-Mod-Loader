@@ -808,11 +808,11 @@ export const copilotLogout = () =>
 // Phase 5: MSA auth + GC architect
 // ---------------------------------------------------------------------------
 
-export interface MsaCredentials {
+/** Safe account metadata returned to the UI. Authentication tokens never
+ * cross the Tauri command boundary. */
+export interface MsaAccountStatus {
   username: string;
   uuid: string;
-  access_token: string;
-  refresh_token: string;
   expires: string;
 }
 
@@ -831,13 +831,13 @@ export const msaBeginLogin = () =>
   invoke<{ auth_uri: string }>('msa_begin_login');
 
 export const msaFinishLogin = (code: string, oauthState?: string | null) =>
-  invoke<MsaCredentials>('msa_finish_login', { code, oauthState });
+  invoke<MsaAccountStatus>('msa_finish_login', { code, oauthState });
 
 export const msaGetStatus = () =>
-  invoke<MsaCredentials | null>('msa_get_status');
+  invoke<MsaAccountStatus | null>('msa_get_status');
 
 export const msaRefresh = () =>
-  invoke<MsaCredentials>('msa_refresh');
+  invoke<MsaAccountStatus>('msa_refresh');
 
 export const msaLogout = () =>
   invoke<void>('msa_logout');

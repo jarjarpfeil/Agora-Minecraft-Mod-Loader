@@ -710,7 +710,7 @@ fn perform_signature_search(
 // suggest_mod_incompatibility implementation
 // ---------------------------------------------------------------------------
 
-fn suggest_mod_incompatibility_impl(
+async fn suggest_mod_incompatibility_impl(
     app: &AppHandle,
     instance_id: &str,
     crash_text: &str,
@@ -752,16 +752,16 @@ fn suggest_mod_incompatibility_impl(
     };
 
     match tokio::runtime::Handle::try_current() {
-        Ok(handle) => {
+        Ok(_handle) => {
             let app_clone = app.clone();
             let instance_id = instance_id.to_string();
             let text = crash_text.to_string();
             let mods: Vec<crate::models::InstalledMod> = manifest.mods.clone();
-            match handle.block_on(async {
-                tokio::task::spawn_blocking(move || {
-                    crash_investigator::score_suspects(&app_clone, &instance_id, &text, &mods)
-                }).await
-            }) {
+            match tokio::task::spawn_blocking(move || {
+                crash_investigator::score_suspects(&app_clone, &instance_id, &text, &mods)
+            })
+            .await
+            {
                 Ok(Ok(suspects)) => {
                     let results: Vec<serde_json::Value> = suspects
                         .into_iter()
@@ -960,7 +960,7 @@ fn handle_search_knowledge_base(app: &AppHandle, query: &str) -> serde_json::Val
 // Tool call handler
 // ---------------------------------------------------------------------------
 
-fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json::Value) -> serde_json::Value {
+async fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json::Value) -> serde_json::Value {
     let get_str = |key: &str| -> Option<String> {
         params
             .get(key)
@@ -1014,7 +1014,7 @@ fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json::Value
         }
         "search_crash_signatures" => {
             let crash_text = get_str("crash_text").unwrap_or_default();
-            let result = handle_search_crash_signatures(app, &crash_text);
+            let result = handle_search_crash_signatures(app, &crash_text).await;
             serde_json::json!({
                 "content": [{
                     "type": "text",
@@ -1026,7 +1026,7 @@ fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json::Value
         "suggest_mod_incompatibility" => {
             let instance_id = get_str("instance_id").unwrap_or_default();
             let crash_text = get_str("crash_text").unwrap_or_default();
-            let result = suggest_mod_incompatibility_impl(app, &instance_id, &crash_text);
+            let result = suggest_mod_incompatibility_impl(app, &instance_id, &crash_text).await;
             serde_json::json!({
                 "content": [{
                     "type": "text",
@@ -1098,7 +1098,7 @@ fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json::Value
 // MCP method handler
 // ---------------------------------------------------------------------------
 
-fn handle_mcp_method(app: &AppHandle, method: &str, params: Option<&serde_json::Value>) -> serde_json::Value {
+async fn handle_mcp_method(app: &AppHandle, method: &str, params: Option<&serde_json::Value>) -> serde_json::Value {
     match method {
         "initialize" => {
             serde_json::json!({
@@ -1125,7 +1125,7 @@ fn handle_mcp_method(app: &AppHandle, method: &str, params: Option<&serde_json::
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let tool_params = params.get("arguments").unwrap_or(&serde_json::Value::Null);
-            handle_tool_call(app, tool_name, tool_params)
+            handle_tool_call(app, tool_name, tool_params).await
         }
         "resources/list" => {
             serde_json::json!({
@@ -1425,7 +1425,7 @@ async fn handle_streamable_http(
         return Ok(());
     }
 
-    let result = handle_mcp_method(&app, &request.method, request.params.as_ref());
+    let result = handle_mcp_method(&app, &request.method, request.params.as_ref()).await;
     let response = JsonRpcResponse::success(
         request.id.clone().unwrap_or(serde_json::Value::Null),
         result,
@@ -1537,7 +1537,7 @@ async fn handle_post_messages(
     // Dispatch the JSON-RPC method
     let response = match request.method.as_str() {
         "initialize" | "tools/list" | "tools/call" | "resources/list" | "resources/read" => {
-            let result = handle_mcp_method(&app, &request.method, request.params.as_ref());
+            let result = handle_mcp_method(&app, &request.method, request.params.as_ref()).await;
             JsonRpcResponse::success(request.id.clone().unwrap_or(serde_json::Value::Null), result)
         }
         _ => JsonRpcResponse::error(
@@ -1604,6 +1604,80 @@ impl McpServer {
     /// consumed by the lifecycle commands before replacing a stopped server.
     pub fn take_stopped_rx(&self) -> Option<tokio::sync::oneshot::Receiver<()>> {
         self.stopped_rx.lock().unwrap().take()
+    }
+}
+
+/// Long-lived Tauri state for the optional MCP listener. The listener itself
+/// is replaceable, while this manager is registered once at app startup. That
+/// avoids Tauri's deprecated `unmanage` API and makes Stop → Start reliable.
+pub struct McpServerManager {
+    lifecycle: tokio::sync::Mutex<()>,
+    server: tokio::sync::Mutex<Option<McpServer>>,
+}
+
+impl Default for McpServerManager {
+    fn default() -> Self {
+        Self {
+            lifecycle: tokio::sync::Mutex::new(()),
+            server: tokio::sync::Mutex::new(None),
+        }
+    }
+}
+
+impl McpServerManager {
+    /// Start the listener if it is not already running and return its port.
+    pub async fn start(&self, app: AppHandle) -> Result<u16, std::io::Error> {
+        let _lifecycle_guard = self.lifecycle.lock().await;
+
+        let stale_server = {
+            let mut server = self.server.lock().await;
+            if let Some(running) = server.as_ref().filter(|server| server.is_running()) {
+                return Ok(running.port());
+            }
+            server.take()
+        };
+
+        if let Some(stale_server) = stale_server {
+            stale_server.stop();
+            if let Some(stopped_rx) = stale_server.take_stopped_rx() {
+                let _ = stopped_rx.await;
+            }
+        }
+
+        let server = start_server(app).await?;
+        let port = server.port();
+        *self.server.lock().await = Some(server);
+        Ok(port)
+    }
+
+    /// Stop the listener and wait until its TCP socket has been released.
+    pub async fn stop(&self) {
+        let _lifecycle_guard = self.lifecycle.lock().await;
+        let server = self.server.lock().await.take();
+        if let Some(server) = server {
+            server.stop();
+            if let Some(stopped_rx) = server.take_stopped_rx() {
+                let _ = stopped_rx.await;
+            }
+        }
+    }
+
+    pub async fn port(&self) -> Option<u16> {
+        self.server
+            .lock()
+            .await
+            .as_ref()
+            .filter(|server| server.is_running())
+            .map(McpServer::port)
+    }
+
+    /// Best-effort shutdown for synchronous application-close callbacks.
+    pub fn request_shutdown(&self) {
+        if let Ok(mut server) = self.server.try_lock() {
+            if let Some(server) = server.take() {
+                server.stop();
+            }
+        }
     }
 }
 

@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::Path;
 
 /// Hard limits for zip extraction (§7.2.1).
-const MAX_ZIP_SIZE: u64 = 500 * 1024 * 1024; // 500MB compressed
+pub const MAX_ZIP_SIZE: u64 = 500 * 1024 * 1024; // 500MB compressed
 const MAX_EXTRACTED_SIZE: u64 = 2 * 1024 * 1024 * 1024; // 2GB total extracted
 const MAX_FILE_COUNT: usize = 5000; // 5000 files max
 

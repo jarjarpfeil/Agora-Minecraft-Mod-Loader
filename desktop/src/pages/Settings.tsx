@@ -28,7 +28,7 @@ import {
   getMCPToken,
   regenerateMCPToken,
 } from '../lib/tauri';
-import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus, McpTokenData, MsaCredentials } from '../lib/tauri';
+import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus, McpTokenData, MsaAccountStatus } from '../lib/tauri';
 import { Privacy } from './Privacy';
 import { useAdvancedMode } from '../components/AdvancedModeContext';
 
@@ -88,7 +88,7 @@ export function Settings() {
   const ghSessionRef = useRef(0);
 
   // MSA auth state
-  const [msaCreds, setMsaCreds] = useState<MsaCredentials | null>(null);
+  const [msaCreds, setMsaCreds] = useState<MsaAccountStatus | null>(null);
   const [msaLoading, setMsaLoading] = useState(true);
   const [msaAuthUri, setMsaAuthUri] = useState<string | null>(null);
   const [msaCode, setMsaCode] = useState('');
