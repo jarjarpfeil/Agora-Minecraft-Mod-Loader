@@ -187,7 +187,18 @@ function FullscreenView({
       )}
 
       {!isSyncing && state === 'unknown' && (
-        <p className="text-sm text-muted-foreground">Preparing…</p>
+        <>
+          <p className="text-sm text-muted-foreground">Checking registry status…</p>
+          {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={actions.sync}
+              className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Download Registry
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

@@ -46,7 +46,11 @@ export function useRegistryState(): {
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
+  // Reset mountedRef in the effect setup so React Strict Mode's
+  // development-only double-invoke does not leave it permanently false.
+  // See comment in GithubStep for why the unmount-ref pattern is fragile.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -56,8 +60,9 @@ export function useRegistryState(): {
     try {
       const s = await getRegistryStatus();
       if (mountedRef.current) setStatus(s);
-    } catch {
-      // Cannot read status; keep previous value (likely null on first run)
+    } catch (e) {
+      // Expose the error in `unknown` state so the UI can show a Retry action
+      if (mountedRef.current) setError(formatError(e));
     }
   }, []);
 

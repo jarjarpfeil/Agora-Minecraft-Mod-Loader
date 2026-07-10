@@ -2450,19 +2450,43 @@ pub async fn browse_search(
     Ok(result)
 }
 
-/// Load more Modrinth results (next page) into the browse cache.
+/// Load more results into the browse cache — returns cached pages first,
+/// then fetches Modrinth pages when the cache is exhausted.
 #[tauri::command]
 pub async fn browse_load_more(
     state: tauri::State<'_, LauncherState>,
 ) -> LauncherResult<BrowsePage> {
     let s = state.lock().await;
-    let cache = s.browse_cache.read().await;
-    if !cache.has_more_modrinth || !cache.filters.modrinth_enabled {
-        return Ok(BrowsePage { items: vec![], total: cache.total, page: 0, has_more: false });
+    let total = {
+        let cache = s.browse_cache.read().await;
+        cache.total
+    };
+
+    // Calculate the next page index from the total cached items.
+    let next_page = total / browse_cache::PAGE_SIZE;
+
+    // If the next page is already in the cache, return it directly.
+    {
+        let cache = s.browse_cache.read().await;
+        if next_page * browse_cache::PAGE_SIZE < cache.items.len() {
+            let page = browse_cache::get_page(&s.browse_cache, next_page).await;
+            return Ok(page);
+        }
     }
-    let offset = cache.modrinth_offset;
-    let filters = cache.filters.clone();
-    drop(cache);
+
+    // No more cached content. If Modrinth is disabled, we're done.
+    {
+        let cache = s.browse_cache.read().await;
+        if !cache.has_more_modrinth || !cache.filters.modrinth_enabled {
+            return Ok(BrowsePage { items: vec![], total: cache.total, page: 0, has_more: false });
+        }
+    }
+
+    // Fetch the next Modrinth page.
+    let (filters, modrinth_offset) = {
+        let cache = s.browse_cache.read().await;
+        (cache.filters.clone(), cache.modrinth_offset)
+    };
 
     let modrinth_pt = filters.content_type.as_ref().map(|ct| match ct.as_str() {
         "pack" => "modpack".to_string(),
@@ -2475,14 +2499,14 @@ pub async fn browse_load_more(
         game_versions: filters.mc_version.clone().map(|v| vec![v]),
         sort: Some(to_modrinth_sort(&filters.sort)),
         limit: Some(browse_cache::PAGE_SIZE as u32),
-        offset: Some(offset as u32),
+        offset: Some(modrinth_offset as u32),
         project_type: modrinth_pt,
     };
 
     let page = agora_core::modrinth::search_modrinth_http(&params).await
         .map_err(|e| LauncherError::Generic { code: "ERR_MODRINTH".into(), message: e.to_string() })?;
 
-    let new_offset = offset + browse_cache::PAGE_SIZE;
+    let new_offset = modrinth_offset + browse_cache::PAGE_SIZE;
     let has_more = (page.total_hits as usize) > new_offset;
 
     let new_items: Vec<browse_cache::BrowseItem> = page.results.into_iter().map(|mr| {
@@ -2505,7 +2529,7 @@ pub async fn browse_load_more(
     Ok(BrowsePage {
         items: response_items,
         total,
-        page: offset / browse_cache::PAGE_SIZE,
+        page: modrinth_offset / browse_cache::PAGE_SIZE,
         has_more,
     })
 }

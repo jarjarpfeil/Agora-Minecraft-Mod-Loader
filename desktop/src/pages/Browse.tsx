@@ -123,31 +123,70 @@ function computeQueryKey(params: {
   });
 }
 
-export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) {
-  // Registry availability — show recovery panel when missing
-  const { state: regState, status: regStatus, error: regError, actions: regActions } = useRegistryState();
+// ---- Registry recovery shell (no hooks after this point) ----
+function RegistryRecoveryShell({
+  state,
+  status,
+  error,
+  actions,
+}: {
+  state: import('../lib/useRegistryState').RegistryState;
+  status: import('../lib/tauri').RegistryStatus | null;
+  error: string | null;
+  actions: import('../lib/useRegistryState').RegistryActions;
+}) {
+  return (
+    <div className="space-y-6">
+      <section>
+        <h2 className="text-2xl font-bold mb-2">Browse</h2>
+        <p className="text-muted-foreground">
+          Curated mods, packs, shaders, resource packs, and more.
+        </p>
+      </section>
+      <RegistryStatusView
+        variant="fullscreen"
+        state={state}
+        status={status}
+        error={error}
+        actions={actions}
+      />
+    </div>
+  );
+}
 
-  // If registry is missing, show full-page recovery panel instead of browse UI
-  if (regState === 'missing' || (regState === 'unknown' && regError !== null)) {
+export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) {
+  // Registry availability — show recovery panel when missing.
+  // This is the ONLY hook call in this component, so the hook count is stable.
+  const registry = useRegistryState();
+
+  // Bail out BEFORE any other hooks when the registry is missing.
+  if (registry.state === 'missing') {
     return (
-      <div className="space-y-6">
-        <section>
-          <h2 className="text-2xl font-bold mb-2">Browse</h2>
-          <p className="text-muted-foreground">
-            Curated mods, packs, shaders, resource packs, and more.
-          </p>
-        </section>
-        <RegistryStatusView
-          variant="fullscreen"
-          state={regState}
-          status={regStatus}
-          error={regError}
-          actions={regActions}
-        />
-      </div>
+      <RegistryRecoveryShell
+        state={registry.state}
+        status={registry.status}
+        error={registry.error}
+        actions={registry.actions}
+      />
     );
   }
 
+  return <BrowseContent onSelectMod={onSelectMod} registryState={registry.state} registryStatus={registry.status} registryError={registry.error} registryActions={registry.actions} />;
+}
+
+function BrowseContent({
+  onSelectMod,
+  registryState: regState,
+  registryStatus: regStatus,
+  registryError: regError,
+  registryActions: regActions,
+}: {
+  onSelectMod?: (id: string) => void;
+  registryState: import('../lib/useRegistryState').RegistryState;
+  registryStatus: import('../lib/tauri').RegistryStatus | null;
+  registryError: string | null;
+  registryActions: import('../lib/useRegistryState').RegistryActions;
+}) {
   // ---- Filter state ----
   const [items, setItems] = useState<BrowseItemCached[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -266,9 +305,12 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
     inFlightSearchRef.current = generation;
     setSearchError(null);
     setSearchLoading(true);
-    // Reset items immediately so stale results are never visible
+    // Reset items and pagination state immediately so stale results
+    // and stuck load-more states are never visible.
     setItems([]);
     setHasMore(false);
+    setLoadMoreLoading(false);
+    inFlightLoadMoreRef.current = null;
 
     let cancelled = false;
 
@@ -345,7 +387,17 @@ export function Browse({ onSelectMod }: { onSelectMod?: (id: string) => void }) 
             .then((page) => {
               // Only apply if the captured generation is still current
               if (capturedGeneration === generationRef.current) {
-                setItems((prev) => [...prev, ...page.items]);
+                // Deduplicate by (id, source) composite key — the Rust cache
+                // deduplicates stored items by id, but the response may include
+                // items that the cache already had before dedup ran.
+                setItems((prev) => {
+                  const existingKeys = new Set(prev.map((i) => `${i.id}:${i.source}`));
+                  const newItems = page.items.filter(
+                    (ni) => !existingKeys.has(`${ni.id}:${ni.source}`),
+                  );
+                  if (newItems.length === 0) return prev;
+                  return [...prev, ...newItems];
+                });
                 setHasMore(page.hasMore);
               }
             })

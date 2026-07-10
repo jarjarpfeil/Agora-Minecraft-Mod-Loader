@@ -94,15 +94,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Sync accent color to CSS variable --accent.
-  useEffect(() => {
+  // Parse an accent value into raw HSL components.
+  // The Windows backend returns "hsl(210 50% 40%)", but Tailwind
+  // references --accent as hsl(var(--accent)), so we must store only
+  // the space-separated components: "210 50% 40%".
+  const accentCssValue = accentColor
+    ? accentColor.replace(/^hsl\(/i, "").replace(/\)$/, "")
+    : null;
+
+  // Apply accent before first paint so the stored custom accent
+  // is visible immediately with no flash.
+  useLayoutEffect(() => {
     const root = document.documentElement;
-    if (accentColor) {
-      root.style.setProperty("--accent", accentColor);
+    if (accentCssValue) {
+      root.style.setProperty("--accent", accentCssValue);
     } else {
       root.style.removeProperty("--accent");
     }
-  }, [accentColor]);
+  }, [accentCssValue]);
 
   const setTheme = (t: Theme) => setThemeState(t);
   const setAccentColor = (c: string | null) => setAccentColorState(c);

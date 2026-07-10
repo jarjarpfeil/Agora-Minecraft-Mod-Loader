@@ -382,15 +382,23 @@ function RegistryStep({
   onBack: () => void;
 }) {
   const { state, status, loading, error, actions } = useRegistryState();
+  const hasAutoDownloaded = useRef(false);
 
-  // Auto-download on mount only if no cached database exists.
-  // If we have a cache, the fullscreen view lets the user Continue Offline.
+  // Auto-download once when we first detect the registry is missing.
+  // The effect must react to state changes because on the first render
+  // state is 'loading' or 'unknown', and the download should fire when
+  // it transitions to 'missing'.
   useEffect(() => {
-    if (!status?.has_cached_db && !loading && state === 'missing') {
+    if (
+      !hasAutoDownloaded.current &&
+      state === 'missing' &&
+      !loading &&
+      !status?.has_cached_db
+    ) {
+      hasAutoDownloaded.current = true;
       actions.sync();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [state, loading, status?.has_cached_db, actions]);
 
   return (
     <div>
