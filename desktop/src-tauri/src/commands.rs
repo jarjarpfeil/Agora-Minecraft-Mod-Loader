@@ -330,6 +330,17 @@ pub async fn launch_instance_direct(
 
     let sanitized = paths::sanitize_id(&instance_id);
 
+    // Reject if a direct launch is already running.
+    {
+        let s = state.lock().await;
+        if s.running_process.is_some() {
+            return Err(LauncherError::Generic {
+                code: "ERR_ALREADY_RUNNING".into(),
+                message: "Another direct launch is already running. Kill it first.".into(),
+            });
+        }
+    }
+
     let conn = db::local_state_connection(&app)
         .map_err(|e| LauncherError::Generic { code: "ERR_DB".into(), message: e.to_string() })?;
     let row = db::get_instance(&conn, &sanitized)
@@ -479,6 +490,9 @@ pub async fn launch_instance_direct(
 
     let pid = child.id().unwrap_or(0);
 
+    // Record launch start time for LKG promotion classification.
+    let launch_start = std::time::Instant::now();
+
     // Store the running process in backend state so the frontend can recover
     // running state after navigation or reload.
     {
@@ -528,13 +542,18 @@ pub async fn launch_instance_direct(
 
     let app3 = app.clone();
     let state_on_exit = state.inner().clone();
+    let launch_session_id = {
+        let s = state.lock().await;
+        s.launch_session_counter
+    };
     tokio::spawn(async move {
         let status = child.wait().await;
         let exit_code = status.as_ref().ok().and_then(|s| s.code()).unwrap_or(-1);
         // Classify launch and promote to LKG if applicable.
+        let runtime_ms = launch_start.elapsed().as_millis() as u64;
         let outcome = agora_core::lkg::classify_launch(&agora_core::lkg::LaunchEvents {
             exit_code: Some(exit_code),
-            runtime_ms: 0, // TODO: measure actual runtime
+            runtime_ms,
             was_user_cancelled: false,
             crash_report_found: exit_code != 0,
             log_crash_signature_matched: false,
@@ -554,9 +573,15 @@ pub async fn launch_instance_direct(
                 );
             }
         }
-        // Clear backend running process state on exit.
-        let mut s = state_on_exit.lock().await;
-        s.running_process = None;
+        // Clear backend running process state on exit — only if this
+        // is still the tracked session (prevents a stale exit from
+        // clearing a newer launch's state).
+        {
+            let mut s = state_on_exit.lock().await;
+            if s.running_process.as_ref().map(|rp| rp.session_id) == Some(launch_session_id) {
+                s.running_process = None;
+            }
+        }
         let _ = app3.emit("game-exited", serde_json::json!({
             "instance_id": inst_id,
             "exit_code": exit_code
@@ -640,9 +665,32 @@ async fn download_lib(
     Ok(cache_path.to_path_buf())
 }
 
-/// Kill a process by PID (used to stop a directly-launched game).
+/// Kill the backend-owned direct-launch process, if any.
+/// This verifies that `pid` matches the tracked process before terminating.
 #[tauri::command]
-pub fn kill_process(pid: u32) -> LauncherResult<()> {
+pub async fn kill_process(
+    state: tauri::State<'_, LauncherState>,
+    pid: u32,
+) -> LauncherResult<()> {
+    // Guard: only kill the process that Agora owns.
+    let owned = {
+        let s = state.lock().await;
+        s.running_process.as_ref().map(|rp| rp.pid).unwrap_or(0)
+    };
+    if owned != pid {
+        return Err(LauncherError::Generic {
+            code: "ERR_NOT_OWNED".into(),
+            message: format!("PID {pid} is not owned by Agora (owned pid: {owned})"),
+        });
+    }
+
+    // Clear backend state before killing so a stale exit event
+    // does not overwrite a new launch's state.
+    {
+        let mut s = state.lock().await;
+        s.running_process = None;
+    }
+
     #[cfg(target_os = "windows")]
     {
         let output = std::process::Command::new("taskkill")
@@ -673,10 +721,11 @@ pub fn kill_process(pid: u32) -> LauncherResult<()> {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(LauncherError::Generic {
                 code: "ERR_KILL_FAILED".to_string(),
-                message: format!("kill -9 failed for PID {pid}: {stderr}"),
+                message: format!("kill failed for PID {pid}: {stderr}"),
             });
         }
     }
+
     Ok(())
 }
 
@@ -2766,26 +2815,37 @@ pub async fn detect_drift(
     let instance_dir = crate::paths::instance_dir(&app, &sanitized)
         .map_err(|_| LauncherError::LocalStateFailed)?;
 
-    // Restore snapshot index to get the reference file list.
-    let index_path = instance_dir.join(".agora").join("snapshots").join(&snapshot_id).join("index.json");
-    let index_text = std::fs::read_to_string(&index_path)
-        .map_err(|_| LauncherError::LocalStateFailed)?;
-    let index: serde_json::Value = serde_json::from_str(&index_text)
-        .map_err(|_| LauncherError::LocalStateFailed)?;
+    // Read the snapshot zip and extract its manifest (which includes the file index).
+    let snapshots_dir = instance_dir.join(".agora_snapshots");
+    let snapshot_path = snapshots_dir.join(format!("{snapshot_id}.zip"));
+    if !snapshot_path.is_file() {
+        return Err(LauncherError::Generic {
+            code: "ERR_NOT_FOUND".into(),
+            message: format!("Snapshot {snapshot_id} not found."),
+        });
+    }
 
-    // Parse reference files from snapshot index.
-    let ref_files: Vec<FileEntry> = index["fileIndex"]
-        .as_array()
-        .map(|arr| {
+    // Open the zip and find the manifest.
+    let file = std::fs::File::open(&snapshot_path)
+        .map_err(|_| LauncherError::LocalStateFailed)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| LauncherError::Generic { code: "ERR_ZIP".into(), message: e.to_string() })?;
+    let manifest_entry = archive.by_name("manifest.json")
+        .map_err(|e| LauncherError::Generic { code: "ERR_ZIP".into(), message: format!("Snapshot missing manifest: {e}") })?;
+
+    let ref_files: Vec<FileEntry> = {
+        let manifest: serde_json::Value = serde_json::from_reader(manifest_entry)
+            .map_err(|_| LauncherError::LocalStateFailed)?;
+        manifest["files"].as_array().map(|arr| {
             arr.iter().filter_map(|v| {
                 Some(FileEntry {
-                    path: v["path"].as_str()?.to_string(),
+                    path: v["relative_path"].as_str()?.to_string(),
                     sha256: v["sha256"].as_str()?.to_string(),
                     size: v["size"].as_u64().unwrap_or(0),
                 })
             }).collect()
-        })
-        .unwrap_or_default();
+        }).unwrap_or_default()
+    };
 
     // Scan current mods/ directory.
     let mods_dir = instance_dir.join("mods");
@@ -2888,22 +2948,7 @@ pub async fn import_lockfile(
         });
     }
 
-    // 4. Create the instance.
-    let request = CreateInstanceRequest {
-        name: name.to_string(),
-        instance_id: String::new(),
-        minecraft_version: game_version.to_string(),
-        loader: loader_type.to_string(),
-        loader_version: loader_ver.to_string(),
-        jvm_memory_mb: Some(4096),
-        jvm_gc: None,
-        jvm_custom_args: None,
-        jvm_always_pre_touch: None,
-    };
-    let inst_row = crate::instances::create_instance(app.clone(), request).await?;
-    let inst_id = inst_row.instance_id;
-
-    // 5. Verify lockfile content hash if present.
+    // 4. Verify lockfile content hash if present (BEFORE creating instance).
     if let Some(expected_hash) = lf["contentHash"].as_str().filter(|h| !h.is_empty()) {
         let mut canonical = lf.clone();
         canonical["signature"] = serde_json::Value::Null;
@@ -2922,6 +2967,21 @@ pub async fn import_lockfile(
             });
         }
     }
+
+    // 5. Create the instance (only after validation passes).
+    let request = CreateInstanceRequest {
+        name: name.to_string(),
+        instance_id: String::new(),
+        minecraft_version: game_version.to_string(),
+        loader: loader_type.to_string(),
+        loader_version: loader_ver.to_string(),
+        jvm_memory_mb: Some(4096),
+        jvm_gc: None,
+        jvm_custom_args: None,
+        jvm_always_pre_touch: None,
+    };
+    let inst_row = crate::instances::create_instance(app.clone(), request).await?;
+    let inst_id = inst_row.instance_id;
 
     Ok(inst_id)
 }

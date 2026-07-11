@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use sha2::Digest;
 use zip::write::FileOptions;
 use zip::CompressionMethod;
 
@@ -39,6 +40,7 @@ struct SnapshotManifest {
 struct SnapshotFileEntry {
     relative_path: String,
     size: u64,
+    sha256: String,
 }
 
 fn snapshots_dir(instance_dir: &Path) -> PathBuf {
@@ -85,9 +87,15 @@ pub fn create_snapshot(instance_dir: &Path, label: Option<&str>) -> Result<Snaps
                 .map_err(|e| format!("failed to start zip entry {entry_name}: {e}"))?;
             zip.write_all(&contents)
                 .map_err(|e| format!("failed to write {entry_name}: {e}"))?;
+            let sha256 = {
+                let mut hasher = sha2::Sha256::new();
+                hasher.update(&contents);
+                format!("{:x}", hasher.finalize())
+            };
             files.push(SnapshotFileEntry {
                 relative_path: entry_name.to_string(),
                 size: contents.len() as u64,
+                sha256,
             });
             total_size += contents.len() as u64;
         } else if src.is_dir() {
@@ -152,9 +160,15 @@ fn walk_and_zip(
                 .map_err(|e| format!("failed to start zip entry {relative}: {e}"))?;
             zip.write_all(&contents)
                 .map_err(|e| format!("failed to write {relative}: {e}"))?;
+            let sha256 = {
+                let mut hasher = sha2::Sha256::new();
+                hasher.update(&contents);
+                format!("{:x}", hasher.finalize())
+            };
             files.push(SnapshotFileEntry {
                 relative_path: relative,
                 size: contents.len() as u64,
+                sha256,
             });
             *total_size += contents.len() as u64;
         }
@@ -247,7 +261,11 @@ pub fn restore_snapshot(instance_dir: &Path, snapshot_id: &str) -> Result<(), St
                 .map_err(|e| format!("failed to create dir: {e}"))?;
         }
         fs::copy(&src, &dst)
-            .map_err(|e| format!("failed to copy {}: {e}", file_entry.relative_path))?;
+            .map_err(|e| {
+                // Rollback on copy failure: move pre-restore files back.
+                let _ = rollback_restore(instance_dir, &pre_dir);
+                format!("failed to copy {}: {e}", file_entry.relative_path)
+            })?;
     }
 
     if marker_path.exists() {
@@ -258,6 +276,29 @@ pub fn restore_snapshot(instance_dir: &Path, snapshot_id: &str) -> Result<(), St
     let _ = fs::remove_dir_all(&extract_dir);
 
     Ok(())
+}
+
+/// Reverse a failed restore by moving pre-restore files back into place.
+/// Best-effort: returns the first error encountered but continues through all
+/// tracked entries so the instance is as restored as possible.
+fn rollback_restore(instance_dir: &Path, pre_dir: &Path) -> Result<(), String> {
+    let mut first_err: Option<String> = None;
+    for entry_name in TRACKED_ENTRIES {
+        let src = pre_dir.join(entry_name);
+        if src.exists() {
+            let dst = instance_dir.join(entry_name);
+            if let Err(e) = fs::rename(&src, &dst) {
+                if first_err.is_none() {
+                    first_err = Some(format!("rollback failed for {entry_name}: {e}"));
+                }
+            }
+        }
+    }
+    if let Some(e) = first_err {
+        Err(e)
+    } else {
+        Ok(())
+    }
 }
 
 /// List all snapshots for an instance.

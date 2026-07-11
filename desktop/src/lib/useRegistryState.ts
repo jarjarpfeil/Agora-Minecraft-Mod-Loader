@@ -73,7 +73,13 @@ export function useRegistryState(): {
       const result = await checkRegistryUpdate(true);
       if (mountedRef.current) {
         setStatus(result);
-        setError(null);
+        // When the network check failed but we have a cached database,
+        // mark as offline rather than silently claiming "ready."
+        if (!result.checked && result.has_cached_db) {
+          setError('Could not check for updates. Using cached registry.');
+        } else {
+          setError(null);
+        }
       }
       return result;
     } catch (e) {

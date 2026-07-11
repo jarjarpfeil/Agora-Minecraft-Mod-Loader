@@ -215,7 +215,9 @@ export function HealthDialog({ instanceId, instanceName, initialReport, onConfir
         <div className="flex gap-2 justify-end">
           <Button variant="outline" onClick={onCancel} disabled={launching}>Cancel</Button>
           {activeBlockers.length > 0 ? (
-            <Button variant="destructive" onClick={handleConfirm} disabled={launching}>{launching ? 'Launching…' : 'Launch Anyway'}</Button>
+            <Button variant="destructive" disabled>
+              Resolve {activeBlockers.length} blocker{activeBlockers.length > 1 ? 's' : ''}
+            </Button>
           ) : (
             <Button onClick={handleConfirm} disabled={launching}>{launching ? 'Launching…' : 'Launch Anyway'}</Button>
           )}
