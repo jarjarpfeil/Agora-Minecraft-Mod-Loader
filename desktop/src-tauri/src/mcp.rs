@@ -11,8 +11,8 @@ use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
-use crate::crash_investigator;
 use crate::crash_diagnostics;
+use crate::crash_investigator;
 use crate::db;
 use crate::error::LauncherError;
 use crate::instances;
@@ -81,7 +81,10 @@ impl JsonRpcResponse {
         Self {
             jsonrpc: "2.0".to_string(),
             result: None,
-            error: Some(JsonRpcError { code, message: message.to_string() }),
+            error: Some(JsonRpcError {
+                code,
+                message: message.to_string(),
+            }),
             id,
         }
     }
@@ -113,12 +116,20 @@ fn get_or_create_mcp_token(app: &AppHandle) -> Option<String> {
         Ok(Some(serde_json::Value::String(t))) if !t.is_empty() => Some(t),
         _ => {
             let token = generate_token();
-            if db::set_setting(&conn, MCP_TOKEN_KEY, &serde_json::Value::String(token.clone())).is_ok() {
+            if db::set_setting(
+                &conn,
+                MCP_TOKEN_KEY,
+                &serde_json::Value::String(token.clone()),
+            )
+            .is_ok()
+            {
                 if let Ok(app_data) = paths::app_data_dir(app) {
                     write_token_file(&app_data, &token);
                 }
                 Some(token)
-            } else { None }
+            } else {
+                None
+            }
         }
     }
 }
@@ -143,7 +154,10 @@ fn read_stored_token(app: &AppHandle) -> Option<String> {
     }
 }
 
-fn extract_bearer_token(headers: &std::collections::HashMap<String, String>, full_path: &str) -> Option<String> {
+fn extract_bearer_token(
+    headers: &std::collections::HashMap<String, String>,
+    full_path: &str,
+) -> Option<String> {
     if let Some(auth) = headers.get("authorization") {
         if let Some(t) = auth.strip_prefix("Bearer ") {
             return Some(t.trim().to_string());
@@ -164,7 +178,11 @@ fn extract_bearer_token(headers: &std::collections::HashMap<String, String>, ful
     None
 }
 
-fn validate_token(app: &AppHandle, headers: &std::collections::HashMap<String, String>, full_path: &str) -> bool {
+fn validate_token(
+    app: &AppHandle,
+    headers: &std::collections::HashMap<String, String>,
+    full_path: &str,
+) -> bool {
     match read_stored_token(app) {
         Some(expected) => match extract_bearer_token(headers, full_path) {
             Some(t) => t == expected,
@@ -173,7 +191,6 @@ fn validate_token(app: &AppHandle, headers: &std::collections::HashMap<String, S
         None => false,
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // SSE session store
@@ -253,9 +270,9 @@ fn check_approval(
         Err(_) => return Err(LauncherError::LocalStateFailed),
     };
 
-    let mut stmt = match conn.prepare(
-        "SELECT state FROM mcp_approval_grants WHERE tool_name = ?1 AND instance_id = ?2",
-    ) {
+    let mut stmt = match conn
+        .prepare("SELECT state FROM mcp_approval_grants WHERE tool_name = ?1 AND instance_id = ?2")
+    {
         Ok(s) => s,
         Err(_) => return Err(LauncherError::LocalStateFailed),
     };
@@ -443,13 +460,19 @@ fn tool_definitions() -> Vec<serde_json::Value> {
 // Tool implementations
 // ---------------------------------------------------------------------------
 
-fn read_manifest(app: &AppHandle, instance_id: &str) -> Result<Option<InstanceManifest>, LauncherError> {
-    let path = paths::instance_manifest_path(app, instance_id).map_err(|_| LauncherError::LocalStateFailed)?;
+fn read_manifest(
+    app: &AppHandle,
+    instance_id: &str,
+) -> Result<Option<InstanceManifest>, LauncherError> {
+    let path = paths::instance_manifest_path(app, instance_id)
+        .map_err(|_| LauncherError::LocalStateFailed)?;
     if !path.exists() {
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path).map_err(|_| LauncherError::LocalStateFailed)?;
-    serde_json::from_str(&text).map(Some).map_err(|_| LauncherError::LocalStateFailed)
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|_| LauncherError::LocalStateFailed)
 }
 
 fn build_system_context(app: &AppHandle) -> String {
@@ -469,7 +492,11 @@ fn build_system_context(app: &AppHandle) -> String {
                 for row in &rows {
                     lines.push(format!(
                         "- **{}** (`{}`) â€” Minecraft {}, Loader: {} {}",
-                        row.name, row.instance_id, row.minecraft_version, row.loader, row.loader_version
+                        row.name,
+                        row.instance_id,
+                        row.minecraft_version,
+                        row.loader,
+                        row.loader_version
                     ));
                 }
             }
@@ -663,24 +690,28 @@ fn perform_signature_search(
     crash_text: &str,
 ) -> Result<Vec<serde_json::Value>, LauncherError> {
     let conn = registry::open_registry(app)?;
-    let mut stmt = conn.prepare(
-        "SELECT id, name, regex_pattern, solution_markdown \
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, regex_pattern, solution_markdown \
          FROM crash_signatures",
-    ).map_err(|e| LauncherError::Generic {
-        code: "ERR_INVALID_QUERY".to_string(),
-        message: e.to_string(),
-    })?;
+        )
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
 
-    let rows = stmt.query_map([], |row| {
-        let id: String = row.get(0)?;
-        let name: String = row.get(1)?;
-        let pattern: String = row.get(2)?;
-        let solution: String = row.get(3)?;
-        Ok((id, name, pattern, solution))
-    }).map_err(|e| LauncherError::Generic {
-        code: "ERR_INVALID_QUERY".to_string(),
-        message: e.to_string(),
-    })?;
+    let rows = stmt
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            let pattern: String = row.get(2)?;
+            let solution: String = row.get(3)?;
+            Ok((id, name, pattern, solution))
+        })
+        .map_err(|e| LauncherError::Generic {
+            code: "ERR_INVALID_QUERY".to_string(),
+            message: e.to_string(),
+        })?;
 
     let mut matches: Vec<serde_json::Value> = Vec::new();
     for row in rows {
@@ -830,28 +861,38 @@ async fn suggest_mod_incompatibility_impl(
 fn handle_read_latest_crash(app: &AppHandle, instance_id: &str) -> serde_json::Value {
     let reports = match crash_diagnostics::list_crash_reports(app, instance_id) {
         Ok(r) => r,
-        Err(e) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Error listing crash reports: {}", e)}],
-            "isError": true,
-        }),
+        Err(e) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Error listing crash reports: {}", e)}],
+                "isError": true,
+            })
+        }
     };
     let newest = match reports.first() {
         Some(r) => r.filename.clone(),
-        None => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("No crash reports found for instance '{}'", instance_id)}],
-            "isError": false,
-        }),
+        None => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("No crash reports found for instance '{}'", instance_id)}],
+                "isError": false,
+            })
+        }
     };
     let full = match crash_diagnostics::read_crash_log(app, instance_id, &newest) {
         Ok(t) => t,
-        Err(e) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Error reading crash log: {}", e)}],
-            "isError": true,
-        }),
+        Err(e) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Error reading crash log: {}", e)}],
+                "isError": true,
+            })
+        }
     };
     // Return the last 200 lines (most relevant for diagnosis).
     let lines: Vec<&str> = full.lines().collect();
-    let start = if lines.len() > 200 { lines.len() - 200 } else { 0 };
+    let start = if lines.len() > 200 {
+        lines.len() - 200
+    } else {
+        0
+    };
     let tail: Vec<&str> = lines[start..].to_vec();
     serde_json::json!({
         "content": [{"type": "text", "text": tail.join("\n")}],
@@ -868,21 +909,27 @@ fn handle_read_latest_crash(app: &AppHandle, instance_id: &str) -> serde_json::V
 fn handle_read_mod_manifest(app: &AppHandle, mod_id: &str) -> serde_json::Value {
     let conn = match registry::open_registry(app) {
         Ok(c) => c,
-        Err(e) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Could not open registry: {}", e)}],
-            "isError": true,
-        }),
+        Err(e) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Could not open registry: {}", e)}],
+                "isError": true,
+            })
+        }
     };
     let item = match registry::get_item_by_id(&conn, mod_id) {
         Ok(Some(i)) => i,
-        Ok(None) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Mod '{}' not found in curated registry", mod_id)}],
-            "isError": true,
-        }),
-        Err(e) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Registry query error: {}", e)}],
-            "isError": true,
-        }),
+        Ok(None) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Mod '{}' not found in curated registry", mod_id)}],
+                "isError": true,
+            })
+        }
+        Err(e) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Registry query error: {}", e)}],
+                "isError": true,
+            })
+        }
     };
     serde_json::json!({
         "id": item.id,
@@ -916,33 +963,42 @@ fn handle_read_mod_manifest(app: &AppHandle, mod_id: &str) -> serde_json::Value 
 fn handle_search_knowledge_base(app: &AppHandle, query: &str) -> serde_json::Value {
     let conn = match registry::open_registry(app) {
         Ok(c) => c,
-        Err(e) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Could not open registry: {}", e)}],
-            "isError": true,
-        }),
+        Err(e) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Could not open registry: {}", e)}],
+                "isError": true,
+            })
+        }
     };
     let like_pattern = format!("%{}%", query);
     let sql = "SELECT id, name, content_type, description                FROM registry_items                WHERE (description IS NOT NULL AND description LIKE ?1)                   OR (name LIKE ?1)                LIMIT 5";
     let mut stmt = match conn.prepare(sql) {
         Ok(s) => s,
-        Err(e) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Query prepare error: {}", e)}],
-            "isError": true,
-        }),
+        Err(e) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Query prepare error: {}", e)}],
+                "isError": true,
+            })
+        }
     };
-    let rows = match stmt.query_map([&like_pattern], |row| -> rusqlite::Result<serde_json::Value> {
-        Ok(serde_json::json!({
-            "id": row.get::<_, String>(0)?,
-            "name": row.get::<_, String>(1)?,
-            "content_type": row.get::<_, String>(2)?,
-            "description": row.get::<_, Option<String>>(3)?,
-        }))
-    }) {
+    let rows = match stmt.query_map(
+        [&like_pattern],
+        |row| -> rusqlite::Result<serde_json::Value> {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "name": row.get::<_, String>(1)?,
+                "content_type": row.get::<_, String>(2)?,
+                "description": row.get::<_, Option<String>>(3)?,
+            }))
+        },
+    ) {
         Ok(r) => r,
-        Err(e) => return serde_json::json!({
-            "content": [{"type": "text", "text": format!("Query error: {}", e)}],
-            "isError": true,
-        }),
+        Err(e) => {
+            return serde_json::json!({
+                "content": [{"type": "text", "text": format!("Query error: {}", e)}],
+                "isError": true,
+            })
+        }
     };
     let mut results: Vec<serde_json::Value> = Vec::new();
     for row in rows {
@@ -960,7 +1016,11 @@ fn handle_search_knowledge_base(app: &AppHandle, query: &str) -> serde_json::Val
 // Tool call handler
 // ---------------------------------------------------------------------------
 
-async fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json::Value) -> serde_json::Value {
+async fn handle_tool_call(
+    app: &AppHandle,
+    tool_name: &str,
+    params: &serde_json::Value,
+) -> serde_json::Value {
     let get_str = |key: &str| -> Option<String> {
         params
             .get(key)
@@ -1098,7 +1158,11 @@ async fn handle_tool_call(app: &AppHandle, tool_name: &str, params: &serde_json:
 // MCP method handler
 // ---------------------------------------------------------------------------
 
-async fn handle_mcp_method(app: &AppHandle, method: &str, params: Option<&serde_json::Value>) -> serde_json::Value {
+async fn handle_mcp_method(
+    app: &AppHandle,
+    method: &str,
+    params: Option<&serde_json::Value>,
+) -> serde_json::Value {
     match method {
         "initialize" => {
             serde_json::json!({
@@ -1120,10 +1184,7 @@ async fn handle_mcp_method(app: &AppHandle, method: &str, params: Option<&serde_
         }
         "tools/call" => {
             let params = params.unwrap_or(&serde_json::Value::Null);
-            let tool_name = params
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let tool_params = params.get("arguments").unwrap_or(&serde_json::Value::Null);
             handle_tool_call(app, tool_name, tool_params).await
         }
@@ -1139,10 +1200,7 @@ async fn handle_mcp_method(app: &AppHandle, method: &str, params: Option<&serde_
         }
         "resources/read" => {
             let params = params.unwrap_or(&serde_json::Value::Null);
-            let uri = params
-                .get("uri")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
 
             if uri == "system_context.md" {
                 let md = build_system_context(app);
@@ -1191,8 +1249,12 @@ fn parse_query_params(path: &str) -> HashMap<String, String> {
             let mut kv = pair.splitn(2, '=');
             if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
                 params.insert(
-                    urlencoding::decode(k).unwrap_or_else(|_| Cow::Borrowed(k)).into_owned(),
-                    urlencoding::decode(v).unwrap_or_else(|_| Cow::Borrowed(v)).into_owned(),
+                    urlencoding::decode(k)
+                        .unwrap_or_else(|_| Cow::Borrowed(k))
+                        .into_owned(),
+                    urlencoding::decode(v)
+                        .unwrap_or_else(|_| Cow::Borrowed(v))
+                        .into_owned(),
                 );
             }
         }
@@ -1264,9 +1326,7 @@ async fn handle_connection(
     }
 
     match (method.as_str(), route) {
-        ("GET", "/sse") => {
-            handle_sse(write_half, store, app).await
-        }
+        ("GET", "/sse") => handle_sse(write_half, store, app).await,
         ("POST", "/messages") => {
             handle_post_messages(full_path, store, app, headers, read_half, write_half).await
         }
@@ -1316,7 +1376,10 @@ async fn handle_sse(
     writer.flush().await?;
 
     // Send endpoint event
-    let endpoint_event = format!("event: endpoint\ndata: /messages?session_id={}\n\n", session_id);
+    let endpoint_event = format!(
+        "event: endpoint\ndata: /messages?session_id={}\n\n",
+        session_id
+    );
     writer.write_all(endpoint_event.as_bytes()).await?;
     writer.flush().await?;
 
@@ -1538,7 +1601,10 @@ async fn handle_post_messages(
     let response = match request.method.as_str() {
         "initialize" | "tools/list" | "tools/call" | "resources/list" | "resources/read" => {
             let result = handle_mcp_method(&app, &request.method, request.params.as_ref()).await;
-            JsonRpcResponse::success(request.id.clone().unwrap_or(serde_json::Value::Null), result)
+            JsonRpcResponse::success(
+                request.id.clone().unwrap_or(serde_json::Value::Null),
+                result,
+            )
         }
         _ => JsonRpcResponse::error(
             request.id.unwrap_or(serde_json::Value::Null),
@@ -1553,16 +1619,16 @@ async fn handle_post_messages(
     // and the actual JSON-RPC response travels via the SSE channel.
     // We also acknowledge via HTTP for clients that read the body directly.
     let _ = write_half
-        .write_all(
-            b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n"
-        )
+        .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
         .await;
 
     // Send the response via the SSE channel (the primary delivery path).
     {
         let sender = store.lock().unwrap().get(&session_id).cloned();
         if let Some(sender) = sender {
-            let _ = sender.send(String::from_utf8_lossy(&resp_bytes).to_string()).await;
+            let _ = sender
+                .send(String::from_utf8_lossy(&resp_bytes).to_string())
+                .await;
         }
     }
 
@@ -1597,7 +1663,12 @@ impl McpServer {
 
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
-        let _ = self.shutdown_tx.lock().unwrap().take().map(|tx| tx.send(()));
+        let _ = self
+            .shutdown_tx
+            .lock()
+            .unwrap()
+            .take()
+            .map(|tx| tx.send(()));
     }
 
     /// Take the one-shot completion signal for the listener task. This is
@@ -1787,19 +1858,13 @@ mod tests {
     #[test]
     fn test_approval_no_grant_readonly() {
         // No grant + non-destructive â†’ allowed (safe default).
-        assert_eq!(
-            check_approval_grant(None, false),
-            ApprovalResult::Allowed
-        );
+        assert_eq!(check_approval_grant(None, false), ApprovalResult::Allowed);
     }
 
     #[test]
     fn test_approval_no_grant_destructive() {
         // No grant + destructive â†’ denied (safe default).
-        assert_eq!(
-            check_approval_grant(None, true),
-            ApprovalResult::Denied
-        );
+        assert_eq!(check_approval_grant(None, true), ApprovalResult::Denied);
     }
 
     // ---- JSON-RPC helpers ----
@@ -1874,7 +1939,10 @@ mod tests {
 
     #[test]
     fn test_extract_session_id_present() {
-        assert_eq!(extract_session_id("/messages?session_id=abc123"), Some("abc123".to_string()));
+        assert_eq!(
+            extract_session_id("/messages?session_id=abc123"),
+            Some("abc123".to_string())
+        );
     }
 
     #[test]
@@ -1924,4 +1992,3 @@ mod tests {
         assert!(server.take_stopped_rx().is_none());
     }
 }
-

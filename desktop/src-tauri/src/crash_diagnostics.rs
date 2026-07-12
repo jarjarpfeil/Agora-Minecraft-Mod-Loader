@@ -1,4 +1,4 @@
-﻿//! Crash diagnostics shim â€” preserves all original public signatures while
+//! Crash diagnostics shim â€” preserves all original public signatures while
 //! delegating to `agora_core::crash_diagnostics` for the actual logic.
 //!
 //! Phase 3: triage works with ZERO `registry.db` dependency. The shim passes
@@ -8,10 +8,8 @@
 use crate::db;
 use crate::error::{LauncherError, LauncherResult};
 use crate::paths;
-pub use agora_core::crash_diagnostics::{
-    CrashReportInfo, CrashTriageResult, MAX_REGEX_LEN,
-};
 use agora_core::crash_diagnostics as core;
+pub use agora_core::crash_diagnostics::{CrashReportInfo, CrashTriageResult, MAX_REGEX_LEN};
 
 /// Check whether a fresh crash report appeared after the instance's
 /// `last_launched_at`. Returns the newest qualifying file.
@@ -27,8 +25,7 @@ pub fn check_for_crash<R: tauri::Runtime>(
     let sanitized = paths::sanitize_id(instance_id);
 
     let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
-    let row = db::get_instance(&conn, &sanitized)
-        .map_err(|_| LauncherError::LocalStateFailed)?;
+    let row = db::get_instance(&conn, &sanitized).map_err(|_| LauncherError::LocalStateFailed)?;
 
     let last_launched_at = match row.and_then(|r| r.last_launched_at) {
         Some(ts) => ts,
@@ -102,10 +99,12 @@ pub fn read_crash_log<R: tauri::Runtime>(
     let sanitized = paths::sanitize_id(instance_id);
     let reports_dir = match paths::instance_dir(app, &sanitized) {
         Ok(d) => d.join("crash-reports"),
-        Err(_) => return Err(LauncherError::Generic {
-            code: "ERR_CRASH_LOG_READ".to_string(),
-            message: "Could not read the crash log file.".to_string(),
-        }),
+        Err(_) => {
+            return Err(LauncherError::Generic {
+                code: "ERR_CRASH_LOG_READ".to_string(),
+                message: "Could not read the crash log file.".to_string(),
+            })
+        }
     };
     let safe_name = std::path::Path::new(filename)
         .file_name()
@@ -175,10 +174,8 @@ mod tests {
 
     #[test]
     fn test_list_crash_reports_finds_txt() {
-        let tmp = std::env::temp_dir().join(format!(
-            "agora_test_crash_reports_{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("agora_test_crash_reports_{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
         std::fs::write(tmp.join("crash-1.txt"), "crash data 1").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -195,10 +192,8 @@ mod tests {
 
     #[test]
     fn test_list_crash_reports_empty_dir() {
-        let tmp = std::env::temp_dir().join(format!(
-            "agora_test_crash_empty_{}",
-            std::process::id()
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("agora_test_crash_empty_{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
 
         let reports = list_crash_reports_from_dir(&tmp);

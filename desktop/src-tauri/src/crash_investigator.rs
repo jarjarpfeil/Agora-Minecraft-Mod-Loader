@@ -1,326 +1,22 @@
 use crate::db;
 use crate::error::{LauncherError, LauncherResult};
-use crate::models::{InstanceManifest, InstalledMod};
+use crate::models::{InstalledMod, InstanceManifest};
 use crate::paths;
 use crate::registry;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
+
 use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // 1. JAR package parsing & metadata extraction
 // ---------------------------------------------------------------------------
 
-/// Metadata extracted from a mod `.jar` file: Java packages, mod ID, and
-/// declared dependencies.
-#[derive(Debug, Clone, Default)]
-pub struct JarMetadata {
-    pub java_packages: Vec<String>,
-    pub mod_jar_id: Option<String>,
-    pub depends_on: Vec<String>,
-    pub optional_deps: Vec<String>,
-    pub incompatible_deps: Vec<String>,
-}
-
-/// Noise entries that are part of the mod ecosystem but not actual mod IDs.
-const DEPENDENCY_IGNORE_LIST: &[&str] = &["minecraft", "fabricloader", "quilt_loader", "java"];
-
-/// Open a .jar file as a zip archive and extract Java package directories,
-/// mod ID, and declared dependency metadata from `.class` entries and
-/// manifest files (`fabric.mod.json`, `META-INF/mods.toml`).
-///
-/// An entry like `me/jellysquid/nautilus/Foo.class` yields the package
-/// `me.jellysquid.nautilus` — the full directory path with the filename
-/// stripped, segments joined by `.`. A minimum of 2 directory segments before
-/// the filename is required to avoid noise from single-segment paths like
-/// `Foo.class` at the zip root.
-///
-/// On ANY error (not a zip, io failure, etc.), returns `JarMetadata::default()`.
-/// Never panics.
-pub fn parse_jar_metadata(jar_path: &Path) -> JarMetadata {
-    let file = match std::fs::File::open(jar_path) {
-        Ok(f) => f,
-        Err(_) => return JarMetadata::default(),
-    };
-    let mut archive = match zip::ZipArchive::new(file) {
-        Ok(a) => a,
-        Err(_) => return JarMetadata::default(),
-    };
-
-    let mut packages: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut mod_jar_id: Option<String> = None;
-    let mut depends_on: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut optional_deps: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut incompatible_deps: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut forge_mod_id: Option<String> = None;
-
-    for i in 0..archive.len() {
-        let name = match archive.by_index(i) {
-            Ok(e) => e.name().to_string(),
-            Err(_) => continue,
-        };
-        // --- .class entries → java_packages ---
-        if name.ends_with(".class") {
-            let stem = match name.strip_suffix(".class") {
-                Some(s) => s,
-                None => continue,
-            };
-            let replaced = stem.replace('\\', "/");
-            let segments: Vec<&str> = replaced.split('/').collect();
-            if segments.len() < 3 {
-                continue;
-            }
-            let dir_segments: Vec<&str> = segments[..segments.len() - 1].to_vec();
-            let full_pkg = dir_segments.join(".");
-            packages.insert(full_pkg);
-            continue;
-        }
-
-        // --- fabric.mod.json → mod_jar_id + depends_on + optional_deps ---
-        if name == "fabric.mod.json" {
-            if let Some(content_str) = read_entry_utf8(&mut archive, i) {
-                match serde_json::from_str::<serde_json::Value>(&content_str) {
-                    Ok(value) => {
-                        if let Some(id_str) = value.get("id").and_then(|v| v.as_str()) {
-                            if !id_str.is_empty() {
-                                mod_jar_id = Some(id_str.to_string());
-                            }
-                        }
-                        if let Some(depends) = value.get("depends") {
-                            extract_fabric_deps(depends, &mut depends_on);
-                        }
-                        if let Some(recommends) = value.get("recommends") {
-                            extract_fabric_deps(recommends, &mut optional_deps);
-                        }
-                        if let Some(suggests) = value.get("suggests") {
-                            extract_fabric_deps(suggests, &mut optional_deps);
-                        }
-                        if let Some(breaks) = value.get("breaks") {
-                            extract_fabric_deps(breaks, &mut incompatible_deps);
-                        }
-                        if let Some(conflicts) = value.get("conflicts") {
-                            extract_fabric_deps(conflicts, &mut incompatible_deps);
-                        }
-                    }
-                    Err(_) => {}
-                }
-            }
-            continue;
-        }
-
-        // --- META-INF/mods.toml → Forge/NeoForge depends_on + mod_id ---
-        if name == "META-INF/mods.toml" {
-            if let Some(content) = read_entry_utf8(&mut archive, i) {
-                extract_forge_deps(
-                    &content,
-                    &mut depends_on,
-                    &mut optional_deps,
-                    &mut incompatible_deps,
-                    &mut forge_mod_id,
-                );
-            }
-            continue;
-        }
-
-        // Skip everything else (assets, MANIFEST.MF, etc.)
-    }
-
-    // Forge mod_id as fallback when no Fabric mod.json was present.
-    if mod_jar_id.is_none() {
-        if let Some(fid) = forge_mod_id {
-            mod_jar_id = Some(fid);
-        }
-    }
-
-    // Filter noise from all three dep lists
-    depends_on.retain(|dep| !DEPENDENCY_IGNORE_LIST.contains(&dep.as_str()));
-    optional_deps.retain(|dep| !DEPENDENCY_IGNORE_LIST.contains(&dep.as_str()));
-    incompatible_deps.retain(|dep| !DEPENDENCY_IGNORE_LIST.contains(&dep.as_str()));
-
-    JarMetadata {
-        java_packages: packages.into_iter().collect(),
-        mod_jar_id,
-        depends_on: depends_on.into_iter().collect(),
-        optional_deps: optional_deps.into_iter().collect(),
-        incompatible_deps: incompatible_deps.into_iter().collect(),
-    }
-}
-
-/// Extract dependency IDs from a Fabric `depends` JSON value.
-///
-/// Handles both object form `{"modid": ">=1.0.0"}` and array form
-/// `[{"id": "modid"}, {"identifier": "modid"}]`.
-fn extract_fabric_deps(depends: &serde_json::Value, out: &mut std::collections::BTreeSet<String>) {
-    match depends {
-        serde_json::Value::Object(map) => {
-            for key in map.keys() {
-                out.insert(key.clone());
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for elem in arr {
-                if let Some(id) = elem.get("id").and_then(|v| v.as_str()) {
-                    out.insert(id.to_string());
-                } else if let Some(id) = elem
-                    .get("identifier")
-                    .and_then(|v| v.as_str())
-                {
-                    out.insert(id.to_string());
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Ad-hoc extraction of dependency mod IDs from a Forge/NeoForge `mods.toml`.
-///
-/// Strategy:
-/// 1. Find `[[dependencies.<depmodid>]]` block headers and classify by `type=`.
-/// 2. The first `modId="<id>"` outside any `[[dependencies....]]` block is the
-///    mod's own ID (not added to any dep list).
-/// 3. Flush on block-boundary transitions and at EOF.
-fn extract_forge_deps(
-    content: &str,
-    required_out: &mut std::collections::BTreeSet<String>,
-    optional_out: &mut std::collections::BTreeSet<String>,
-    incompatible_out: &mut std::collections::BTreeSet<String>,
-    mod_id_out: &mut Option<String>,
-) {
-    let mut current_dep_id: Option<String> = None;
-    let mut current_type: Option<String> = None;
-    let mut in_dep_block = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        // Detect [[dependencies.<depmodid>]] headers
-        if let Some(dep_id) = trimmed.strip_prefix("[[dependencies.") {
-            // Flush any in-flight block first
-            if let Some(dep_id_val) = current_dep_id.take() {
-                let classify = current_type.as_deref().unwrap_or("required");
-                match classify {
-                    "required" => {
-                        required_out.insert(dep_id_val);
-                    }
-                    "optional" => {
-                        optional_out.insert(dep_id_val);
-                    }
-                    "incompatible" => {
-                        incompatible_out.insert(dep_id_val);
-                    }
-                    _ => {
-                        optional_out.insert(dep_id_val);
-                    }
-                }
-            }
-            current_type = None;
-            in_dep_block = false;
-
-            if let Some(end) = dep_id.find(']') {
-                let block_key = &dep_id[..end];
-                if !block_key.is_empty() {
-                    in_dep_block = true;
-                    current_dep_id = Some(block_key.to_string());
-                    current_type = None;
-                }
-            }
-            continue;
-        }
-
-        // Any other [[...]] closes the dep block context
-        if trimmed.starts_with("[[") {
-            if let Some(dep_id_val) = current_dep_id.take() {
-                let classify = current_type.as_deref().unwrap_or("required");
-                match classify {
-                    "required" => {
-                        required_out.insert(dep_id_val);
-                    }
-                    "optional" => {
-                        optional_out.insert(dep_id_val);
-                    }
-                    "incompatible" => {
-                        incompatible_out.insert(dep_id_val);
-                    }
-                    _ => {
-                        optional_out.insert(dep_id_val);
-                    }
-                }
-            }
-            current_type = None;
-            in_dep_block = false;
-            continue;
-        }
-
-        // Inside a dep block: look for type = "..." or type='...'
-        if in_dep_block {
-            if let Some(rest) = trimmed.strip_prefix("type") {
-                let rest = rest.trim_start();
-                if rest.starts_with('=') {
-                    let rest = rest[1..].trim();
-                    // Extract value tolerant of quote style
-                    if let Some(val) = rest
-                        .strip_prefix(['"', '\''])
-                        .and_then(|s| s.split(['"', '\'']).next())
-                    {
-                        current_type = Some(val.to_string());
-                    }
-                }
-            }
-        }
-
-        // modId="<id>" outside dep blocks is the mod's own ID.
-        if let Some(rest) = trimmed.strip_prefix("modId") {
-            let rest = rest.trim_start();
-            if rest.starts_with('=') {
-                let rest = rest[1..].trim();
-                if let Some(id) = rest
-                    .strip_prefix(['"', '\''])
-                    .and_then(|s| s.split(['"', '\'']).next())
-                {
-                    if !in_dep_block {
-                        if mod_id_out.is_none() {
-                            *mod_id_out = Some(id.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Flush any remaining in-flight block at EOF
-    if let Some(dep_id_val) = current_dep_id.take() {
-        let classify = current_type.as_deref().unwrap_or("required");
-        match classify {
-            "required" => {
-                required_out.insert(dep_id_val);
-            }
-            "optional" => {
-                optional_out.insert(dep_id_val);
-            }
-            "incompatible" => {
-                incompatible_out.insert(dep_id_val);
-            }
-            _ => {
-                optional_out.insert(dep_id_val);
-            }
-        }
-    }
-}
-
-/// Read a zip entry by index as UTF-8 text.
-///
-/// zip 0.6's `ZipFile` does not expose `contents_utf8()`, so we read bytes
-/// and decode manually. Returns `None` on any I/O or encoding error.
-fn read_entry_utf8(archive: &mut zip::ZipArchive<std::fs::File>, index: usize) -> Option<String> {
-    let mut file = archive.by_index(index).ok()?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf).ok()?;
-    Some(String::from_utf8_lossy(&buf).into_owned())
-}
+// JAR metadata parsing (mod ID, dependencies, incompatibilities) has been
+// deduplicated to `agora_core::jar_metadata::parse_jar_metadata`. Only the
+// thin Java-package extraction wrapper below remains here.
 
 /// Open a .jar file as a zip archive and extract Java package directories
 /// from `.class` entry paths.
@@ -333,7 +29,7 @@ fn read_entry_utf8(archive: &mut zip::ZipArchive<std::fs::File>, index: usize) -
 ///
 /// On ANY error (not a zip, io failure, etc.), returns `vec![]`. Never panics.
 pub fn parse_jar_packages(jar_path: &Path) -> Vec<String> {
-    parse_jar_metadata(jar_path).java_packages
+    agora_core::jar_metadata::parse_jar_metadata(jar_path).java_packages
 }
 
 // ---------------------------------------------------------------------------
@@ -353,12 +49,7 @@ impl CrashFingerprint {
     /// me.jellysquid...|at net.minecraft..."` — join top_frames with `|`,
     /// capped at 3.
     pub fn fingerprint_str(&self) -> String {
-        let frames: Vec<String> = self
-            .top_frames
-            .iter()
-            .take(3)
-            .cloned()
-            .collect();
+        let frames: Vec<String> = self.top_frames.iter().take(3).cloned().collect();
         format!("{}|{}", self.exception_class, frames.join("|"))
     }
 }
@@ -480,16 +171,9 @@ pub struct SuspectScore {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind")]
 pub enum SuggestedAction {
-    GuidedDisable {
-        next_suspect: SuspectScore,
-    },
-    ConfidenceAutoDisable {
-        mod_id: String,
-        filename: String,
-    },
-    ShowTriageBanner {
-        mod_id: String,
-    },
+    GuidedDisable { next_suspect: SuspectScore },
+    ConfidenceAutoDisable { mod_id: String, filename: String },
+    ShowTriageBanner { mod_id: String },
     NoSuspects,
 }
 
@@ -522,8 +206,8 @@ pub fn record_crash_event<R: tauri::Runtime>(
 ) -> LauncherResult<i64> {
     let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
 
-    let top_frames_json = serde_json::to_string(&fingerprint.top_frames)
-        .map_err(|_| LauncherError::Generic {
+    let top_frames_json =
+        serde_json::to_string(&fingerprint.top_frames).map_err(|_| LauncherError::Generic {
             code: "ERR_JSON_SERIALIZE".to_string(),
             message: "Failed to serialize top_frames.".to_string(),
         })?;
@@ -565,8 +249,7 @@ pub fn record_survival<R: tauri::Runtime>(
     mod_ids: &[String],
 ) -> LauncherResult<()> {
     let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
-    db::insert_survival(&conn, instance_id, mod_ids)
-        .map_err(|_| LauncherError::LocalStateFailed)
+    db::insert_survival(&conn, instance_id, mod_ids).map_err(|_| LauncherError::LocalStateFailed)
 }
 
 // ---------------------------------------------------------------------------
@@ -642,18 +325,15 @@ pub fn disable_mod<R: tauri::Runtime>(
     if manifest_path.exists() {
         let text = std::fs::read_to_string(&manifest_path)
             .map_err(|_| LauncherError::InstanceCreateFailed)?;
-        let mut manifest: InstanceManifest = serde_json::from_str(&text)
-            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let mut manifest: InstanceManifest =
+            serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
         // Find and update the matching mod entry (set a comment to note disabled).
         for mod_entry in &mut manifest.mods {
             if mod_entry.filename == filename {
                 // Append a note to the version field to track disabled state.
                 // We keep the original version and add a disabled marker.
-                let original_version = mod_entry
-                    .version
-                    .clone()
-                    .unwrap_or_else(|| String::new());
+                let original_version = mod_entry.version.clone().unwrap_or_else(|| String::new());
                 mod_entry.version = Some(format!("{} [disabled]", original_version));
                 break;
             }
@@ -711,8 +391,8 @@ pub fn enable_mod<R: tauri::Runtime>(
     if manifest_path.exists() {
         let text = std::fs::read_to_string(&manifest_path)
             .map_err(|_| LauncherError::InstanceCreateFailed)?;
-        let mut manifest: InstanceManifest = serde_json::from_str(&text)
-            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let mut manifest: InstanceManifest =
+            serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
         for mod_entry in &mut manifest.mods {
             if mod_entry.filename == filename {
@@ -763,7 +443,11 @@ pub fn compute_mod_score(
     pair_crash_counts: &[(String, i64)],
     pair_survival_counts: &[(String, i64)],
 ) -> SuspectScore {
-    let ubiquity_denom = if total_survivals == 0 { 1 } else { total_survivals };
+    let ubiquity_denom = if total_survivals == 0 {
+        1
+    } else {
+        total_survivals
+    };
 
     // --- Signal A (stack-frame match) ---
     let base_a: f64 = java_packages
@@ -827,7 +511,9 @@ pub fn compute_mod_score(
     // -------------------------------------------------------------------
 
     // D (survival ubiquity) — dampens A and C
-    let ubiquity = (mod_survival_count as f64 / ubiquity_denom as f64).min(1.0).max(0.0);
+    let ubiquity = (mod_survival_count as f64 / ubiquity_denom as f64)
+        .min(1.0)
+        .max(0.0);
     let dampener_d = 1.0 - (ubiquity * 0.7);
 
     let a_final = base_a * dampener_d;
@@ -950,16 +636,14 @@ pub fn score_suspects<R: tauri::Runtime>(
     // -----------------------------------------------------------------------
     let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
 
-    let confirmed_map: HashMap<String, i64> = match db::get_confirmed_attribution(
-        &conn,
-        &fingerprint.fingerprint_str(),
-    ) {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|r| (r.mod_id, r.confirm_count))
-            .collect(),
-        Err(_) => HashMap::new(),
-    };
+    let confirmed_map: HashMap<String, i64> =
+        match db::get_confirmed_attribution(&conn, &fingerprint.fingerprint_str()) {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|r| (r.mod_id, r.confirm_count))
+                .collect(),
+            Err(_) => HashMap::new(),
+        };
 
     let total_survivals: i64 = db::get_total_survival_count(&conn).unwrap_or(0);
 
@@ -970,11 +654,7 @@ pub fn score_suspects<R: tauri::Runtime>(
 
     let installed_ids: Vec<String> = installed
         .iter()
-        .filter_map(|m| {
-            m.registry_id
-                .clone()
-                .or_else(|| Some(m.filename.clone()))
-        })
+        .filter_map(|m| m.registry_id.clone().or_else(|| Some(m.filename.clone())))
         .collect();
 
     // -----------------------------------------------------------------------
@@ -1068,15 +748,12 @@ pub fn score_suspects<R: tauri::Runtime>(
     for mod_entry in installed {
         if let Some(ref _mod_jar_id) = mod_entry.mod_jar_id {
             for dep_on in &mod_entry.depends_on {
-                reverse_deps
-                    .entry(dep_on.clone())
-                    .or_default()
-                    .push(
-                        mod_entry
-                            .registry_id
-                            .clone()
-                            .unwrap_or_else(|| mod_entry.filename.clone()),
-                    );
+                reverse_deps.entry(dep_on.clone()).or_default().push(
+                    mod_entry
+                        .registry_id
+                        .clone()
+                        .unwrap_or_else(|| mod_entry.filename.clone()),
+                );
             }
         }
     }
@@ -1151,7 +828,10 @@ pub fn score_suspects<R: tauri::Runtime>(
     // Step 4 — sort descending by total_score, tie-break mod_id ascending for determinism.
     // -------------------------------------------------------------------
     suspects.sort_by(|a, b| {
-        let by_score = b.total_score.partial_cmp(&a.total_score).unwrap_or(std::cmp::Ordering::Equal);
+        let by_score = b
+            .total_score
+            .partial_cmp(&a.total_score)
+            .unwrap_or(std::cmp::Ordering::Equal);
         if by_score != std::cmp::Ordering::Equal {
             return by_score;
         }
@@ -1225,9 +905,9 @@ pub fn continue_investigation<R: tauri::Runtime>(
 
 /// Check whether a registry item has status `under_review`.
 fn check_under_review(conn: &Connection, item_id: &str) -> bool {
-    let mut stmt = match conn.prepare(
-        "SELECT 1 FROM registry_items WHERE id = ?1 AND status = 'under_review' LIMIT 1",
-    ) {
+    let mut stmt = match conn
+        .prepare("SELECT 1 FROM registry_items WHERE id = ?1 AND status = 'under_review' LIMIT 1")
+    {
         Ok(s) => s,
         Err(_) => return false,
     };
@@ -1276,15 +956,13 @@ Caused by: java.lang.NullPointerException
     /// Build a temporary .jar (zip) file with the given class entries and return its path.
     fn build_test_jar(entries: &[&str]) -> PathBuf {
         let id = JAR_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let jar_path = std::env::temp_dir().join(format!(
-            "agora-test-{}-{}.jar",
-            std::process::id(), id
-        ));
+        let jar_path =
+            std::env::temp_dir().join(format!("agora-test-{}-{}.jar", std::process::id(), id));
         let file = std::fs::File::create(&jar_path).expect("create temp jar");
         {
             let mut zip = zip::ZipWriter::new(file);
-            let opts: zip::write::FileOptions =
-                zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            let opts: zip::write::FileOptions = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
             for entry in entries {
                 zip.start_file(*entry, opts).expect("start zip entry");
                 zip.write_all(&[]).expect("write zip entry");
@@ -1303,15 +981,13 @@ Caused by: java.lang.NullPointerException
     /// `entries` is a slice of `(path, content)` tuples.
     fn build_test_jar_with_content(entries: &[(&str, &str)]) -> PathBuf {
         let id = JAR_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let jar_path = std::env::temp_dir().join(format!(
-            "agora-test-{}-{}.jar",
-            std::process::id(), id
-        ));
+        let jar_path =
+            std::env::temp_dir().join(format!("agora-test-{}-{}.jar", std::process::id(), id));
         let file = std::fs::File::create(&jar_path).expect("create temp jar");
         {
             let mut zip = zip::ZipWriter::new(file);
-            let opts: zip::write::FileOptions =
-                zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            let opts: zip::write::FileOptions = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
             for (entry, content) in entries {
                 zip.start_file(*entry, opts).expect("start zip entry");
                 zip.write_all(content.as_bytes()).expect("write zip entry");
@@ -1347,7 +1023,10 @@ Caused by: java.lang.NullPointerException
     #[test]
     fn test_parse_crash_log_extracts_root_cause() {
         let result = parse_crash_log(sample_crash_log());
-        assert!(result.is_some(), "parse_crash_log should return Some for a valid crash log");
+        assert!(
+            result.is_some(),
+            "parse_crash_log should return Some for a valid crash log"
+        );
         let fp = result.unwrap();
         assert!(
             fp.exception_class.contains("NullPointerException"),
@@ -1462,10 +1141,8 @@ Caused by: java.lang.NullPointerException
 
     #[test]
     fn test_parse_jar_packages_non_zip_returns_empty() {
-        let txt_path = std::env::temp_dir().join(format!(
-            "agora-test-txt-{}.txt",
-            std::process::id()
-        ));
+        let txt_path =
+            std::env::temp_dir().join(format!("agora-test-txt-{}.txt", std::process::id()));
         std::fs::write(&txt_path, "not a zip file").expect("write temp txt");
         let pkgs = parse_jar_packages(&txt_path);
         assert!(pkgs.is_empty());
@@ -1489,55 +1166,84 @@ Caused by: java.lang.NullPointerException
     #[test]
     fn test_score_A_stack_frame_hit() {
         let s = compute_mod_score(
-            "sodium".into(), "sodium.jar".into(),
+            "sodium".into(),
+            "sodium.jar".into(),
             &["me.jellysquid.nautilus".into()],
             &["me.jellysquid.nautilus.Foo.bar".into()],
-            &[], &[],
-            0, 0, 0,
-            &[], &[],
+            &[],
+            &[],
+            0,
+            0,
+            0,
+            &[],
+            &[],
         );
-        assert!(s.total_score > 0.0, "expected A signal to produce score > 0, got {}", s.total_score);
+        assert!(
+            s.total_score > 0.0,
+            "expected A signal to produce score > 0, got {}",
+            s.total_score
+        );
     }
 
     #[test]
     fn test_score_A_no_match_zero() {
         let s = compute_mod_score(
-            "unrelated".into(), "unrelated.jar".into(),
+            "unrelated".into(),
+            "unrelated.jar".into(),
             &["com.unrelated".into()],
             &["me.jellysquid.nautilus.Foo.bar".into()],
-            &[], &[],
-            0, 0, 0,
-            &[], &[],
+            &[],
+            &[],
+            0,
+            0,
+            0,
+            &[],
+            &[],
         );
-        assert!(approx(s.total_score, 0.0), "expected score ~0, got {}", s.total_score);
+        assert!(
+            approx(s.total_score, 0.0),
+            "expected score ~0, got {}",
+            s.total_score
+        );
     }
 
     #[test]
     fn test_score_D_ubiquity_dampens_A() {
         // Ubiquitous mod: present in 80% of survivals
         let ubiquitous = compute_mod_score(
-            "sodium".into(), "sodium.jar".into(),
+            "sodium".into(),
+            "sodium.jar".into(),
             &["me.jellysquid.nautilus".into()],
             &["me.jellysquid.nautilus.Foo.bar".into()],
-            &[], &[],
-            0, 10, 8,
-            &[], &[],
+            &[],
+            &[],
+            0,
+            10,
+            8,
+            &[],
+            &[],
         );
         // Rare mod: present in 0% of survivals
         let rare = compute_mod_score(
-            "sodium".into(), "sodium.jar".into(),
+            "sodium".into(),
+            "sodium.jar".into(),
             &["me.jellysquid.nautilus".into()],
             &["me.jellysquid.nautilus.Foo.bar".into()],
-            &[], &[],
-            0, 10, 0,
-            &[], &[],
+            &[],
+            &[],
+            0,
+            10,
+            0,
+            &[],
+            &[],
         );
         assert!(ubiquitous.total_score > 0.0, "ubiquitous A must be > 0");
         assert!(rare.total_score > 0.0, "rare A must be > 0");
         assert!(
             ubiquitous.total_score < rare.total_score,
             "ubiquitous score ({}) should be strictly less than rare score ({})",
-            ubiquitous.total_score, rare.total_score
+            ubiquitous.total_score,
+            rare.total_score
         );
     }
 
@@ -1545,16 +1251,22 @@ Caused by: java.lang.NullPointerException
     fn test_score_G_hard_conflict() {
         let conflict = make_conflict("optifine", "sodium", "hard");
         let s = compute_mod_score(
-            "optifine".into(), "optifine.jar".into(),
-            &[], &[],
+            "optifine".into(),
+            "optifine.jar".into(),
+            &[],
+            &[],
             &["optifine".into(), "sodium".into()],
             &[conflict],
-            0, 0, 0,
-            &[], &[],
+            0,
+            0,
+            0,
+            &[],
+            &[],
         );
         assert!(
             s.total_score >= 1.0,
-            "hard conflict should yield score >= 1.0, got {}", s.total_score
+            "hard conflict should yield score >= 1.0, got {}",
+            s.total_score
         );
     }
 
@@ -1562,30 +1274,49 @@ Caused by: java.lang.NullPointerException
     fn test_score_G_weak_conflict_lower_than_hard() {
         let conflict_hard = make_conflict("optifine", "sodium", "hard");
         let s_hard = compute_mod_score(
-            "optifine".into(), "optifine.jar".into(),
-            &[], &[],
+            "optifine".into(),
+            "optifine.jar".into(),
+            &[],
+            &[],
             &["optifine".into(), "sodium".into()],
             &[conflict_hard],
-            0, 0, 0,
-            &[], &[],
+            0,
+            0,
+            0,
+            &[],
+            &[],
         );
 
         let conflict_weak = make_conflict("optifine", "sodium", "weak");
         let s_weak = compute_mod_score(
-            "optifine".into(), "optifine.jar".into(),
-            &[], &[],
+            "optifine".into(),
+            "optifine.jar".into(),
+            &[],
+            &[],
             &["optifine".into(), "sodium".into()],
             &[conflict_weak],
-            0, 0, 0,
-            &[], &[],
+            0,
+            0,
+            0,
+            &[],
+            &[],
         );
 
-        assert!(s_weak.total_score > 0.0, "weak conflict should be > 0, got {}", s_weak.total_score);
-        assert!(s_weak.total_score < 1.0, "weak conflict should be < 1.0, got {}", s_weak.total_score);
+        assert!(
+            s_weak.total_score > 0.0,
+            "weak conflict should be > 0, got {}",
+            s_weak.total_score
+        );
+        assert!(
+            s_weak.total_score < 1.0,
+            "weak conflict should be < 1.0, got {}",
+            s_weak.total_score
+        );
         assert!(
             s_weak.total_score < s_hard.total_score,
             "weak ({}) should be strictly less than hard ({})",
-            s_weak.total_score, s_hard.total_score
+            s_weak.total_score,
+            s_hard.total_score
         );
     }
 
@@ -1599,17 +1330,23 @@ Caused by: java.lang.NullPointerException
             notes: None,
         };
         let s = compute_mod_score(
-            "optifine".into(), "optifine.jar".into(),
-            &[], &[],
+            "optifine".into(),
+            "optifine.jar".into(),
+            &[],
+            &[],
             &["optifine".into(), "sodium".into(), "indium".into()],
             &[conflict],
-            0, 0, 0,
-            &[], &[],
+            0,
+            0,
+            0,
+            &[],
+            &[],
         );
         // Conflict is mitigated by indium, so G = 0. No other signals.
         assert!(
             approx(s.total_score, 0.0),
-            "mitigated hard conflict should yield ~0, got {}", s.total_score
+            "mitigated hard conflict should yield ~0, got {}",
+            s.total_score
         );
     }
 
@@ -1618,81 +1355,123 @@ Caused by: java.lang.NullPointerException
         // Hard G conflict with 5 co-survivals → g_mod = max(0.1, 1.0 - 5*0.15) = max(0.1, 0.25) = 0.25
         let conflict = make_conflict("optifine", "sodium", "hard");
         let s = compute_mod_score(
-            "optifine".into(), "optifine.jar".into(),
-            &[], &[],
+            "optifine".into(),
+            "optifine.jar".into(),
+            &[],
+            &[],
             &["optifine".into(), "sodium".into()],
             &[conflict],
-            0, 0, 0,
-            &[("sodium".into(), 0)],  // pair_crash_counts
-            &[("sodium".into(), 5)],  // 5 co-survivals
+            0,
+            0,
+            0,
+            &[("sodium".into(), 0)], // pair_crash_counts
+            &[("sodium".into(), 5)], // 5 co-survivals
         );
         // G_final = 1.0 * 0.25 = 0.25
         assert!(
             s.total_score > 0.0,
-            "decayed G should be > 0, got {}", s.total_score
+            "decayed G should be > 0, got {}",
+            s.total_score
         );
         assert!(
             s.total_score < 1.0,
-            "decayed G should be < 1.0, got {}", s.total_score
+            "decayed G should be < 1.0, got {}",
+            s.total_score
         );
     }
 
     #[test]
     fn test_score_E_confirmed_prior() {
         let s = compute_mod_score(
-            "mod".into(), "mod.jar".into(),
-            &[], &[],
-            &[], &[],
-            3, 0, 0,
-            &[], &[],
+            "mod".into(),
+            "mod.jar".into(),
+            &[],
+            &[],
+            &[],
+            &[],
+            3,
+            0,
+            0,
+            &[],
+            &[],
         );
         // E = min(3*0.5, 1.0) = 1.0, B = 0.2, total = 1.0 + 0.2 = 1.2
         // E alone is 1.0, but total includes B. Check E contribution.
-        assert!(approx(s.total_score, 1.2), "expected total ~1.2 (E=1.0 + B=0.2), got {}", s.total_score);
+        assert!(
+            approx(s.total_score, 1.2),
+            "expected total ~1.2 (E=1.0 + B=0.2), got {}",
+            s.total_score
+        );
     }
 
     #[test]
     fn test_score_B_proxy_when_confirmed() {
         let s = compute_mod_score(
-            "mod".into(), "mod.jar".into(),
-            &[], &[],
-            &[], &[],
-            1, 0, 0,
-            &[], &[],
+            "mod".into(),
+            "mod.jar".into(),
+            &[],
+            &[],
+            &[],
+            &[],
+            1,
+            0,
+            0,
+            &[],
+            &[],
         );
         // E = min(1*0.5, 1.0) = 0.5, B = 0.2, total = 0.7
-        assert!(s.total_score > 0.0, "expected total > 0, got {}", s.total_score);
+        assert!(
+            s.total_score > 0.0,
+            "expected total > 0, got {}",
+            s.total_score
+        );
     }
 
     #[test]
     fn test_score_C_co_crash() {
         let s = compute_mod_score(
-            "mod".into(), "mod.jar".into(),
-            &[], &[],
-            &[], &[],
-            0, 0, 0,
-            &[("other".into(), 10)],  // 10 co-crashes → base_C = min(10*0.1, 0.5) = 0.5
+            "mod".into(),
+            "mod.jar".into(),
+            &[],
+            &[],
+            &[],
+            &[],
+            0,
+            0,
+            0,
+            &[("other".into(), 10)], // 10 co-crashes → base_C = min(10*0.1, 0.5) = 0.5
             &[],
         );
         // D: total_survivals=0 → denom=1, mod_survival_count=0 → ubiquity=0 → dampener=1.0
         // C_final = 0.5 * 1.0 = 0.5
         assert!(
             approx(s.total_score, 0.5),
-            "expected C score ~0.5, got {}", s.total_score
+            "expected C score ~0.5, got {}",
+            s.total_score
         );
     }
 
     #[test]
     fn test_score_nan_coerced_to_zero() {
         let s = compute_mod_score(
-            "mod".into(), "mod.jar".into(),
-            &[], &[],
-            &[], &[],
-            0, 0, 0,
-            &[], &[],
+            "mod".into(),
+            "mod.jar".into(),
+            &[],
+            &[],
+            &[],
+            &[],
+            0,
+            0,
+            0,
+            &[],
+            &[],
         );
         assert!(!s.total_score.is_nan(), "score should not be NaN");
-        assert!(approx(s.total_score, 0.0), "expected score == 0.0, got {}", s.total_score);
+        assert!(
+            approx(s.total_score, 0.0),
+            "expected score == 0.0, got {}",
+            s.total_score
+        );
     }
 
     // NOTE: The indirect-suspect augmentation logic (reverse-dependency flagging
@@ -1700,275 +1479,4 @@ Caused by: java.lang.NullPointerException
     // is not unit-testable here.  It is exercised through `continue_investigation`
     // integration paths.  The direct-candidate path via `compute_mod_score` is
     // covered by the tests above in Section D.
-
-    // -----------------------------------------------------------------------
-    // E. parse_jar_metadata — Fabric mod
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_parse_jar_metadata_fabric_mod() {
-        let jar_path = build_test_jar_with_content(&[
-            (
-                "me/jellysquid/nautilus/Core.class",
-                "",
-            ),
-            (
-                "fabric.mod.json",
-                r#"{"id":"sodium","version":"0.5.3","depends":{"fabricloader":">=0.14","minecraft":">1.20","fabric-api":"*","sodium-api":">=0.5"}}"#,
-            ),
-        ]);
-        let metadata = parse_jar_metadata(&jar_path);
-        clean_jar(&jar_path);
-
-        assert_eq!(metadata.mod_jar_id, Some("sodium".to_string()));
-
-        // Full-depth packages extracted from .class entries.
-        assert!(
-            metadata.java_packages.contains(&"me.jellysquid.nautilus".to_string()),
-            "java_packages should contain me.jellysquid.nautilus, got {:?}",
-            metadata.java_packages
-        );
-
-        // depends_on should contain fabric-api and sodium-api.
-        assert!(
-            metadata.depends_on.contains(&"fabric-api".to_string()),
-            "depends_on should contain fabric-api, got {:?}",
-            metadata.depends_on
-        );
-        assert!(
-            metadata.depends_on.contains(&"sodium-api".to_string()),
-            "depends_on should contain sodium-api, got {:?}",
-            metadata.depends_on
-        );
-
-        // Filtered entries from DEPENDENCY_IGNORE_LIST must NOT appear.
-        assert!(
-            !metadata.depends_on.contains(&"fabricloader".to_string()),
-            "depends_on must NOT contain fabricloader (ignored), got {:?}",
-            metadata.depends_on
-        );
-        assert!(
-            !metadata.depends_on.contains(&"minecraft".to_string()),
-            "depends_on must NOT contain minecraft (ignored), got {:?}",
-            metadata.depends_on
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // F. parse_jar_metadata — Forge mod
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_parse_jar_metadata_forge_mod() {
-        let jar_path = build_test_jar_with_content(&[
-            (
-                "com/example/neoforge/core/MyClass.class",
-                "",
-            ),
-            (
-                "META-INF/mods.toml",
-                r#"modId="myforge"
-
-[[dependencies.neoforge]]
-    type="required"
-
-[[dependencies.embeddium]]
-    type="optional"
-
-[[dependencies.optifine]]
-    type="incompatible"
-"#,
-            ),
-        ]);
-        let metadata = parse_jar_metadata(&jar_path);
-        clean_jar(&jar_path);
-
-        // mod_jar_id is now extracted from mods.toml file-level modId as fallback.
-        assert_eq!(
-            metadata.mod_jar_id,
-            Some("myforge".to_string()),
-            "mod_jar_id should be extracted from mods.toml file-level modId"
-        );
-
-        // Java packages extracted from .class.
-        assert!(
-            metadata.java_packages.contains(&"com.example.neoforge.core".to_string()),
-            "java_packages should contain com.example.neoforge.core, got {:?}",
-            metadata.java_packages
-        );
-
-        // depends_on contains only required deps.
-        assert!(
-            metadata.depends_on.contains(&"neoforge".to_string()),
-            "depends_on should contain neoforge, got {:?}",
-            metadata.depends_on
-        );
-        assert!(
-            !metadata.depends_on.contains(&"embeddium".to_string()),
-            "depends_on must NOT contain embeddium (optional), got {:?}",
-            metadata.depends_on
-        );
-        assert!(
-            !metadata.depends_on.contains(&"optifine".to_string()),
-            "depends_on must NOT contain optifine (incompatible), got {:?}",
-            metadata.depends_on
-        );
-
-        // optional_deps contains only optional deps.
-        assert!(
-            metadata.optional_deps.contains(&"embeddium".to_string()),
-            "optional_deps should contain embeddium, got {:?}",
-            metadata.optional_deps
-        );
-        assert!(
-            !metadata.optional_deps.contains(&"neoforge".to_string()),
-            "optional_deps must NOT contain neoforge (required), got {:?}",
-            metadata.optional_deps
-        );
-
-        // incompatible_deps contains only incompatible deps.
-        assert!(
-            metadata.incompatible_deps.contains(&"optifine".to_string()),
-            "incompatible_deps should contain optifine, got {:?}",
-            metadata.incompatible_deps
-        );
-
-        // The file-level modId "myforge" is the mod's own ID, NOT a dependency.
-        assert!(
-            !metadata.depends_on.contains(&"myforge".to_string()),
-            "depends_on must NOT contain myforge (own modId, not a dep), got {:?}",
-            metadata.depends_on
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // G. parse_jar_metadata — Fabric optional deps (recommends + suggests)
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_parse_jar_metadata_fabric_optional_deps() {
-        let jar_path = build_test_jar_with_content(&[
-            (
-                "me/jellysquid/nautilus/Core.class",
-                "",
-            ),
-            (
-                "fabric.mod.json",
-                r#"{"id":"sodium","depends":{"fabric-api":">=0.100","fabricloader":">=0.14"},"recommends":{"sodium-api":"*"},"suggests":{"modmenu":"*"}}"#,
-            ),
-        ]);
-        let metadata = parse_jar_metadata(&jar_path);
-        clean_jar(&jar_path);
-
-        assert_eq!(
-            metadata.mod_jar_id,
-            Some("sodium".to_string()),
-            "mod_jar_id should be sodium"
-        );
-
-        // depends_on contains fabric-api (required, non-ignored).
-        assert!(
-            metadata.depends_on.contains(&"fabric-api".to_string()),
-            "depends_on should contain fabric-api, got {:?}",
-            metadata.depends_on
-        );
-        // fabricloader is filtered by DEPENDENCY_IGNORE_LIST.
-        assert!(
-            !metadata.depends_on.contains(&"fabricloader".to_string()),
-            "depends_on must NOT contain fabricloader (ignored), got {:?}",
-            metadata.depends_on
-        );
-
-        // optional_deps contains recommends + suggests.
-        assert!(
-            metadata.optional_deps.contains(&"sodium-api".to_string()),
-            "optional_deps should contain sodium-api, got {:?}",
-            metadata.optional_deps
-        );
-        assert!(
-            metadata.optional_deps.contains(&"modmenu".to_string()),
-            "optional_deps should contain modmenu, got {:?}",
-            metadata.optional_deps
-        );
-
-        // incompatible_deps is empty (Fabric has no incompatible concept).
-        assert!(
-            metadata.incompatible_deps.is_empty(),
-            "incompatible_deps should be empty, got {:?}",
-            metadata.incompatible_deps
-        );
-
-        // recommends/suggests must NOT appear in depends_on.
-        assert!(
-            !metadata.depends_on.contains(&"sodium-api".to_string()),
-            "depends_on must NOT contain sodium-api (optional), got {:?}",
-            metadata.depends_on
-        );
-        assert!(
-            !metadata.depends_on.contains(&"modmenu".to_string()),
-            "depends_on must NOT contain modmenu (optional), got {:?}",
-            metadata.depends_on
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // H. parse_jar_metadata — no metadata files
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_parse_jar_metadata_no_metadata_returns_empty() {
-        let jar_path = build_test_jar_with_content(&[
-            (
-                "com/random/thing/SomeClass.class",
-                "",
-            ),
-        ]);
-        let metadata = parse_jar_metadata(&jar_path);
-        clean_jar(&jar_path);
-
-        assert!(metadata.mod_jar_id.is_none(), "mod_jar_id should be None without metadata");
-        assert!(
-            metadata.depends_on.is_empty(),
-            "depends_on should be empty without metadata, got {:?}",
-            metadata.depends_on
-        );
-        // java_packages still populated from .class entries.
-        assert!(
-            metadata.java_packages.contains(&"com.random.thing".to_string()),
-            "java_packages should still be populated, got {:?}",
-            metadata.java_packages
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // I. parse_jar_metadata — nonexistent file
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_parse_jar_metadata_nonexistent_returns_default() {
-        let metadata = parse_jar_metadata(std::path::Path::new("/nonexistent/xyz.jar"));
-        assert!(metadata.mod_jar_id.is_none());
-        assert!(metadata.depends_on.is_empty());
-        assert!(metadata.java_packages.is_empty());
-    }
-
-    // -----------------------------------------------------------------------
-    // J. parse_jar_metadata — non-zip file
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_parse_jar_metadata_non_zip_returns_default() {
-        let txt_path = std::env::temp_dir().join(format!(
-            "agora-test-nonzip-{}.txt",
-            std::process::id()
-        ));
-        std::fs::write(&txt_path, "this is not a zip or jar file").expect("write temp txt");
-        let metadata = parse_jar_metadata(&txt_path);
-        let _ = std::fs::remove_file(&txt_path);
-
-        assert!(metadata.mod_jar_id.is_none(), "mod_jar_id should be None for non-zip");
-        assert!(metadata.depends_on.is_empty(), "depends_on should be empty for non-zip");
-        assert!(metadata.java_packages.is_empty(), "java_packages should be empty for non-zip");
-    }
 }
-

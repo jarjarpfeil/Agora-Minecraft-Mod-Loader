@@ -90,23 +90,29 @@ fn discover_windows() -> Option<PathBuf> {
         PathBuf::from("C:\\Program Files\\Minecraft Launcher"),
     ];
     if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
-        legacy_roots.push(
-            PathBuf::from(&local_appdata).join("Programs\\Minecraft Launcher"),
-        );
+        legacy_roots.push(PathBuf::from(&local_appdata).join("Programs\\Minecraft Launcher"));
     }
     // Xbox app default install root, with Content subdir appended.
     legacy_roots.push(PathBuf::from("C:\\XboxGames\\Minecraft Launcher\\Content"));
 
     for root in &legacy_roots {
         let root_exists = root.exists();
-        log_line(&format!("[win root] {} (exists={})", root.display(), root_exists));
+        log_line(&format!(
+            "[win root] {} (exists={})",
+            root.display(),
+            root_exists
+        ));
         if !root_exists {
             continue;
         }
         for exe in EXE_NAMES {
             let p = root.join(exe);
             let exists = p.exists();
-            log_line(&format!("[win root candidate] {} (exists={})", p.display(), exists));
+            log_line(&format!(
+                "[win root candidate] {} (exists={})",
+                p.display(),
+                exists
+            ));
             if exists {
                 return Some(p);
             }
@@ -180,7 +186,11 @@ fn discover_via_registry() -> Option<PathBuf> {
             for exe in &["MinecraftLauncher.exe", "Minecraft.exe"] {
                 let candidate = PathBuf::from(path_str).join(exe);
                 let exists = candidate.exists();
-                log_line(&format!("[registry] candidate exe: {} (exists={})", candidate.display(), exists));
+                log_line(&format!(
+                    "[registry] candidate exe: {} (exists={})",
+                    candidate.display(),
+                    exists
+                ));
                 if exists {
                     return Some(candidate);
                 }
@@ -191,7 +201,11 @@ fn discover_via_registry() -> Option<PathBuf> {
                 for exe in &["MinecraftLauncher.exe", "Minecraft.exe"] {
                     let candidate = content_dir.join(exe);
                     let exists = candidate.exists();
-                    log_line(&format!("[registry] content candidate exe: {} (exists={})", candidate.display(), exists));
+                    log_line(&format!(
+                        "[registry] content candidate exe: {} (exists={})",
+                        candidate.display(),
+                        exists
+                    ));
                     if exists {
                         return Some(candidate);
                     }
@@ -241,7 +255,11 @@ fn discover_via_appx() -> Option<PathBuf> {
             continue;
         }
         let dir_exists = install_loc.exists();
-        log_line(&format!("[appx] InstallLocation: {} (exists={})", install_loc.display(), dir_exists));
+        log_line(&format!(
+            "[appx] InstallLocation: {} (exists={})",
+            install_loc.display(),
+            dir_exists
+        ));
         if !dir_exists {
             continue;
         }
@@ -249,7 +267,11 @@ fn discover_via_appx() -> Option<PathBuf> {
         for exe in &["MinecraftLauncher.exe", "Minecraft.exe"] {
             let candidate = install_loc.join(exe);
             let candidate_exists = candidate.exists();
-            log_line(&format!("[appx] candidate: {} (exists={})", candidate.display(), candidate_exists));
+            log_line(&format!(
+                "[appx] candidate: {} (exists={})",
+                candidate.display(),
+                candidate_exists
+            ));
             if candidate_exists {
                 return Some(candidate);
             }
@@ -260,7 +282,11 @@ fn discover_via_appx() -> Option<PathBuf> {
             for exe in &["MinecraftLauncher.exe", "Minecraft.exe"] {
                 let candidate = content_dir.join(exe);
                 let candidate_exists = candidate.exists();
-                log_line(&format!("[appx] content candidate: {} (exists={})", candidate.display(), candidate_exists));
+                log_line(&format!(
+                    "[appx] content candidate: {} (exists={})",
+                    candidate.display(),
+                    candidate_exists
+                ));
                 if candidate_exists {
                     return Some(candidate);
                 }
@@ -274,7 +300,11 @@ fn discover_via_appx() -> Option<PathBuf> {
 #[cfg(target_os = "macos")]
 fn discover_macos() -> Option<PathBuf> {
     let p = PathBuf::from("/Applications/Minecraft.app/Contents/MacOS/launcher");
-    if p.exists() { Some(p) } else { None }
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
 }
 
 #[cfg(target_os = "linux")]

@@ -32,7 +32,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     ListInstances,
-    GetInstance { id: String },
+    GetInstance {
+        id: String,
+    },
     Mods {
         #[command(subcommand)]
         action: ModsCmd,
@@ -71,9 +73,19 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum ModsCmd {
-    List { instance: String },
-    Install { project: String, instance: String, #[arg(short, long)] version: Option<String> },
-    Remove { project: String, instance: String },
+    List {
+        instance: String,
+    },
+    Install {
+        project: String,
+        instance: String,
+        #[arg(short, long)]
+        version: Option<String>,
+    },
+    Remove {
+        project: String,
+        instance: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -84,9 +96,18 @@ enum RegistryCmd {
 
 #[derive(Subcommand)]
 enum SnapshotsCmd {
-    List { instance: String },
-    Create { instance: String, #[arg(short, long)] label: Option<String> },
-    Restore { instance: String, snapshot_id: String },
+    List {
+        instance: String,
+    },
+    Create {
+        instance: String,
+        #[arg(short, long)]
+        label: Option<String>,
+    },
+    Restore {
+        instance: String,
+        snapshot_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -121,7 +142,8 @@ fn print_table(columns: &[&str], rows: &[Vec<String>]) {
         }
     }
     println!();
-    let total: usize = widths.iter().map(|w| w + 2).sum::<usize>() + columns.len().saturating_sub(1);
+    let total: usize =
+        widths.iter().map(|w| w + 2).sum::<usize>() + columns.len().saturating_sub(1);
     for _ in 0..total {
         print!("-");
     }
@@ -208,7 +230,10 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                         println!("Loader:   {} {}", instance.loader, instance.loader_version);
                         println!("Locked:   {}", instance.is_locked);
                         println!("Modpack:  {}", instance.is_modpack);
-                        println!("Launched: {}", instance.last_launched_at.unwrap_or_default());
+                        println!(
+                            "Launched: {}",
+                            instance.last_launched_at.unwrap_or_default()
+                        );
                     }
                 }
                 None => {
@@ -225,8 +250,7 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                     std::process::exit(1);
                 }
                 let text = std::fs::read_to_string(&manifest_path)?;
-                let manifest: agora_core::models::InstanceManifest =
-                    serde_json::from_str(&text)?;
+                let manifest: agora_core::models::InstanceManifest = serde_json::from_str(&text)?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&manifest.mods)?);
                 } else {
@@ -276,9 +300,7 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                     candidates
                         .into_iter()
                         .find(|v| v.primary)
-                        .unwrap_or_else(|| {
-                            panic!("no versions available for project {}", project)
-                        })
+                        .unwrap_or_else(|| panic!("no versions available for project {}", project))
                 };
 
                 let instance_dir = agora_core::paths::instance_dir(data_dir, &instance)?;
@@ -310,35 +332,23 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                                     code: "ERR_NETWORK".to_string(),
                                     message: format!("Failed to build HTTP client: {e}"),
                                 })?;
-                            let resp = download_client
-                                .get(&u)
-                                .send()
-                                .await
-                                .map_err(|e| agora_core::error::LauncherError::Generic {
+                            let resp = download_client.get(&u).send().await.map_err(|e| {
+                                agora_core::error::LauncherError::Generic {
                                     code: "ERR_DOWNLOAD".into(),
                                     message: e.to_string(),
-                                })?;
-                            let bytes = resp
-                                .bytes()
-                                .await
-                                .map_err(|e| agora_core::error::LauncherError::Generic {
+                                }
+                            })?;
+                            let bytes = resp.bytes().await.map_err(|e| {
+                                agora_core::error::LauncherError::Generic {
                                     code: "ERR_DOWNLOAD".into(),
                                     message: e.to_string(),
-                                })?;
+                                }
+                            })?;
                             Ok(bytes.to_vec())
                         })
                     },
                     |_path| None,
-                    |path| {
-                        let meta = agora_core::jar_metadata::parse_jar_metadata(path);
-                        agora_core::crash_diagnostics::JarMetadata {
-                            mod_jar_id: meta.mod_jar_id,
-                            depends_on: meta.depends_on,
-                            optional_deps: meta.optional_deps,
-                            incompatible_deps: meta.incompatible_deps,
-                            java_packages: meta.java_packages,
-                        }
-                    },
+                    agora_core::jar_metadata::parse_jar_metadata,
                     data_dir,
                 )
                 .await?;
@@ -350,8 +360,7 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
             }
             ModsCmd::Remove { project, instance } => {
                 let instance_dir = agora_core::paths::instance_dir(data_dir, &instance)?;
-                let manifest_path =
-                    agora_core::paths::instance_manifest_path(data_dir, &instance)?;
+                let manifest_path = agora_core::paths::instance_manifest_path(data_dir, &instance)?;
                 if !manifest_path.exists() {
                     eprintln!("Instance '{}' not found", instance);
                     std::process::exit(1);
@@ -395,8 +404,7 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                 std::process::exit(1);
             }
             let text = std::fs::read_to_string(&manifest_path)?;
-            let manifest: agora_core::models::InstanceManifest =
-                serde_json::from_str(&text)?;
+            let manifest: agora_core::models::InstanceManifest = serde_json::from_str(&text)?;
             let reg_path = data_dir.join("registry.db");
             let reg_opt = if reg_path.exists() {
                 Some(reg_path)
@@ -536,17 +544,10 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
             let result = if path.is_dir() {
                 agora_core::import::import_directory(&path, &target, symlink_saves)?
             } else {
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                 match ext {
-                    "mrpack" => {
-                        agora_core::import::import_mrpack(&path, &target, symlink_saves)?
-                    }
-                    "zip" => {
-                        agora_core::import::import_prism_zip(&path, &target, symlink_saves)?
-                    }
+                    "mrpack" => agora_core::import::import_mrpack(&path, &target, symlink_saves)?,
+                    "zip" => agora_core::import::import_prism_zip(&path, &target, symlink_saves)?,
                     _ => anyhow::bail!(
                         "Unsupported file type '.{}'. Use .mrpack, .zip, or a directory",
                         ext
@@ -571,8 +572,7 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                 std::process::exit(1);
             }
             let text = std::fs::read_to_string(&manifest_path)?;
-            let manifest: agora_core::models::InstanceManifest =
-                serde_json::from_str(&text)?;
+            let manifest: agora_core::models::InstanceManifest = serde_json::from_str(&text)?;
 
             let creds = agora_core::msa::load_credentials()?;
             let (username, uuid, access_token) = match creds {
@@ -661,45 +661,46 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                     println!("Signed in as {}", credentials.username);
                 }
             }
-            AuthCmd::Status => {
-                match agora_core::msa::load_credentials()? {
-                    Some(creds) => {
-                        if creds.is_expired() {
-                            if json {
-                                println!(
-                                    "{}",
-                                    serde_json::json!({"status": "expired", "username": creds.username})
-                                );
-                            } else {
-                                println!(
-                                    "Signed in as {} (expired — run 'agora auth login')",
-                                    creds.username
-                                );
-                            }
-                        } else {
-                            if json {
-                                println!(
-                                    "{}",
-                                    serde_json::json!({
-                                        "status": "valid",
-                                        "username": creds.username,
-                                        "expires": creds.expires,
-                                    })
-                                );
-                            } else {
-                                println!("Signed in as {} (expires {})", creds.username, creds.expires);
-                            }
-                        }
-                    }
-                    None => {
+            AuthCmd::Status => match agora_core::msa::load_credentials()? {
+                Some(creds) => {
+                    if creds.is_expired() {
                         if json {
-                            println!("{}", serde_json::json!({"status": "not_authenticated"}));
+                            println!(
+                                "{}",
+                                serde_json::json!({"status": "expired", "username": creds.username})
+                            );
                         } else {
-                            println!("Not authenticated. Run 'agora auth login'.");
+                            println!(
+                                "Signed in as {} (expired — run 'agora auth login')",
+                                creds.username
+                            );
+                        }
+                    } else {
+                        if json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "status": "valid",
+                                    "username": creds.username,
+                                    "expires": creds.expires,
+                                })
+                            );
+                        } else {
+                            println!(
+                                "Signed in as {} (expires {})",
+                                creds.username, creds.expires
+                            );
                         }
                     }
                 }
-            }
+                None => {
+                    if json {
+                        println!("{}", serde_json::json!({"status": "not_authenticated"}));
+                    } else {
+                        println!("Not authenticated. Run 'agora auth login'.");
+                    }
+                }
+            },
             AuthCmd::Logout => {
                 agora_core::msa::clear_credentials()?;
                 if json {
@@ -755,8 +756,10 @@ fn extract_auth_redirect(input: &str) -> anyhow::Result<(String, String)> {
         }
     }
 
-    let code = code.ok_or_else(|| anyhow::anyhow!("Redirect URL did not include an OAuth code."))?;
-    let state = state.ok_or_else(|| anyhow::anyhow!("Redirect URL did not include an OAuth state."))?;
+    let code =
+        code.ok_or_else(|| anyhow::anyhow!("Redirect URL did not include an OAuth code."))?;
+    let state =
+        state.ok_or_else(|| anyhow::anyhow!("Redirect URL did not include an OAuth state."))?;
     Ok((code, state))
 }
 
@@ -794,9 +797,7 @@ fn find_java() -> anyhow::Result<PathBuf> {
             }
         }
     }
-    anyhow::bail!(
-        "Could not find Java. Install JDK 17+ and ensure java is on your PATH."
-    );
+    anyhow::bail!("Could not find Java. Install JDK 17+ and ensure java is on your PATH.");
 }
 
 #[cfg(test)]

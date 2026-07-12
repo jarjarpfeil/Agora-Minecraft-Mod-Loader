@@ -1,15 +1,15 @@
-﻿pub mod ai_assistant;
+pub mod ai_assistant;
 pub mod auth;
 pub mod commands;
 pub mod crash_diagnostics;
 pub mod crash_investigator;
 pub mod db;
 pub mod dependency_ops;
-pub use agora_core::{download, error, models, loader_manifests};
+pub use agora_core::{download, error, loader_manifests, models};
 
 pub mod governance;
-pub mod instances;
 pub mod install_pipeline;
+pub mod instances;
 pub mod launcher_profiles;
 pub mod mod_install;
 pub mod modrinth_raw;
@@ -186,7 +186,8 @@ pub fn run() {
                                 eprintln!("Failed to purge stale crash telemetry: {}", e);
                             }
                         }
-                    }).await;
+                    })
+                    .await;
                 });
                 // Start MCP server if enabled.
                 match db::local_state_connection(&handle) {
@@ -221,4 +222,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

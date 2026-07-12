@@ -68,6 +68,10 @@ pub struct InstalledMod {
     pub java_packages: Vec<String>,
     #[serde(default)]
     pub mod_jar_id: Option<String>,
+    /// Additional loader-visible IDs supplied by this physical JAR (Fabric/
+    /// Quilt `provides` aliases and explicitly declared nested modules).
+    #[serde(default)]
+    pub provided_mod_ids: Vec<String>,
     /// REQUIRED dependencies only (Fabric `depends`, Forge type=required);
     /// see `optional_deps` and `incompatible_deps` for non-required dep types.
     #[serde(default)]
@@ -144,19 +148,29 @@ mod tests {
             "optional_deps": ["architectury-api"],
             "incompatible_deps": ["old-conflicting-mod"]
         }"#;
-        let mod_: InstalledMod = serde_json::from_str(json).expect("should deserialize full InstalledMod");
+        let mod_: InstalledMod =
+            serde_json::from_str(json).expect("should deserialize full InstalledMod");
         assert_eq!(mod_.filename, "cloth-config-13.0.0.jar");
         assert_eq!(mod_.registry_id, Some("cloth-config".to_string()));
         assert_eq!(mod_.modrinth_id, Some("bR6B5nA7".to_string()));
         assert_eq!(mod_.source, "modrinth");
         assert_eq!(mod_.version, Some("13.0.0".to_string()));
-        assert_eq!(mod_.sha256, "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+        assert_eq!(
+            mod_.sha256,
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
         assert_eq!(mod_.installed_at, "2025-01-15T10:30:00Z");
-        assert_eq!(mod_.java_packages, vec!["me.shedaniel.clothconfig2".to_string()]);
+        assert_eq!(
+            mod_.java_packages,
+            vec!["me.shedaniel.clothconfig2".to_string()]
+        );
         assert_eq!(mod_.mod_jar_id, Some("cloth-config-jar".to_string()));
         assert_eq!(mod_.depends_on, vec!["fabric-api".to_string()]);
         assert_eq!(mod_.optional_deps, vec!["architectury-api".to_string()]);
-        assert_eq!(mod_.incompatible_deps, vec!["old-conflicting-mod".to_string()]);
+        assert_eq!(
+            mod_.incompatible_deps,
+            vec!["old-conflicting-mod".to_string()]
+        );
     }
 
     #[test]
@@ -167,7 +181,8 @@ mod tests {
             "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
             "installed_at": "2025-02-01T00:00:00Z"
         }"#;
-        let mod_: InstalledMod = serde_json::from_str(json).expect("should deserialize without java_packages");
+        let mod_: InstalledMod =
+            serde_json::from_str(json).expect("should deserialize without java_packages");
         assert_eq!(mod_.java_packages, Vec::<String>::new());
     }
 
@@ -179,7 +194,8 @@ mod tests {
             "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
             "installed_at": "2025-02-01T00:00:00Z"
         }"#;
-        let mod_: InstalledMod = serde_json::from_str(json).expect("should deserialize without mod_jar_id");
+        let mod_: InstalledMod =
+            serde_json::from_str(json).expect("should deserialize without mod_jar_id");
         assert_eq!(mod_.mod_jar_id, None);
     }
 
@@ -191,7 +207,8 @@ mod tests {
             "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
             "installed_at": "2025-02-01T00:00:00Z"
         }"#;
-        let mod_: InstalledMod = serde_json::from_str(json).expect("should deserialize without depends_on");
+        let mod_: InstalledMod =
+            serde_json::from_str(json).expect("should deserialize without depends_on");
         assert_eq!(mod_.depends_on, Vec::<String>::new());
     }
 
@@ -203,7 +220,8 @@ mod tests {
             "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
             "installed_at": "2025-02-01T00:00:00Z"
         }"#;
-        let mod_: InstalledMod = serde_json::from_str(json).expect("should deserialize without optional_deps");
+        let mod_: InstalledMod =
+            serde_json::from_str(json).expect("should deserialize without optional_deps");
         assert_eq!(mod_.optional_deps, Vec::<String>::new());
     }
 
@@ -215,7 +233,8 @@ mod tests {
             "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
             "installed_at": "2025-02-01T00:00:00Z"
         }"#;
-        let mod_: InstalledMod = serde_json::from_str(json).expect("should deserialize without incompatible_deps");
+        let mod_: InstalledMod =
+            serde_json::from_str(json).expect("should deserialize without incompatible_deps");
         assert_eq!(mod_.incompatible_deps, Vec::<String>::new());
     }
 
@@ -227,10 +246,14 @@ mod tests {
             "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
             "installed_at": "2025-02-01T00:00:00Z"
         }"#;
-        let mod_: InstalledMod = serde_json::from_str(json).expect("should deserialize minimal InstalledMod");
+        let mod_: InstalledMod =
+            serde_json::from_str(json).expect("should deserialize minimal InstalledMod");
         assert_eq!(mod_.filename, "sodium-0.6.0.jar");
         assert_eq!(mod_.source, "modrinth");
-        assert_eq!(mod_.sha256, "1111111111111111111111111111111111111111111111111111111111111111");
+        assert_eq!(
+            mod_.sha256,
+            "1111111111111111111111111111111111111111111111111111111111111111"
+        );
         assert_eq!(mod_.installed_at, "2025-02-01T00:00:00Z");
         assert_eq!(mod_.registry_id, None);
         assert_eq!(mod_.modrinth_id, None);
@@ -280,7 +303,8 @@ mod tests {
             ],
             "user_preferences": {"fullscreen": true}
         }"#;
-        let manifest: InstanceManifest = serde_json::from_str(json).expect("should deserialize InstanceManifest with mods");
+        let manifest: InstanceManifest =
+            serde_json::from_str(json).expect("should deserialize InstanceManifest with mods");
         assert_eq!(manifest.instance_id, "my-instance");
         assert_eq!(manifest.name, "My Modded Instance");
         assert_eq!(manifest.created_from_pack, Some("fabrik-3.2.0".to_string()));
@@ -290,7 +314,10 @@ mod tests {
         assert_eq!(manifest.is_locked, false);
         assert_eq!(manifest.mods.len(), 2);
         assert_eq!(manifest.mods[0].filename, "sodium-0.6.0.jar");
-        assert_eq!(manifest.mods[0].java_packages, vec!["me.jellysquid.mods.sodium".to_string()]);
+        assert_eq!(
+            manifest.mods[0].java_packages,
+            vec!["me.jellysquid.mods.sodium".to_string()]
+        );
         assert_eq!(manifest.mods[0].mod_jar_id, Some("sodium-jar".to_string()));
         assert_eq!(manifest.mods[1].filename, "fabric-api-0.100.0.jar");
         assert_eq!(manifest.mods[1].mod_jar_id, None);
@@ -307,7 +334,8 @@ mod tests {
             "mods": [],
             "user_preferences": {}
         }"#;
-        let manifest: InstanceManifest = serde_json::from_str(json).expect("should deserialize InstanceManifest with empty mods");
+        let manifest: InstanceManifest = serde_json::from_str(json)
+            .expect("should deserialize InstanceManifest with empty mods");
         assert_eq!(manifest.instance_id, "empty-instance");
         assert_eq!(manifest.mods.len(), 0);
     }
@@ -330,7 +358,8 @@ mod tests {
                     source: "modrinth".to_string(),
                     source_url: None,
                     version: Some("0.6.0".to_string()),
-                    sha256: "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+                    sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+                        .to_string(),
                     installed_at: "2025-04-01T12:00:00Z".to_string(),
                     java_packages: vec!["me.jellysquid.mods.sodium".to_string()],
                     mod_jar_id: Some("sodium-jar".to_string()),
@@ -345,7 +374,8 @@ mod tests {
                     source: "modrinth".to_string(),
                     source_url: None,
                     version: Some("0.100.0".to_string()),
-                    sha256: "2222222222222222222222222222222222222222222222222222222222222222".to_string(),
+                    sha256: "2222222222222222222222222222222222222222222222222222222222222222"
+                        .to_string(),
                     installed_at: "2025-04-01T12:00:01Z".to_string(),
                     java_packages: vec![],
                     mod_jar_id: None,
@@ -358,7 +388,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&manifest).expect("should serialize InstanceManifest");
-        let deserialized: InstanceManifest = serde_json::from_str(&json).expect("should roundtrip InstanceManifest");
+        let deserialized: InstanceManifest =
+            serde_json::from_str(&json).expect("should roundtrip InstanceManifest");
 
         assert_eq!(deserialized.instance_id, manifest.instance_id);
         assert_eq!(deserialized.name, manifest.name);
@@ -369,17 +400,35 @@ mod tests {
         assert_eq!(deserialized.is_locked, manifest.is_locked);
         assert_eq!(deserialized.mods.len(), manifest.mods.len());
         assert_eq!(deserialized.mods[0].filename, manifest.mods[0].filename);
-        assert_eq!(deserialized.mods[0].registry_id, manifest.mods[0].registry_id);
-        assert_eq!(deserialized.mods[0].modrinth_id, manifest.mods[0].modrinth_id);
+        assert_eq!(
+            deserialized.mods[0].registry_id,
+            manifest.mods[0].registry_id
+        );
+        assert_eq!(
+            deserialized.mods[0].modrinth_id,
+            manifest.mods[0].modrinth_id
+        );
         assert_eq!(deserialized.mods[0].source, manifest.mods[0].source);
         assert_eq!(deserialized.mods[0].version, manifest.mods[0].version);
         assert_eq!(deserialized.mods[0].sha256, manifest.mods[0].sha256);
-        assert_eq!(deserialized.mods[0].installed_at, manifest.mods[0].installed_at);
-        assert_eq!(deserialized.mods[0].java_packages, manifest.mods[0].java_packages);
+        assert_eq!(
+            deserialized.mods[0].installed_at,
+            manifest.mods[0].installed_at
+        );
+        assert_eq!(
+            deserialized.mods[0].java_packages,
+            manifest.mods[0].java_packages
+        );
         assert_eq!(deserialized.mods[0].mod_jar_id, manifest.mods[0].mod_jar_id);
         assert_eq!(deserialized.mods[0].depends_on, manifest.mods[0].depends_on);
-        assert_eq!(deserialized.mods[0].optional_deps, manifest.mods[0].optional_deps);
-        assert_eq!(deserialized.mods[0].incompatible_deps, manifest.mods[0].incompatible_deps);
+        assert_eq!(
+            deserialized.mods[0].optional_deps,
+            manifest.mods[0].optional_deps
+        );
+        assert_eq!(
+            deserialized.mods[0].incompatible_deps,
+            manifest.mods[0].incompatible_deps
+        );
         assert_eq!(deserialized.mods[1].filename, manifest.mods[1].filename);
         assert_eq!(deserialized.mods[1].mod_jar_id, manifest.mods[1].mod_jar_id);
         assert_eq!(deserialized.user_preferences, manifest.user_preferences);

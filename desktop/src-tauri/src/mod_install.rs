@@ -1,10 +1,9 @@
-﻿use crate::auth;
-use crate::crash_investigator;
+use crate::auth;
 use crate::db;
 use crate::download;
 use crate::error::{LauncherError, LauncherResult};
 use crate::instances;
-use crate::models::{InstanceManifest, InstanceRow, InstalledMod, ModVersionCandidate};
+use crate::models::{InstalledMod, InstanceManifest, InstanceRow, ModVersionCandidate};
 use crate::paths;
 use crate::registry;
 use serde::Deserialize;
@@ -51,7 +50,9 @@ pub(crate) fn available_disk_space_bytes(path: &std::path::Path) -> Option<u64> 
         if mount_components.len() > target_components.len() {
             continue;
         }
-        if target_components.starts_with(&mount_components) && mount_components.len() > best_prefix_len {
+        if target_components.starts_with(&mount_components)
+            && mount_components.len() > best_prefix_len
+        {
             best_prefix_len = mount_components.len();
             best = Some(d.available_space());
         }
@@ -156,7 +157,10 @@ pub fn load_instance_info(
 }
 
 /// Resolve a single registry item by ID.
-pub fn load_registry_item(app: &tauri::AppHandle, item_id: &str) -> LauncherResult<registry::RegistryItem> {
+pub fn load_registry_item(
+    app: &tauri::AppHandle,
+    item_id: &str,
+) -> LauncherResult<registry::RegistryItem> {
     let conn = registry::open_registry(app)?;
     registry::get_item_by_id(&conn, item_id)
         .map_err(|_| LauncherError::RegistryMissing)?
@@ -168,12 +172,7 @@ pub fn load_registry_item(app: &tauri::AppHandle, item_id: &str) -> LauncherResu
 
 /// Heuristic: check whether a filename contains both the Minecraft version
 /// Known Minecraft mod loaders (lowercase) used for heuristic matching.
-const KNOWN_LOADERS: &[&str] = &[
-    "fabric",
-    "forge",
-    "neoforge",
-    "quilt",
-];
+const KNOWN_LOADERS: &[&str] = &["fabric", "forge", "neoforge", "quilt"];
 
 /// Extract a Minecraft version hint from a string.
 ///
@@ -190,15 +189,10 @@ fn extract_mc_version(text: &str) -> Option<String> {
     // and followed by a digit.
     let mut pos = 0;
     while pos < bytes_lower.len() {
-        if pos + 1 < bytes_lower.len()
-            && bytes_lower[pos] == b'm'
-            && bytes_lower[pos + 1] == b'c'
-        {
+        if pos + 1 < bytes_lower.len() && bytes_lower[pos] == b'm' && bytes_lower[pos + 1] == b'c' {
             let before_ok = pos == 0 || !bytes_lower[pos - 1].is_ascii_alphanumeric();
             let after_pos = pos + 2;
-            if before_ok
-                && after_pos < bytes_lower.len()
-                && bytes_lower[after_pos].is_ascii_digit()
+            if before_ok && after_pos < bytes_lower.len() && bytes_lower[after_pos].is_ascii_digit()
             {
                 // Take the version portion (until a non-version char)
                 let rest = &text[after_pos..];
@@ -277,8 +271,8 @@ fn extract_loader(text: &str) -> Option<String> {
             let abs = idx + pos;
             let before_ok = abs == 0 || !lower.as_bytes()[abs - 1].is_ascii_alphanumeric();
             let after_pos = abs + loader.len();
-            let after_ok = after_pos >= lower.len()
-                || !lower.as_bytes()[after_pos].is_ascii_alphanumeric();
+            let after_ok =
+                after_pos >= lower.len() || !lower.as_bytes()[after_pos].is_ascii_alphanumeric();
             if before_ok && after_ok {
                 return Some(loader.to_string());
             }
@@ -300,10 +294,8 @@ fn parse_version_from_github_asset(
     loader: &str,
 ) -> (Option<String>, Option<String>, &'static str) {
     // Check filename first, then tag name as fallback
-    let mc = extract_mc_version(filename)
-        .or_else(|| extract_mc_version(tag_name));
-    let lo = extract_loader(filename)
-        .or_else(|| extract_loader(tag_name));
+    let mc = extract_mc_version(filename).or_else(|| extract_mc_version(tag_name));
+    let lo = extract_loader(filename).or_else(|| extract_loader(tag_name));
 
     // Validate MC version against the requested instance
     let mc_match = mc.as_deref().map(|v| {
@@ -314,9 +306,7 @@ fn parse_version_from_github_asset(
         stripped_found == stripped_target
     });
 
-    let lo_match = lo.as_deref().map(|l| {
-        l.eq_ignore_ascii_case(loader)
-    });
+    let lo_match = lo.as_deref().map(|l| l.eq_ignore_ascii_case(loader));
 
     let loader_ok = lo_match == Some(true);
 
@@ -445,7 +435,11 @@ pub async fn list_mod_versions(
                         "list_mod_versions: github_release primary failed for '{}' ({}); {}",
                         item_id,
                         e,
-                        if modrinth_on { "trying Modrinth fallback" } else { "Modrinth disabled, no fallback" }
+                        if modrinth_on {
+                            "trying Modrinth fallback"
+                        } else {
+                            "Modrinth disabled, no fallback"
+                        }
                     ));
                     Vec::new()
                 }
@@ -739,9 +733,7 @@ async fn fetch_github_releases_page(
     loader: &str,
     page: u32,
 ) -> LauncherResult<(Vec<ModVersionCandidate>, u32)> {
-    let url = format!(
-        "https://api.github.com/repos/{source}/releases?per_page=100&page={page}"
-    );
+    let url = format!("https://api.github.com/repos/{source}/releases?per_page=100&page={page}");
 
     let _permit = agora_core::github_ratelimit::acquire_github_permit().await;
 
@@ -762,9 +754,7 @@ async fn fetch_github_releases_page(
         agora_core::github_ratelimit::report_rate_limit(retry).await;
         return Err(LauncherError::Generic {
             code: "ERR_RATE_LIMITED".to_string(),
-            message: format!(
-                "GitHub rate limit hit while fetching releases for {source}."
-            ),
+            message: format!("GitHub rate limit hit while fetching releases for {source}."),
         });
     }
 
@@ -795,12 +785,8 @@ async fn fetch_github_releases_page(
             if !asset.name.ends_with(".jar") {
                 continue;
             }
-            let (mc, loader_str, compat) = parse_version_from_github_asset(
-                &asset.name,
-                &release.tag_name,
-                mc_version,
-                loader,
-            );
+            let (mc, loader_str, compat) =
+                parse_version_from_github_asset(&asset.name, &release.tag_name, mc_version, loader);
 
             let download_url = format!(
                 "https://github.com/{}/releases/download/{}/{}",
@@ -842,14 +828,7 @@ async fn resolve_github_releases_page(
     loader: &str,
     page: u32,
 ) -> LauncherResult<(Vec<ModVersionCandidate>, u32)> {
-    fetch_github_releases_page(
-        app,
-        &item.source_identifier,
-        mc_version,
-        loader,
-        page,
-    )
-    .await
+    fetch_github_releases_page(app, &item.source_identifier, mc_version, loader, page).await
 }
 
 /// Sort version candidates by compatibility tier (compatible â†’ major_match â†’
@@ -1040,8 +1019,8 @@ pub async fn install_mod_version(
     let pinned_sha = item.sha256.trim().to_string();
 
     // 2. Pre-check: verify sufficient disk space before any network request (Â§7.1.2).
-    let instance_dir = paths::instance_dir(app, instance_id)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let instance_dir =
+        paths::instance_dir(app, instance_id).map_err(|_| LauncherError::InstanceCreateFailed)?;
     if let Some(free) = available_disk_space_bytes(&instance_dir) {
         if free < MIN_DISK_SPACE_BYTES {
             return Err(LauncherError::DiskFull);
@@ -1053,7 +1032,12 @@ pub async fn install_mod_version(
     let bytes = download_mod_bytes(&candidate.download_url).await?;
 
     // 3. Verify hash against the appropriate source.
-    let candidate_sha1 = candidate.sha1.as_deref().unwrap_or("").trim().to_lowercase();
+    let candidate_sha1 = candidate
+        .sha1
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
     if !candidate_sha1.is_empty() {
         // Modrinth-published per-file SHA-1: verify against that.
         let actual_sha1 = download::sha1_hex(&bytes);
@@ -1077,8 +1061,8 @@ pub async fn install_mod_version(
     let installed_sha256 = download::sha256_hex(&bytes);
 
     // 4. Ensure target subdirectory exists and write the file.
-    let instance_dir = paths::instance_dir(app, instance_id)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let instance_dir =
+        paths::instance_dir(app, instance_id).map_err(|_| LauncherError::InstanceCreateFailed)?;
     let target_dir = instance_dir.join(content_subdir(&item.content_type));
     std::fs::create_dir_all(&target_dir).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
@@ -1092,8 +1076,7 @@ pub async fn install_mod_version(
     let mut manifest: InstanceManifest = if manifest_path.exists() {
         let text = std::fs::read_to_string(&manifest_path)
             .map_err(|_| LauncherError::InstanceCreateFailed)?;
-        serde_json::from_str(&text)
-            .map_err(|_| LauncherError::InstanceCreateFailed)?
+        serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?
     } else {
         return Err(LauncherError::Generic {
             code: "ERR_MANIFEST_MISSING".to_string(),
@@ -1104,7 +1087,7 @@ pub async fn install_mod_version(
         });
     };
 
-    let metadata = crash_investigator::parse_jar_metadata(&item_path);
+    let metadata = agora_core::jar_metadata::parse_jar_metadata(&item_path);
     let installed_mod = InstalledMod {
         filename: candidate.filename.clone(),
         registry_id: Some(item_id.to_string()),
@@ -1119,8 +1102,17 @@ pub async fn install_mod_version(
         depends_on: metadata.depends_on,
         optional_deps: metadata.optional_deps,
         incompatible_deps: metadata.incompatible_deps,
+        provided_mod_ids: metadata
+            .provided_mods
+            .into_iter()
+            .map(|provided| provided.mod_id)
+            .collect(),
         enabled: true,
-        content_type: if item.content_type.is_empty() { "mod".to_string() } else { item.content_type.clone() },
+        content_type: if item.content_type.is_empty() {
+            "mod".to_string()
+        } else {
+            item.content_type.clone()
+        },
     };
 
     // Add to the correct array
@@ -1128,11 +1120,10 @@ pub async fn install_mod_version(
 
     // Atomic write: .tmp then rename.
     let tmp_path = manifest_path.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(&manifest)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let text =
+        serde_json::to_string_pretty(&manifest).map_err(|_| LauncherError::InstanceCreateFailed)?;
     std::fs::write(&tmp_path, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
-    std::fs::rename(&tmp_path, &manifest_path)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    std::fs::rename(&tmp_path, &manifest_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     Ok(installed_mod)
 }
@@ -1158,15 +1149,16 @@ pub async fn remove_mod_from_instance(
     }
 
     // 1. Delete the file from whichever content subdirectory it lives in.
-    let instance_dir = paths::instance_dir(app, instance_id)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let instance_dir =
+        paths::instance_dir(app, instance_id).map_err(|_| LauncherError::InstanceCreateFailed)?;
     let subdirs = ["mods", "resourcepacks", "shaderpacks", "datapacks", "saves"];
     let filename_owned = filename.to_string();
     tokio::task::spawn_blocking(move || {
         for sub in &subdirs {
             let candidate = instance_dir.join(sub).join(&filename_owned);
             if candidate.exists() {
-                std::fs::remove_file(&candidate).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                std::fs::remove_file(&candidate)
+                    .map_err(|_| LauncherError::InstanceCreateFailed)?;
                 break;
             }
         }
@@ -1197,8 +1189,8 @@ pub async fn remove_mod_from_instance(
             message: "Manifest read task failed.".to_string(),
         })??;
 
-        let mut manifest: InstanceManifest = serde_json::from_str(&text)
-            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let mut manifest: InstanceManifest =
+            serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
         if remove_from_content_array(&mut manifest, filename) {
             // Atomic write: .tmp then rename.
@@ -1206,7 +1198,8 @@ pub async fn remove_mod_from_instance(
             let write_text = serde_json::to_string_pretty(&manifest)
                 .map_err(|_| LauncherError::InstanceCreateFailed)?;
             tokio::task::spawn_blocking(move || {
-                std::fs::write(&tmp_path, write_text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                std::fs::write(&tmp_path, write_text)
+                    .map_err(|_| LauncherError::InstanceCreateFailed)?;
                 std::fs::rename(&tmp_path, &manifest_path)
                     .map_err(|_| LauncherError::InstanceCreateFailed)?;
                 Ok::<_, LauncherError>(())
@@ -1250,7 +1243,11 @@ fn rename_in_content_dir(base: &Path, filename: &str, enable: bool) -> Option<St
 
 /// Set `enabled` on the manifest entry matching `filename` across all arrays.
 /// Returns whether the entry was found.
-fn set_enabled_in_all_arrays(manifest: &mut InstanceManifest, filename: &str, enabled: bool) -> bool {
+fn set_enabled_in_all_arrays(
+    manifest: &mut InstanceManifest,
+    filename: &str,
+    enabled: bool,
+) -> bool {
     for arr in [
         &mut manifest.mods,
         &mut manifest.resourcepacks,
@@ -1275,8 +1272,8 @@ pub fn disable_instance_mod(
     filename: &str,
 ) -> LauncherResult<()> {
     let sanitized = paths::sanitize_id(instance_id);
-    let instance_dir = paths::instance_dir(app, &sanitized)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let instance_dir =
+        paths::instance_dir(app, &sanitized).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     if rename_in_content_dir(&instance_dir, filename, false).is_none() {
         return Err(LauncherError::Generic {
@@ -1289,8 +1286,8 @@ pub fn disable_instance_mod(
     let manifest_path = paths::instance_manifest_path(app, &sanitized)
         .map_err(|_| LauncherError::InstanceCreateFailed)?;
     if manifest_path.exists() {
-        let text =
-            std::fs::read_to_string(&manifest_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let text = std::fs::read_to_string(&manifest_path)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
         let mut manifest: InstanceManifest =
             serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
         set_enabled_in_all_arrays(&mut manifest, filename, false);
@@ -1314,8 +1311,8 @@ pub fn enable_instance_mod(
     filename: &str,
 ) -> LauncherResult<()> {
     let sanitized = paths::sanitize_id(instance_id);
-    let instance_dir = paths::instance_dir(app, &sanitized)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let instance_dir =
+        paths::instance_dir(app, &sanitized).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     if rename_in_content_dir(&instance_dir, filename, true).is_none() {
         return Ok(()); // already enabled or file not found
@@ -1325,8 +1322,8 @@ pub fn enable_instance_mod(
     let manifest_path = paths::instance_manifest_path(app, &sanitized)
         .map_err(|_| LauncherError::InstanceCreateFailed)?;
     if manifest_path.exists() {
-        let text =
-            std::fs::read_to_string(&manifest_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let text = std::fs::read_to_string(&manifest_path)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
         let mut manifest: InstanceManifest =
             serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
         set_enabled_in_all_arrays(&mut manifest, filename, true);
@@ -1365,17 +1362,23 @@ pub async fn add_manual_mod(
     use std::path::Path;
 
     let src = Path::new(source_path);
-    let ext = src.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
     if ext.as_deref() != Some("jar") {
         return Err(LauncherError::Generic {
             code: "ERR_INVALID_FILENAME".to_string(),
             message: "Only .jar files can be added manually.".to_string(),
         });
     }
-    let file_name = src.file_name().and_then(|n| n.to_str()).ok_or_else(|| LauncherError::Generic {
-        code: "ERR_INVALID_FILENAME".to_string(),
-        message: "Could not determine a valid file name.".to_string(),
-    })?;
+    let file_name =
+        src.file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| LauncherError::Generic {
+                code: "ERR_INVALID_FILENAME".to_string(),
+                message: "Could not determine a valid file name.".to_string(),
+            })?;
     if file_name.contains("..") || file_name.contains('/') || file_name.contains('\\') {
         return Err(LauncherError::Generic {
             code: "ERR_INVALID_FILENAME".to_string(),
@@ -1396,10 +1399,11 @@ pub async fn add_manual_mod(
     let installed_mod = tokio::task::spawn_blocking(move || -> LauncherResult<InstalledMod> {
         // Canonicalize the source path so symlinks resolve and we can compare
         // against the allowlisted drop roots.
-        let canonical = std::fs::canonicalize(&source_path_owned).map_err(|_| LauncherError::Generic {
-            code: "ERR_INVALID_SOURCE".to_string(),
-            message: "Source file does not exist or cannot be resolved.".to_string(),
-        })?;
+        let canonical =
+            std::fs::canonicalize(&source_path_owned).map_err(|_| LauncherError::Generic {
+                code: "ERR_INVALID_SOURCE".to_string(),
+                message: "Source file does not exist or cannot be resolved.".to_string(),
+            })?;
 
         // Build the allowlist of canonical drop directories. `dirs` roots may
         // themselves contain symlinks, so canonicalize each before comparing.
@@ -1447,7 +1451,7 @@ pub async fn add_manual_mod(
         let mut manifest: InstanceManifest =
             serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
-        let metadata = crash_investigator::parse_jar_metadata(&dest);
+        let metadata = agora_core::jar_metadata::parse_jar_metadata(&dest);
         let installed_mod = InstalledMod {
             filename: file_name_owned.clone(),
             registry_id: None,
@@ -1462,6 +1466,11 @@ pub async fn add_manual_mod(
             depends_on: metadata.depends_on,
             optional_deps: metadata.optional_deps,
             incompatible_deps: metadata.incompatible_deps,
+            provided_mod_ids: metadata
+                .provided_mods
+                .into_iter()
+                .map(|provided| provided.mod_id)
+                .collect(),
             enabled: true,
             content_type: "mod".to_string(),
         };
@@ -1553,7 +1562,10 @@ mod tests {
     #[test]
     fn test_download_url_requires_trusted_https_origin() {
         assert!(validate_mod_download_url("https://cdn.modrinth.com/data/example.mrpack").is_ok());
-        assert!(validate_mod_download_url("https://github.com/example/mod/releases/download/v1/mod.jar").is_ok());
+        assert!(validate_mod_download_url(
+            "https://github.com/example/mod/releases/download/v1/mod.jar"
+        )
+        .is_ok());
         assert!(matches!(
             validate_mod_download_url("http://cdn.modrinth.com/data/example.mrpack"),
             Err(LauncherError::UntrustedSource)
@@ -1623,12 +1635,8 @@ mod tests {
 
     #[test]
     fn test_parse_version_no_match() {
-        let (mc, lo, compat) = parse_version_from_github_asset(
-            "some-random-mod.jar",
-            "v1.0.0",
-            "1.20.1",
-            "fabric",
-        );
+        let (mc, lo, compat) =
+            parse_version_from_github_asset("some-random-mod.jar", "v1.0.0", "1.20.1", "fabric");
         assert!(mc.is_none());
         assert!(lo.is_none());
         assert_eq!(compat, "");
@@ -1666,14 +1674,14 @@ mod tests {
         // fabric-api-0.154.0+26.2.jar on a forge instance â†’ incompatible
         // The '+' in the filename is 0x2B, not a URL-encoded space
         let filename = "fabric-api-0.154.0+26.2.jar";
-        assert_eq!(extract_loader(filename), Some("fabric".to_string()), "extract_loader should find fabric");
-
-        let (mc, lo, compat) = parse_version_from_github_asset(
-            filename,
-            "0.154.0+26.2",
-            "26.2",
-            "forge",
+        assert_eq!(
+            extract_loader(filename),
+            Some("fabric".to_string()),
+            "extract_loader should find fabric"
         );
+
+        let (mc, lo, compat) =
+            parse_version_from_github_asset(filename, "0.154.0+26.2", "26.2", "forge");
         assert_eq!(mc, Some("26.2".to_string()));
         assert_eq!(lo, Some("fabric".to_string()));
         assert_eq!(compat, "");
@@ -1724,43 +1732,73 @@ mod tests {
 
     #[test]
     fn test_extract_mc_version_bare() {
-        assert_eq!(extract_mc_version("my-mod-1.21.11.jar"), Some("1.21.11".to_string()));
+        assert_eq!(
+            extract_mc_version("my-mod-1.21.11.jar"),
+            Some("1.21.11".to_string())
+        );
     }
 
     #[test]
     fn test_extract_mc_version_mc_prefix() {
-        assert_eq!(extract_mc_version("mc1.21.1.jar"), Some("1.21.1".to_string()));
+        assert_eq!(
+            extract_mc_version("mc1.21.1.jar"),
+            Some("1.21.1".to_string())
+        );
     }
 
     #[test]
     fn test_extract_mc_version_no_1_prefix() {
-        assert_eq!(extract_mc_version("mc26.2-0.25.1.jar"), Some("26.2".to_string()));
+        assert_eq!(
+            extract_mc_version("mc26.2-0.25.1.jar"),
+            Some("26.2".to_string())
+        );
     }
 
     #[test]
     fn test_extract_mc_version_prefers_mc_prefix() {
         // iris-1.7.3+mc1.21.jar â€” should pick mc1.21, not 1.7.3
-        assert_eq!(extract_mc_version("iris-1.7.3+mc1.21.jar"), Some("1.21".to_string()));
+        assert_eq!(
+            extract_mc_version("iris-1.7.3+mc1.21.jar"),
+            Some("1.21".to_string())
+        );
     }
 
     #[test]
     fn test_extract_mc_version_fabricmc_no_false_match() {
         // "fabricmc" should NOT match as mc prefix
-        assert_eq!(extract_mc_version("fabricmc-1.21.jar"), Some("1.21".to_string()));
+        assert_eq!(
+            extract_mc_version("fabricmc-1.21.jar"),
+            Some("1.21".to_string())
+        );
     }
 
     #[test]
     fn test_extract_mc_version_fabricmc_with_mc() {
         // "fabricmc-mc1.21.jar" â€” second mc is the real prefix
-        assert_eq!(extract_mc_version("fabricmc-mc1.21.jar"), Some("1.21".to_string()));
+        assert_eq!(
+            extract_mc_version("fabricmc-mc1.21.jar"),
+            Some("1.21".to_string())
+        );
     }
 
     #[test]
     fn test_extract_loader() {
-        assert_eq!(extract_loader("fabric-api-0.92.0.jar"), Some("fabric".to_string()));
-        assert_eq!(extract_loader("fabric-api-0.154.0+26.2.jar"), Some("fabric".to_string()));
-        assert_eq!(extract_loader("my-forge-mod.jar"), Some("forge".to_string()));
-        assert_eq!(extract_loader("neoforge-thing.jar"), Some("neoforge".to_string()));
+        assert_eq!(
+            extract_loader("fabric-api-0.92.0.jar"),
+            Some("fabric".to_string())
+        );
+        assert_eq!(
+            extract_loader("fabric-api-0.154.0+26.2.jar"),
+            Some("fabric".to_string())
+        );
+        assert_eq!(
+            extract_loader("my-forge-mod.jar"),
+            Some("forge".to_string())
+        );
+        assert_eq!(
+            extract_loader("neoforge-thing.jar"),
+            Some("neoforge".to_string())
+        );
         assert_eq!(extract_loader("random.jar"), None);
     }
 
@@ -1779,8 +1817,8 @@ fn stream_jar_into_zip(
     entry_name: &str,
     path: &std::path::Path,
 ) -> LauncherResult<(String, u64)> {
-    use std::io::{Read, Write};
     use sha2::Digest;
+    use std::io::{Read, Write};
     const CHUNK: usize = 64 * 1024;
 
     let mut f = std::fs::File::open(path).map_err(|_| LauncherError::InstanceCreateFailed)?;
@@ -1790,7 +1828,9 @@ fn stream_jar_into_zip(
     let mut buf = [0u8; CHUNK];
     let mut size: u64 = 0;
     loop {
-        let n = f.read(&mut buf).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|_| LauncherError::InstanceCreateFailed)?;
         if n == 0 {
             break;
         }
@@ -1864,7 +1904,8 @@ pub async fn export_instance_pack(
             let text = serde_json::to_string_pretty(&pack)
                 .map_err(|_| LauncherError::InstanceCreateFailed)?;
             std::fs::write(&tmp_path, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
-            std::fs::rename(&tmp_path, &out_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+            std::fs::rename(&tmp_path, &out_path)
+                .map_err(|_| LauncherError::InstanceCreateFailed)?;
             Ok(out_path.to_string_lossy().to_string())
         }
         "mrpack" => {
@@ -1879,8 +1920,8 @@ pub async fn export_instance_pack(
                 let file = std::fs::File::create(&tmp_path)
                     .map_err(|_| LauncherError::InstanceCreateFailed)?;
                 let mut zip = zip::ZipWriter::new(file);
-                let opts: zip::write::FileOptions =
-                    zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+                let opts: zip::write::FileOptions = zip::write::FileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored);
 
                 let mut files_meta: Vec<serde_json::Value> = Vec::new();
 
@@ -1890,7 +1931,10 @@ pub async fn export_instance_pack(
                     // and keeps exported packs tiny + resolvable. Falls through to local
                     // bundling when Modrinth has no metadata for this filename.
                     if let Some(mid) = m.modrinth_id.as_deref().filter(|s| !s.trim().is_empty()) {
-                        if let Some(meta) = crate::modrinth_raw::resolve_modrinth_file_metadata(mid, &m.filename).await {
+                        if let Some(meta) =
+                            crate::modrinth_raw::resolve_modrinth_file_metadata(mid, &m.filename)
+                                .await
+                        {
                             files_meta.push(serde_json::json!({
                                 "path": format!("mods/{}", m.filename),
                                 "hashes": { "sha1": meta.sha1, "sha512": meta.sha512 },
@@ -1957,8 +2001,14 @@ pub async fn export_instance_pack(
                 // streamed file hashes/sizes. Archive entry order is irrelevant
                 // to mrpack consumers.
                 let mut deps = serde_json::Map::new();
-                deps.insert("minecraft".to_string(), serde_json::Value::String(manifest.minecraft_version.clone()));
-                deps.insert(manifest.loader.clone(), serde_json::Value::String(manifest.loader_version.clone()));
+                deps.insert(
+                    "minecraft".to_string(),
+                    serde_json::Value::String(manifest.minecraft_version.clone()),
+                );
+                deps.insert(
+                    manifest.loader.clone(),
+                    serde_json::Value::String(manifest.loader_version.clone()),
+                );
                 let index = serde_json::json!({
                     "formatVersion": 1,
                     "game": "minecraft",
@@ -1974,10 +2024,12 @@ pub async fn export_instance_pack(
                     .map_err(|_| LauncherError::InstanceCreateFailed)?;
                 zip.write_all(index_text.as_bytes())
                     .map_err(|_| LauncherError::InstanceCreateFailed)?;
-                zip.finish().map_err(|_| LauncherError::InstanceCreateFailed)?;
+                zip.finish()
+                    .map_err(|_| LauncherError::InstanceCreateFailed)?;
             }
 
-            std::fs::rename(&tmp_path, &out_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
+            std::fs::rename(&tmp_path, &out_path)
+                .map_err(|_| LauncherError::InstanceCreateFailed)?;
             Ok(out_path.to_string_lossy().to_string())
         }
         other => Err(LauncherError::Generic {
@@ -2020,7 +2072,8 @@ pub async fn import_instance_pack(
     } else {
         Err(LauncherError::Generic {
             code: "ERR_INVALID_FORMAT".to_string(),
-            message: "Unsupported pack file extension. Use .mrpack or .agora-pack.json.".to_string(),
+            message: "Unsupported pack file extension. Use .mrpack or .agora-pack.json."
+                .to_string(),
         })
     }
 }
@@ -2029,11 +2082,10 @@ pub async fn import_instance_pack(
 
 /// Import a Modrinth mrpack (.mrpack) file.
 async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherResult<String> {
-    let file = std::fs::File::open(source_path)
-        .map_err(|_| LauncherError::Generic {
-            code: "ERR_PACK_READ".to_string(),
-            message: format!("Cannot open mrpack file: {source_path}"),
-        })?;
+    let file = std::fs::File::open(source_path).map_err(|_| LauncherError::Generic {
+        code: "ERR_PACK_READ".to_string(),
+        message: format!("Cannot open mrpack file: {source_path}"),
+    })?;
     let mut archive = zip::ZipArchive::new(file).map_err(|_| LauncherError::Generic {
         code: "ERR_PACK_READ".to_string(),
         message: "Failed to open mrpack as a zip archive.".to_string(),
@@ -2043,30 +2095,42 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
     let mut index_text = String::new();
     {
         use std::io::Read;
-        let mut entry = archive.by_name("modrinth.index.json").map_err(|_| LauncherError::Generic {
-            code: "ERR_PACK_PARSE".to_string(),
-            message: "modrinth.index.json not found in mrpack.".to_string(),
-        })?;
-        entry.read_to_string(&mut index_text).map_err(|_| LauncherError::Generic {
-            code: "ERR_PACK_READ".to_string(),
-            message: "Failed to read modrinth.index.json.".to_string(),
-        })?;
+        let mut entry =
+            archive
+                .by_name("modrinth.index.json")
+                .map_err(|_| LauncherError::Generic {
+                    code: "ERR_PACK_PARSE".to_string(),
+                    message: "modrinth.index.json not found in mrpack.".to_string(),
+                })?;
+        entry
+            .read_to_string(&mut index_text)
+            .map_err(|_| LauncherError::Generic {
+                code: "ERR_PACK_READ".to_string(),
+                message: "Failed to read modrinth.index.json.".to_string(),
+            })?;
     }
-    let index: serde_json::Value = serde_json::from_str(&index_text).map_err(|_| LauncherError::Generic {
-        code: "ERR_PACK_PARSE".to_string(),
-        message: "Failed to parse modrinth.index.json.".to_string(),
-    })?;
+    let index: serde_json::Value =
+        serde_json::from_str(&index_text).map_err(|_| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "Failed to parse modrinth.index.json.".to_string(),
+        })?;
 
     // Extract dependencies
-    let deps = index.get("dependencies").and_then(|d| d.as_object()).ok_or_else(|| LauncherError::Generic {
-        code: "ERR_PACK_PARSE".to_string(),
-        message: "mrpack has no dependencies map.".to_string(),
-    })?;
+    let deps = index
+        .get("dependencies")
+        .and_then(|d| d.as_object())
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "mrpack has no dependencies map.".to_string(),
+        })?;
 
-    let minecraft_version = deps.get("minecraft").and_then(|v| v.as_str()).ok_or_else(|| LauncherError::Generic {
-        code: "ERR_PACK_PARSE".to_string(),
-        message: "mrpack missing required 'dependencies.minecraft'.".to_string(),
-    })?;
+    let minecraft_version = deps
+        .get("minecraft")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "mrpack missing required 'dependencies.minecraft'.".to_string(),
+        })?;
     if minecraft_version.is_empty() {
         return Err(LauncherError::Generic {
             code: "ERR_PACK_PARSE".to_string(),
@@ -2115,7 +2179,11 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
         });
 
     let instance_id = paths::sanitize_id(&name);
-    let instance_id = if instance_id.is_empty() { "imported-pack".to_string() } else { instance_id };
+    let instance_id = if instance_id.is_empty() {
+        "imported-pack".to_string()
+    } else {
+        instance_id
+    };
 
     // Create the instance
     let req = instances::CreateInstanceRequest {
@@ -2143,7 +2211,10 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
 
     if let Some(arr) = files_arr.as_array() {
         for file_entry in arr {
-            let path = file_entry.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let path = file_entry
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if !path.starts_with("mods/") {
                 continue;
             }
@@ -2153,90 +2224,112 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
             }
             // Skip nested paths (only flat mods/<filename> is supported)
             if basename.contains('/') || basename.contains('\\') {
-                auth::log_line(&format!("import_mrpack: path contains nested slashes, skipping '{basename}'"));
+                auth::log_line(&format!(
+                    "import_mrpack: path contains nested slashes, skipping '{basename}'"
+                ));
                 continue;
             }
 
             if safe_zip_entry_name(basename).is_none() {
-                auth::log_line(&format!("import_mrpack: unsafe basename '{basename}', skipping"));
+                auth::log_line(&format!(
+                    "import_mrpack: unsafe basename '{basename}', skipping"
+                ));
                 continue;
             }
 
             let downloads = file_entry.get("downloads").and_then(|d| d.as_array());
-        if let Some(downloads) = downloads {
-            if let Some(url) = downloads.first().and_then(|u| u.as_str()) {
-                // Download from Modrinth CDN (host-allowlisted by download_mod_bytes)
-                let bytes = download_mod_bytes(url).await?;
-                // SHA-1 verification if declared
-                if let Some(expected_sha1) = file_entry.get("hashes")
-                    .and_then(|h| h.get("sha1"))
-                    .and_then(|h| h.as_str())
-                    .filter(|s| !s.is_empty())
-                {
-                    let actual = download::sha1_hex(&bytes);
-                    if actual != expected_sha1.trim().to_lowercase() {
-                        return Err(LauncherError::HashMismatch);
+            if let Some(downloads) = downloads {
+                if let Some(url) = downloads.first().and_then(|u| u.as_str()) {
+                    // Download from Modrinth CDN (host-allowlisted by download_mod_bytes)
+                    let bytes = download_mod_bytes(url).await?;
+                    // SHA-1 verification if declared
+                    if let Some(expected_sha1) = file_entry
+                        .get("hashes")
+                        .and_then(|h| h.get("sha1"))
+                        .and_then(|h| h.as_str())
+                        .filter(|s| !s.is_empty())
+                    {
+                        let actual = download::sha1_hex(&bytes);
+                        if actual != expected_sha1.trim().to_lowercase() {
+                            return Err(LauncherError::HashMismatch);
+                        }
                     }
+                    let sha256 = download::sha256_hex(&bytes);
+                    let mod_path = mods_dir.join(basename);
+                    std::fs::write(&mod_path, &bytes)
+                        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+                    let metadata = agora_core::jar_metadata::parse_jar_metadata(&mod_path);
+                    installed_mods.push(InstalledMod {
+                        filename: basename.to_string(),
+                        registry_id: None,
+                        modrinth_id: None,
+                        source: "modrinth_pack".to_string(),
+                        source_url: downloads
+                            .first()
+                            .and_then(|value| value.as_str())
+                            .map(str::to_string),
+                        version: None,
+                        sha256,
+                        installed_at: now.clone(),
+                        java_packages: metadata.java_packages,
+                        mod_jar_id: metadata.mod_jar_id,
+                        depends_on: metadata.depends_on,
+                        optional_deps: metadata.optional_deps,
+                        incompatible_deps: metadata.incompatible_deps,
+                        provided_mod_ids: metadata
+                            .provided_mods
+                            .into_iter()
+                            .map(|provided| provided.mod_id)
+                            .collect(),
+                        enabled: true,
+                        content_type: "mod".to_string(),
+                    });
                 }
-                let sha256 = download::sha256_hex(&bytes);
-                let mod_path = mods_dir.join(basename);
-                std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
-                let metadata = crash_investigator::parse_jar_metadata(&mod_path);
-                installed_mods.push(InstalledMod {
-                    filename: basename.to_string(),
-                    registry_id: None,
-                    modrinth_id: None,
-                    source: "modrinth_pack".to_string(),
-                    source_url: downloads.first().and_then(|value| value.as_str()).map(str::to_string),
-                    version: None,
-                    sha256,
-                    installed_at: now.clone(),
-                    java_packages: metadata.java_packages,
-                    mod_jar_id: metadata.mod_jar_id,
-                    depends_on: metadata.depends_on,
-                    optional_deps: metadata.optional_deps,
-                    incompatible_deps: metadata.incompatible_deps,
-                    enabled: true,
-                    content_type: "mod".to_string(),
-                });
-            }
-        } else {
-            // Bundled override jar: extract directly from the zip
-            if let Ok(mut entry) = archive.by_name(path) {
-                let mut bytes = Vec::new();
-                use std::io::Read;
-                entry.read_to_end(&mut bytes).ok();
-                let sha256 = download::sha256_hex(&bytes);
-                let mod_path = mods_dir.join(basename);
-                std::fs::write(&mod_path, &bytes).map_err(|_| LauncherError::InstanceCreateFailed)?;
-                let metadata = crash_investigator::parse_jar_metadata(&mod_path);
-                installed_mods.push(InstalledMod {
-                    filename: basename.to_string(),
-                    registry_id: None,
-                    modrinth_id: None,
-                    source: "modrinth_pack_bundle".to_string(),
-                    source_url: None,
-                    version: None,
-                    sha256,
-                    installed_at: now.clone(),
-                    java_packages: metadata.java_packages,
-                    mod_jar_id: metadata.mod_jar_id,
-                    depends_on: metadata.depends_on,
-                    optional_deps: metadata.optional_deps,
-                    incompatible_deps: metadata.incompatible_deps,
-                    enabled: true,
-                    content_type: "mod".to_string(),
-                });
             } else {
-                auth::log_line(&format!("import_mrpack: bundled file not found in zip: '{path}'"));
+                // Bundled override jar: extract directly from the zip
+                if let Ok(mut entry) = archive.by_name(path) {
+                    let mut bytes = Vec::new();
+                    use std::io::Read;
+                    entry.read_to_end(&mut bytes).ok();
+                    let sha256 = download::sha256_hex(&bytes);
+                    let mod_path = mods_dir.join(basename);
+                    std::fs::write(&mod_path, &bytes)
+                        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+                    let metadata = agora_core::jar_metadata::parse_jar_metadata(&mod_path);
+                    installed_mods.push(InstalledMod {
+                        filename: basename.to_string(),
+                        registry_id: None,
+                        modrinth_id: None,
+                        source: "modrinth_pack_bundle".to_string(),
+                        source_url: None,
+                        version: None,
+                        sha256,
+                        installed_at: now.clone(),
+                        java_packages: metadata.java_packages,
+                        mod_jar_id: metadata.mod_jar_id,
+                        depends_on: metadata.depends_on,
+                        optional_deps: metadata.optional_deps,
+                        incompatible_deps: metadata.incompatible_deps,
+                        provided_mod_ids: metadata
+                            .provided_mods
+                            .into_iter()
+                            .map(|provided| provided.mod_id)
+                            .collect(),
+                        enabled: true,
+                        content_type: "mod".to_string(),
+                    });
+                } else {
+                    auth::log_line(&format!(
+                        "import_mrpack: bundled file not found in zip: '{path}'"
+                    ));
+                }
             }
         }
     }
-    }
 
     // Extract override files from the zip (overrides/ and client_overrides/).
-    let instance_root = paths::instance_dir(app, &instance_id)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let instance_root =
+        paths::instance_dir(app, &instance_id).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     let mut override_extracted: Vec<String> = Vec::new();
     let mut override_skipped: Vec<String> = Vec::new();
@@ -2268,7 +2361,14 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
         }
 
         // Check directory whitelist.
-        let allowed = ["config/", "defaultconfigs/", "resourcepacks/", "shaderpacks/", "datapacks/", "kubejs/"];
+        let allowed = [
+            "config/",
+            "defaultconfigs/",
+            "resourcepacks/",
+            "shaderpacks/",
+            "datapacks/",
+            "kubejs/",
+        ];
         if !allowed.iter().any(|p| normalized.starts_with(p)) {
             override_skipped.push(normalized.clone());
             continue;
@@ -2276,7 +2376,10 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
 
         // Check banned extensions.
         let lower = normalized.to_lowercase();
-        let banned = [".jar", ".class", ".exe", ".bat", ".cmd", ".sh", ".ps1", ".dll", ".so", ".dylib", ".msi", ".dmg"];
+        let banned = [
+            ".jar", ".class", ".exe", ".bat", ".cmd", ".sh", ".ps1", ".dll", ".so", ".dylib",
+            ".msi", ".dmg",
+        ];
         if banned.iter().any(|ext| lower.ends_with(ext)) {
             auth::log_line(&format!(
                 "import_mrpack: banned extension in override: '{normalized}', skipping"
@@ -2327,15 +2430,16 @@ async fn import_mrpack(app: &tauri::AppHandle, source_path: &str) -> LauncherRes
             code: "ERR_MANIFEST_READ".to_string(),
             message: "Manifest read task failed.".to_string(),
         })??;
-        let mut manifest: InstanceManifest = serde_json::from_str(&text)
-            .map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let mut manifest: InstanceManifest =
+            serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
         manifest.mods.extend(installed_mods);
 
         let tmp_path = manifest_path.with_extension("json.tmp");
         let write_text = serde_json::to_string_pretty(&manifest)
             .map_err(|_| LauncherError::InstanceCreateFailed)?;
         tokio::task::spawn_blocking(move || {
-            std::fs::write(&tmp_path, write_text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+            std::fs::write(&tmp_path, write_text)
+                .map_err(|_| LauncherError::InstanceCreateFailed)?;
             std::fs::rename(&tmp_path, &manifest_path)
                 .map_err(|_| LauncherError::InstanceCreateFailed)?;
             Ok::<_, LauncherError>(())
@@ -2358,10 +2462,11 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
         code: "ERR_PACK_READ".to_string(),
         message: format!("Cannot read pack file: {source_path}"),
     })?;
-    let pack: serde_json::Value = serde_json::from_str(&text).map_err(|_| LauncherError::Generic {
-        code: "ERR_PACK_PARSE".to_string(),
-        message: "Failed to parse agora-pack JSON.".to_string(),
-    })?;
+    let pack: serde_json::Value =
+        serde_json::from_str(&text).map_err(|_| LauncherError::Generic {
+            code: "ERR_PACK_PARSE".to_string(),
+            message: "Failed to parse agora-pack JSON.".to_string(),
+        })?;
 
     let instance_obj = pack.get("instance").ok_or_else(|| LauncherError::Generic {
         code: "ERR_PACK_PARSE".to_string(),
@@ -2430,7 +2535,11 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
         .to_string();
 
     let instance_id = paths::sanitize_id(&instance_id);
-    let instance_id = if instance_id.is_empty() { "imported-pack".to_string() } else { instance_id };
+    let instance_id = if instance_id.is_empty() {
+        "imported-pack".to_string()
+    } else {
+        instance_id
+    };
 
     let req = instances::CreateInstanceRequest {
         name: name.clone(),
@@ -2463,11 +2572,14 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
                 match list_mod_versions(app, &instance_id, rid).await {
                     Ok(candidates) => {
                         // Try to match by filename first, then by version
-                        let candidate = candidates.iter().find(|c| c.filename == filename)
-                            .or_else(|| {
-                                let ver = mod_entry.get("version").and_then(|v| v.as_str());
-                                ver.and_then(|v| candidates.iter().find(|c| c.version == v))
-                            });
+                        let candidate =
+                            candidates
+                                .iter()
+                                .find(|c| c.filename == filename)
+                                .or_else(|| {
+                                    let ver = mod_entry.get("version").and_then(|v| v.as_str());
+                                    ver.and_then(|v| candidates.iter().find(|c| c.version == v))
+                                });
 
                         if let Some(c) = candidate {
                             if let Err(e) = install_mod_version(app, &instance_id, rid, c).await {
@@ -2503,7 +2615,14 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                match crate::modrinth_raw::list_raw_modrinth_versions(app, Some(&instance_id), mid, Some("mod")).await {
+                match crate::modrinth_raw::list_raw_modrinth_versions(
+                    app,
+                    Some(&instance_id),
+                    mid,
+                    Some("mod"),
+                )
+                .await
+                {
                     Ok(candidates) => {
                         let candidate = candidates
                             .iter()
@@ -2516,7 +2635,15 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
                             })
                             .or_else(|| candidates.first());
                         if let Some(c) = candidate {
-                            if let Err(e) = crate::modrinth_raw::install_raw_modrinth(app, &instance_id, mid, c, "mod").await {
+                            if let Err(e) = crate::modrinth_raw::install_raw_modrinth(
+                                app,
+                                &instance_id,
+                                mid,
+                                c,
+                                "mod",
+                            )
+                            .await
+                            {
                                 auth::log_line(&format!(
                                     "import_agora_pack: failed to install modrinth mod {mid}: {e}"
                                 ));
@@ -2547,6 +2674,3 @@ async fn import_agora_pack(app: &tauri::AppHandle, source_path: &str) -> Launche
 
     Ok(instance_id)
 }
-
-
-

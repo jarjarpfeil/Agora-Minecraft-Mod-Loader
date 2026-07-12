@@ -75,6 +75,11 @@ pub struct InstalledMod {
     pub java_packages: Vec<String>,
     #[serde(default)]
     pub mod_jar_id: Option<String>,
+    /// Additional loader-visible IDs supplied by this physical JAR (Fabric/
+    /// Quilt `provides` aliases and explicitly declared nested modules).
+    /// This is a cache only; health checks re-parse JAR metadata directly.
+    #[serde(default)]
+    pub provided_mod_ids: Vec<String>,
     /// Whether this mod is enabled. Disabled mods have their `.jar` renamed to
     /// `.jar.disabled` so the game does not load them, but the manifest entry is
     /// preserved for easy re-enabling.
@@ -227,6 +232,7 @@ mod tests {
         assert_eq!(mod_.version, None);
         assert_eq!(mod_.java_packages, Vec::<String>::new());
         assert_eq!(mod_.mod_jar_id, None);
+        assert_eq!(mod_.provided_mod_ids, Vec::<String>::new());
         assert_eq!(mod_.depends_on, Vec::<String>::new());
         assert_eq!(mod_.optional_deps, Vec::<String>::new());
         assert_eq!(mod_.incompatible_deps, Vec::<String>::new());
@@ -283,6 +289,7 @@ mod tests {
                 depends_on: vec!["core-lib".to_string()],
                 optional_deps: vec!["opt-mod".to_string()],
                 incompatible_deps: vec!["bad-mod".to_string()],
+                provided_mod_ids: vec!["nested_api".to_string(), "legacy_alias".to_string()],
                 enabled: true,
                 content_type: "mod".to_string(),
             }],
@@ -325,6 +332,10 @@ mod tests {
             manifest.mods[0].java_packages
         );
         assert_eq!(deserialized.mods[0].mod_jar_id, manifest.mods[0].mod_jar_id);
+        assert_eq!(
+            deserialized.mods[0].provided_mod_ids,
+            manifest.mods[0].provided_mod_ids
+        );
         assert_eq!(deserialized.mods[0].depends_on, manifest.mods[0].depends_on);
         assert_eq!(
             deserialized.mods[0].optional_deps,

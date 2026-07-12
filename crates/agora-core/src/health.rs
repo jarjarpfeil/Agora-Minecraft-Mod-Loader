@@ -3,6 +3,7 @@ use crate::dependency_ops::{AliasMap, JarDeps};
 use crate::jar_metadata::parse_jar_metadata;
 use crate::models::InstanceManifest;
 use crate::registry;
+use crate::version_match;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -81,6 +82,28 @@ struct InstalledJar {
     jar: JarDeps,
 }
 
+/// Alias-resolve a loader-ID -> physical-JAR-files index while retaining each
+/// physical file at most once per resolved ID.
+///
+/// The same JAR can expose several raw IDs that a curated alias map collapses
+/// to one canonical ID. That is one installed file, not a duplicate.
+fn resolve_id_file_index(
+    raw_index: HashMap<String, Vec<String>>,
+    aliases: &AliasMap,
+) -> HashMap<String, Vec<String>> {
+    let mut resolved = HashMap::new();
+    for (id, files) in raw_index {
+        let canonical = aliases.resolve_or_self(&id).to_lowercase();
+        let canonical_files = resolved.entry(canonical).or_insert_with(Vec::new);
+        for file in files {
+            if !canonical_files.contains(&file) {
+                canonical_files.push(file);
+            }
+        }
+    }
+    resolved
+}
+
 /// Run the pre-launch health scan on an instance.
 ///
 /// Scans every JAR in `mods/`, parses declared dependencies, cross-references
@@ -115,14 +138,34 @@ pub fn health(
         }
     }
 
-    // 2. Build index: mod_jar_id -> set of filenames
-    let mut id_to_files: HashMap<String, Vec<String>> = HashMap::new();
+    // 2. Build separate indexes for two distinct questions:
+    //
+    // - `presence_id_to_files`: every loader-visible ID (outer primary,
+    //   `provides` aliases, and declared nested modules). This is authoritative
+    //   for dependency/incompatibility presence checks.
+    // - `primary_id_to_files`: only outer physical JAR primary IDs. This is the
+    //   only sound input for the user-actionable duplicate-JAR warning. Two
+    //   different mods bundling or providing the same library/alias is normal;
+    //   asking the user to disable one would be incorrect.
+    let mut presence_id_to_files: HashMap<String, Vec<String>> = HashMap::new();
+    let mut primary_id_to_files: HashMap<String, Vec<String>> = HashMap::new();
     for ij in &jars {
-        if let Some(ref id) = ij.jar.mod_jar_id {
-            id_to_files
-                .entry(id.clone())
-                .or_default()
-                .push(ij.filename.clone());
+        let mut ids_seen_in_file: HashSet<String> = HashSet::new();
+        for id in ij.jar.all_mod_ids() {
+            let id_lower = id.to_lowercase();
+            if !ids_seen_in_file.insert(id_lower) {
+                continue;
+            }
+            let files = presence_id_to_files.entry(id.to_string()).or_default();
+            if !files.contains(&ij.filename) {
+                files.push(ij.filename.clone());
+            }
+        }
+        if let Some(primary_id) = ij.jar.mod_jar_id.as_ref() {
+            let files = primary_id_to_files.entry(primary_id.clone()).or_default();
+            if !files.contains(&ij.filename) {
+                files.push(ij.filename.clone());
+            }
         }
     }
 
@@ -167,20 +210,46 @@ pub fn health(
         .map(|(k, v)| (k.to_lowercase(), v))
         .collect();
 
-    // Rebuild id_to_files with alias-resolved keys so dep name lookups
-    // (also alias-resolved) match canonical registry IDs.
-    let mut resolved_id_to_files: HashMap<String, Vec<String>> = HashMap::new();
-    for (id, files) in id_to_files.drain() {
-        let canonical = aliases.resolve_or_self(&id).to_lowercase();
-        resolved_id_to_files
-            .entry(canonical)
-            .or_default()
-            .extend(files);
-    }
-    id_to_files = resolved_id_to_files;
+    // Rebuild both indexes with alias-resolved keys. Crucially, provided and
+    // nested IDs remain exclusively in the presence index—they never leak into
+    // duplicate-JAR warnings.
+    let presence_id_to_files = resolve_id_file_index(presence_id_to_files, &aliases);
+    let primary_id_to_files = resolve_id_file_index(primary_id_to_files, &aliases);
 
-    // 4. Duplicate mod_jar_id check
-    for (id, files) in &id_to_files {
+    // Build alias-resolved mod_id -> mod_version map for the version-matching
+    // step below. The parser populates `JarDeps.mod_version` from
+    // fabric.mod.json's `version`, Forge's `version=` in `[[mods]]`, or
+    // `META-INF/MANIFEST.MF`'s `Implementation-Version`.
+    let id_to_version: HashMap<String, String> = {
+        let mut m: HashMap<String, String> = HashMap::new();
+        for ij in &jars {
+            if let (Some(id), Some(ver)) = (&ij.jar.mod_jar_id, &ij.jar.mod_version) {
+                let canonical = aliases.resolve_or_self(id).to_lowercase();
+                // Replace an unresolved placeholder, but never overwrite a
+                // concrete version with weaker metadata.
+                if m.get(&canonical).is_none()
+                    || matches!(m.get(&canonical), Some(existing) if existing.starts_with("${"))
+                {
+                    m.insert(canonical, ver.clone());
+                }
+            }
+            for provided in &ij.jar.provided_mods {
+                let Some(ver) = &provided.version else {
+                    continue;
+                };
+                let canonical = aliases.resolve_or_self(&provided.mod_id).to_lowercase();
+                if m.get(&canonical).is_none()
+                    || matches!(m.get(&canonical), Some(existing) if existing.starts_with("${"))
+                {
+                    m.insert(canonical, ver.clone());
+                }
+            }
+        }
+        m
+    };
+
+    // 4. Duplicate physical top-level JAR primary-ID check.
+    for (id, files) in &primary_id_to_files {
         if files.len() > 1 {
             warnings.push(Warning {
                 kind: WarningKind::DuplicateModId,
@@ -203,7 +272,7 @@ pub fn health(
         let source = &ij.filename;
         for dep in &ij.jar.depends_on {
             let dep_resolved = aliases.resolve_or_self(dep).to_lowercase();
-            let dep_present = id_to_files.contains_key(&dep_resolved)
+            let dep_present = presence_id_to_files.contains_key(&dep_resolved)
                 || manifest_mod_ids
                     .iter()
                     .any(|id| aliases.resolve_or_self(id).to_lowercase() == dep_resolved);
@@ -232,21 +301,25 @@ pub fn health(
 
     // 6. Incompatible mod checks (alias-aware with curated override).
     //
-    // Consumes structured `IncompatibilityDecl`s (preserving severity + version
-    // ranges) rather than the flat incompatible_deps list. Until full version
-    // matching is implemented, the policy is:
-    //   - hard (breaks/Forge incompatible) + unconditional range => BLOCKER;
-    //   - hard + conditional range (version can't be confirmed) => warning;
-    //   - soft (conflicts/discouraged) => always warning;
+    // Consumes structured `IncompatibilityDecl`s with real version-range
+    // matching (Fabric predicates + Forge Maven ranges). The policy is:
+    //   - hard (breaks/Forge incompatible/Quilt breaks) + version in range or
+    //     unconditional => BLOCKER;
+    //   - hard + version explicitly outside the range => NO finding (the
+    //     incompatibility does not apply to the installed version);
+    //   - hard + conditional range but target version unknown => NO finding
+    //     (can't confirm; better silence than a possibly-wrong warning);
+    //   - soft (conflicts/discouraged) + version in range or unconditional =>
+    //     WARNING;
+    //   - soft + version outside the range => NO finding;
     //   - self-declared conflict => discarded;
     //   - curated ManifestDeps declaring the pair compatible => suppressed.
     //
     // Also backfill decls from older JAR parses that populated the flat
     // `incompatible_deps` list but emitted no `incompatibility_decls` (e.g.
     // legacy/desktop parser output). These legacy entries carry no severity or
-    // version info, so they are treated as hard + unconditional — but because we
-    // cannot confirm them, the safe default is a *warning*, not a blocker. We
-    // model them as soft to avoid reintroducing false-positive blockers.
+    // version info, so they are treated as soft (unconditional) — always a
+    // warning, never a blocker — to avoid reintroducing false-positive blockers.
     for ij in &jars {
         let source = &ij.filename;
         let source_mod_id = ij.jar.mod_jar_id.as_deref();
@@ -286,7 +359,7 @@ pub fn health(
                 continue;
             }
 
-            let incompat_present = id_to_files.contains_key(&incompat_resolved)
+            let incompat_present = presence_id_to_files.contains_key(&incompat_resolved)
                 || manifest_mod_ids
                     .iter()
                     .any(|id| aliases.resolve_or_self(id).to_lowercase() == incompat_resolved);
@@ -322,58 +395,84 @@ pub fn health(
                 continue;
             }
 
-            if decl.source.is_hard() && is_unconditional(&decl.version_ranges) {
-                blockers.push(Blocker {
-                    kind: BlockerKind::IncompatibleMod,
-                    mod_id: Some(decl.mod_id.clone()),
-                    filename: Some(source.clone()), // disable the source mod
-                    message: format!(
-                        "'{}' declares an incompatibility with '{}' and both are installed.",
-                        source, decl.mod_id
-                    ),
-                    suggested_action: Some(format!(
-                        "Remove '{}' or '{}' to resolve the conflict.",
-                        source, decl.mod_id
-                    )),
-                });
-            } else if decl.source.is_hard() {
-                // Hard incompat but with a conditional range we can't verify —
-                // surface as a warning, never a launch-blocker.
-                let range_desc = decl
-                    .version_ranges
-                    .first()
-                    .map(|r| format!(" (declared range: {})", r))
-                    .unwrap_or_default();
-                warnings.push(Warning {
-                    kind: WarningKind::IncompatibleModUnverified,
-                    mod_id: Some(decl.mod_id.clone()),
-                    filename: Some(source.clone()),
-                    message: format!(
-                        "'{}' declares an incompatibility with '{}'{}, but Agora could not verify the installed version matches the incompatible range. Review before launch.",
-                        source, decl.mod_id, range_desc
-                    ),
-                    suggested_action: Some(format!(
-                        "Check that '{}' and '{}' are compatible versions, or remove one.",
-                        source, decl.mod_id
-                    )),
-                });
-            } else {
-                // Soft incompatibility (Fabric `conflicts`, NeoForge
-                // `discouraged`, or legacy backfilled entries with no severity):
-                // always a warning, never a blocker.
-                warnings.push(Warning {
-                    kind: WarningKind::IncompatibleModSoft,
-                    mod_id: Some(decl.mod_id.clone()),
-                    filename: Some(source.clone()),
-                    message: format!(
-                        "'{}' may conflict with '{}' (soft incompatibility). The mod may still function; review before launch.",
-                        source, decl.mod_id
-                    ),
-                    suggested_action: Some(format!(
-                        "If you experience issues, remove '{}' or '{}'.",
-                        source, decl.mod_id
-                    )),
-                });
+            // Version evaluation is shared by hard and soft paths.
+            //
+            // When the target mod's version is known AND the declaration
+            // carries an explicit range, we evaluate whether the installed
+            // version falls inside it:
+            //   - Matched (range covers the installed version):
+            //       hard → blocker; soft → warning.
+            //   - Unconditional (no range at all — e.g. `"*"`):
+            //       hard → blocker; soft → warning.
+            //   - NotMatched (range explicitly excludes the installed version):
+            //       NO finding at all. If a mod says "I break versions <2.0"
+            //       and the installed target is 2.5, the incompatibility simply
+            //       does not apply — surfacing a warning would be noise.
+            //
+            // When the target version is unknown, we can't evaluate: unconditional
+            // declarations still fire (safety default); conditional ones are
+            // dropped (better silence than a possibly-wrong warning).
+            let target_version = id_to_version.get(&incompat_resolved);
+            let vmatch = match target_version {
+                Some(ver) => crate::version_match::evaluate_version_match(
+                    &decl.version_ranges,
+                    ver,
+                    decl.source.is_fabric_grammar(),
+                ),
+                None => {
+                    if is_unconditional(&decl.version_ranges) {
+                        version_match::VersionMatch::Unconditional
+                    } else {
+                        // Unknown version + conditional range: can't confirm, so
+                        // skip rather than risk a false-positive warning.
+                        continue;
+                    }
+                }
+            };
+
+            match vmatch {
+                version_match::VersionMatch::NotMatched => {
+                    // Installed version is outside the declared incompatible
+                    // range → the declaration does not apply. No finding.
+                    continue;
+                }
+                version_match::VersionMatch::Matched
+                | version_match::VersionMatch::Unconditional
+                    if decl.source.is_hard() =>
+                {
+                    blockers.push(Blocker {
+                        kind: BlockerKind::IncompatibleMod,
+                        mod_id: Some(decl.mod_id.clone()),
+                        filename: Some(source.clone()), // disable the source mod
+                        message: format!(
+                            "'{}' declares an incompatibility with '{}' and both are installed.",
+                            source, decl.mod_id
+                        ),
+                        suggested_action: Some(format!(
+                            "Remove '{}' or '{}' to resolve the conflict.",
+                            source, decl.mod_id
+                        )),
+                    });
+                }
+                version_match::VersionMatch::Matched
+                | version_match::VersionMatch::Unconditional => {
+                    // Soft incompatibility (Fabric `conflicts`, NeoForge
+                    // `discouraged`, or legacy backfilled entries) whose range
+                    // matches or is unconditional: warning, never a blocker.
+                    warnings.push(Warning {
+                        kind: WarningKind::IncompatibleModSoft,
+                        mod_id: Some(decl.mod_id.clone()),
+                        filename: Some(source.clone()),
+                        message: format!(
+                            "'{}' may conflict with '{}' (soft incompatibility). The mod may still function; review before launch.",
+                            source, decl.mod_id
+                        ),
+                        suggested_action: Some(format!(
+                            "If you experience issues, remove '{}' or '{}'.",
+                            source, decl.mod_id
+                        )),
+                    });
+                }
             }
         }
     }
@@ -392,9 +491,9 @@ pub fn health(
 
                     for conflict in &conflicts {
                         let a_present = installed_registry_ids.contains(conflict.mod_a_id.as_str())
-                            || id_to_files.contains_key(conflict.mod_a_id.as_str());
+                            || presence_id_to_files.contains_key(conflict.mod_a_id.as_str());
                         let b_present = installed_registry_ids.contains(conflict.mod_b_id.as_str())
-                            || id_to_files.contains_key(conflict.mod_b_id.as_str());
+                            || presence_id_to_files.contains_key(conflict.mod_b_id.as_str());
                         if a_present && b_present {
                             let mitigation = if conflict.mitigated_by.is_empty() {
                                 "No known mitigation.".into()
@@ -439,7 +538,7 @@ pub fn health(
         let source = &ij.filename;
         for dep in &ij.jar.optional_deps {
             let dep_resolved = aliases.resolve_or_self(dep).to_lowercase();
-            let dep_present = id_to_files.contains_key(&dep_resolved)
+            let dep_present = presence_id_to_files.contains_key(&dep_resolved)
                 || manifest_mod_ids
                     .iter()
                     .any(|id| aliases.resolve_or_self(id).to_lowercase() == dep_resolved);
@@ -583,6 +682,7 @@ mod tests {
                 depends_on: vec!["fabric-api".into()],
                 optional_deps: vec![],
                 incompatible_deps: vec![],
+                provided_mod_ids: vec![],
                 enabled: true,
                 content_type: "mod".into(),
             }],
@@ -631,6 +731,33 @@ mod tests {
         zip.finish().expect("finish zip");
     }
 
+    fn jar_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::{Cursor, Write};
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut cursor);
+            let opts = zip::write::FileOptions::default();
+            for (name, content) in entries {
+                zip.start_file(*name, opts).expect("start nested entry");
+                zip.write_all(content).expect("write nested entry");
+            }
+            zip.finish().expect("finish nested jar");
+        }
+        cursor.into_inner()
+    }
+
+    fn write_binary_jar(mods_dir: &Path, filename: &str, entries: &[(&str, &[u8])]) {
+        use std::io::Write;
+        let file = std::fs::File::create(mods_dir.join(filename)).expect("create jar file");
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::FileOptions::default();
+        for (name, content) in entries {
+            zip.start_file(*name, opts).expect("start jar entry");
+            zip.write_all(content).expect("write jar entry");
+        }
+        zip.finish().expect("finish jar");
+    }
+
     fn fresh_instance(label: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "agora_health_incompat_{}_{}",
@@ -660,6 +787,7 @@ mod tests {
                 depends_on: vec![],
                 optional_deps: vec![],
                 incompatible_deps: vec![],
+                provided_mod_ids: vec![],
                 enabled: true,
                 content_type: "mod".into(),
             })
@@ -679,6 +807,211 @@ mod tests {
             worlds: vec![],
             user_preferences: serde_json::json!({}),
         }
+    }
+
+    #[test]
+    fn health_nested_modules_and_provides_satisfy_reported_dependencies() {
+        let dir = fresh_instance("nested_modules_satisfy_deps");
+        let mods_dir = dir.join("mods");
+
+        // Fabric API is a physical umbrella JAR whose loader-visible API
+        // modules live in explicitly declared nested JARs.
+        let resource_loader = jar_bytes(&[(
+            "fabric.mod.json",
+            br#"{"id":"fabric-resource-loader-v1","version":"3.2.0"}"#,
+        )]);
+        let command_api = jar_bytes(&[(
+            "fabric.mod.json",
+            br#"{"id":"fabric-command-api-v2","version":"2.4.0"}"#,
+        )]);
+        write_binary_jar(
+            &mods_dir,
+            "fabric-api.jar",
+            &[
+                (
+                    "fabric.mod.json",
+                    br#"{"id":"fabric-api","version":"0.141.4","jars":[{"file":"META-INF/jars/resource.jar"},{"file":"META-INF/jars/command.jar"}]}"#,
+                ),
+                ("META-INF/jars/resource.jar", &resource_loader),
+                ("META-INF/jars/command.jar", &command_api),
+            ],
+        );
+
+        // Skyboxify consumes the nested Fabric API module IDs rather than the
+        // umbrella ID. They must be recognized without curated aliases.
+        write_jar(
+            &mods_dir,
+            "skyboxify.jar",
+            &[(
+                "fabric.mod.json",
+                r#"{"id":"skyboxify","version":"2.8","depends":{"fabric-command-api-v2":"*","fabric-resource-loader-v1":"*"}}"#,
+            )],
+        );
+
+        // Dynamic FPS and LambDynamicLights bundle required runtime modules
+        // inside their own physical JARs. Intra-JAR requirements are satisfied
+        // after all declared nested modules have been parsed.
+        let mixinextras = jar_bytes(&[(
+            "fabric.mod.json",
+            br#"{"id":"mixinextras","version":"0.5.0"}"#,
+        )]);
+        write_binary_jar(
+            &mods_dir,
+            "dynamic-fps.jar",
+            &[
+                (
+                    "fabric.mod.json",
+                    br#"{"id":"dynamic_fps","version":"3.11.6","depends":{"mixinextras":"*"},"jars":[{"file":"META-INF/jars/mixinextras.jar"}]}"#,
+                ),
+                ("META-INF/jars/mixinextras.jar", &mixinextras),
+            ],
+        );
+
+        let runtime = jar_bytes(&[(
+            "fabric.mod.json",
+            br#"{"id":"lambdynlights_runtime","version":"4.9.1"}"#,
+        )]);
+        write_binary_jar(
+            &mods_dir,
+            "lambdynamiclights.jar",
+            &[
+                (
+                    "fabric.mod.json",
+                    br#"{"id":"lambdynlights","version":"4.9.1","depends":{"lambdynlights_runtime":"*"},"jars":[{"file":"META-INF/jars/runtime.jar"}]}"#,
+                ),
+                ("META-INF/jars/runtime.jar", &runtime),
+            ],
+        );
+
+        // Metadata-declared aliases are also loader-visible identities.
+        write_jar(
+            &mods_dir,
+            "alias-provider.jar",
+            &[(
+                "fabric.mod.json",
+                r#"{"id":"real_library","version":"1.0","provides":["legacy_library"]}"#,
+            )],
+        );
+        write_jar(
+            &mods_dir,
+            "alias-consumer.jar",
+            &[(
+                "fabric.mod.json",
+                r#"{"id":"alias_consumer","version":"1.0","depends":{"legacy_library":"*"}}"#,
+            )],
+        );
+
+        let manifest = tracked_manifest(&[
+            ("fabric-api.jar", "fabric-api"),
+            ("skyboxify.jar", "skyboxify"),
+            ("dynamic-fps.jar", "dynamic_fps"),
+            ("lambdynamiclights.jar", "lambdynlights"),
+            ("alias-provider.jar", "real_library"),
+            ("alias-consumer.jar", "alias_consumer"),
+        ]);
+        let report = health(&dir, &manifest, None);
+
+        assert!(
+            !report
+                .blockers
+                .iter()
+                .any(|b| b.kind == BlockerKind::MissingRequiredDependency),
+            "nested/provided IDs must satisfy requirements: {:?}",
+            report.blockers
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.kind == WarningKind::DuplicateModId),
+            "one physical JAR exposing multiple IDs must not duplicate itself: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.score, HealthScore::Green);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_repeated_bundled_or_provided_ids_do_not_warn_as_duplicates() {
+        let dir = fresh_instance("bundled_ids_not_duplicates");
+        let mods_dir = dir.join("mods");
+
+        // These simulate Controlify/YACL and Fabric API consumers respectively:
+        // distinct outer mods bundle the same nested library and offer the same
+        // alias. Both IDs are valid for dependency presence, but neither outer
+        // JAR is a duplicate copy of the other.
+        let shared_library = jar_bytes(&[(
+            "fabric.mod.json",
+            br#"{"id":"com_twelvemonkeys_imageio_imageio-core","version":"3.12.0"}"#,
+        )]);
+        for outer_id in ["controlify", "yet_another_config_lib_v3"] {
+            let metadata = format!(
+                r#"{{"id":"{outer_id}","version":"1.0","provides":["fabric-api"],"jars":[{{"file":"META-INF/jars/imageio.jar"}}]}}"#
+            );
+            let filename = format!("{outer_id}.jar");
+            write_binary_jar(
+                &mods_dir,
+                &filename,
+                &[
+                    ("fabric.mod.json", metadata.as_bytes()),
+                    ("META-INF/jars/imageio.jar", &shared_library),
+                ],
+            );
+        }
+
+        let manifest = tracked_manifest(&[
+            ("controlify.jar", "controlify"),
+            ("yet_another_config_lib_v3.jar", "yet_another_config_lib_v3"),
+        ]);
+        let report = health(&dir, &manifest, None);
+
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.kind == WarningKind::DuplicateModId),
+            "bundled modules and provides aliases must not trigger top-level duplicate warnings: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.score, HealthScore::Green);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_same_top_level_primary_id_still_warns() {
+        let dir = fresh_instance("same_primary_id_duplicate");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "duplicate-a.jar",
+            &[(
+                "fabric.mod.json",
+                r#"{"id":"real_duplicate","version":"1.0"}"#,
+            )],
+        );
+        write_jar(
+            &mods_dir,
+            "duplicate-b.jar",
+            &[(
+                "fabric.mod.json",
+                r#"{"id":"real_duplicate","version":"2.0"}"#,
+            )],
+        );
+
+        let manifest = tracked_manifest(&[
+            ("duplicate-a.jar", "real_duplicate"),
+            ("duplicate-b.jar", "real_duplicate"),
+        ]);
+        let report = health(&dir, &manifest, None);
+
+        let duplicate = report
+            .warnings
+            .iter()
+            .find(|warning| warning.kind == WarningKind::DuplicateModId)
+            .expect("two physical JARs with the same primary ID must warn");
+        assert_eq!(duplicate.mod_id.as_deref(), Some("real_duplicate"));
+        assert_eq!(report.score, HealthScore::Yellow);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -702,9 +1035,12 @@ mod tests {
     }
 
     #[test]
-    fn health_conditional_breaks_is_warning_not_blocker() {
-        // A breaks B with "<2.0" (conditional, unverifiable) => WARNING, not blocker.
-        let dir = fresh_instance("conditional_breaks");
+    fn health_conditional_breaks_outside_range_no_finding() {
+        // A breaks B with "<2.0"; B installed at version 2.5 (outside the
+        // incompatible range). Since the installed version does not fall in
+        // the declared range, the incompatibility does not apply: no blocker,
+        // no warning — Clean.
+        let dir = fresh_instance("conditional_breaks_outside");
         let mods_dir = dir.join("mods");
         write_jar(
             &mods_dir,
@@ -720,15 +1056,18 @@ mod tests {
         let report = health(&dir, &manifest, None);
         assert!(
             report.blockers.is_empty(),
-            "conditional breaks must not block: {:?}",
+            "breaks with non-matching installed version must not block: {:?}",
             report.blockers
         );
-        assert_eq!(report.score, HealthScore::Yellow);
-        assert!(report
-            .warnings
-            .iter()
-            .any(|w| w.kind == WarningKind::IncompatibleModUnverified
-                && w.mod_id.as_deref() == Some("b")));
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.mod_id.as_deref() == Some("b")),
+            "breaks with non-matching installed version must produce no warning: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.score, HealthScore::Green);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -752,6 +1091,38 @@ mod tests {
         assert!(report.warnings.iter().any(
             |w| w.kind == WarningKind::IncompatibleModSoft && w.mod_id.as_deref() == Some("b")
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_fabric_conflicts_outside_range_no_finding() {
+        // A conflicts B with "<2.0"; B installed at 2.5 (outside the range).
+        // Soft or hard, when the installed version is outside the declared
+        // range the incompatibility does not apply: no finding at all.
+        let dir = fresh_instance("conflicts_outside_range");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[("fabric.mod.json", r#"{"id":"a","conflicts":{"b":"<2.0"}}"#)],
+        );
+        write_jar(
+            &mods_dir,
+            "b.jar",
+            &[("fabric.mod.json", r#"{"id":"b","version":"2.5"}"#)],
+        );
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert!(report.blockers.is_empty());
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.mod_id.as_deref() == Some("b")),
+            "non-matching conflicts range must produce no warning: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.score, HealthScore::Green);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -854,6 +1225,230 @@ mod tests {
             "alias-resolved break should block: {:?}",
             report.blockers
         );
+        assert_eq!(report.blockers[0].kind, BlockerKind::IncompatibleMod);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- HF2: version-range matching produces real blockers / no-findings. ---
+
+    #[test]
+    fn health_breaks_matched_version_blocks() {
+        // A breaks B with "<2.0"; B installed at version 1.5 — version IS
+        // inside the incompatible range, so this should now produce a blocker
+        // (the version-matching upgrade distinguishes this from the
+        // non-matching case).
+        let dir = fresh_instance("breaks_matched");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[("fabric.mod.json", r#"{"id":"a","breaks":{"b":"<2.0"}}"#)],
+        );
+        write_jar(
+            &mods_dir,
+            "b.jar",
+            &[("fabric.mod.json", r#"{"id":"b","version":"1.5"}"#)],
+        );
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert_eq!(report.score, HealthScore::Red);
+        assert_eq!(report.blockers.len(), 1);
+        assert_eq!(report.blockers[0].kind, BlockerKind::IncompatibleMod);
+        assert_eq!(report.blockers[0].mod_id.as_deref(), Some("b"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_forge_maven_range_matched_blocks() {
+        // Forge A declares B `versionRange="[1.0,2.0)"` with `type="incompatible"`;
+        // B installed at version 1.5 — falls inside the Maven range, so blocker.
+        let dir = fresh_instance("forge_maven_matched");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[(
+                "META-INF/mods.toml",
+                "modId=\"a\"\nversion=\"1.0\"\n[[dependencies.a]]\nmodId=\"b\"\n\
+                 type=\"incompatible\"\nversionRange=\"[1.0,2.0)\"\nmandatory=true\n",
+            )],
+        );
+        write_jar(
+            &mods_dir,
+            "b.jar",
+            &[
+                ("META-INF/mods.toml", "modId=\"b\"\nversion=\"1.5\"\n"),
+                (
+                    "META-INF/MANIFEST.MF",
+                    "Manifest-Version: 1.0\nImplementation-Version: 1.5\n",
+                ),
+            ],
+        );
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert_eq!(report.score, HealthScore::Red);
+        assert_eq!(report.blockers.len(), 1);
+        assert_eq!(report.blockers[0].kind, BlockerKind::IncompatibleMod);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_forge_maven_range_non_matching_no_finding() {
+        // Same range as above, but B installed at 2.5 — outside [1.0,2.0).
+        // The incompatibility does not apply to this version: no blocker, no
+        // warning — silent.
+        let dir = fresh_instance("forge_maven_unmatched");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[(
+                "META-INF/mods.toml",
+                "modId=\"a\"\nversion=\"1.0\"\n[[dependencies.a]]\nmodId=\"b\"\n\
+                 type=\"incompatible\"\nversionRange=\"[1.0,2.0)\"\nmandatory=true\n",
+            )],
+        );
+        write_jar(
+            &mods_dir,
+            "b.jar",
+            &[
+                ("META-INF/mods.toml", "modId=\"b\"\nversion=\"2.5\"\n"),
+                (
+                    "META-INF/MANIFEST.MF",
+                    "Manifest-Version: 1.0\nImplementation-Version: 2.5\n",
+                ),
+            ],
+        );
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert!(
+            report.blockers.is_empty(),
+            "non-matching Maven range must not block: {:?}",
+            report.blockers
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.mod_id.as_deref() == Some("b")),
+            "non-matching Maven range must produce no warning: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.score, HealthScore::Green);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_breaks_unknown_target_version_unconditional_falls_back_to_blocking() {
+        // A declares breaks on B with no version range ("*"). B installed
+        // without a mod_version string — we cannot evaluate, but the
+        // unconditional nature means it should still block.
+        let dir = fresh_instance("breaks_unconditional_unknown_ver");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[("fabric.mod.json", r#"{"id":"a","breaks":{"b":"*"}}"#)],
+        );
+        write_jar(&mods_dir, "b.jar", &[("fabric.mod.json", r#"{"id":"b"}"#)]);
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert_eq!(report.blockers.len(), 1);
+        assert_eq!(report.blockers[0].kind, BlockerKind::IncompatibleMod);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- HF3: quilt.mod.json parsing produces correct findings. ---
+
+    #[test]
+    fn health_quilt_breaks_unconditional_blocks() {
+        // Quilt's `quilt_loader.breaks` with "*" should behave like Fabric
+        // `breaks`: hard blocker when both mods are installed.
+        let dir = fresh_instance("quilt_breaks");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[(
+                "quilt.mod.json",
+                r#"{"quilt_loader":{"id":"a","version":"1.0","breaks":{"b":"*"}}}"#,
+            )],
+        );
+        write_jar(
+            &mods_dir,
+            "b.jar",
+            &[(
+                "quilt.mod.json",
+                r#"{"quilt_loader":{"id":"b","version":"1.0"}}"#,
+            )],
+        );
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert_eq!(report.score, HealthScore::Red);
+        assert_eq!(report.blockers.len(), 1);
+        assert_eq!(report.blockers[0].kind, BlockerKind::IncompatibleMod);
+        assert_eq!(report.blockers[0].mod_id.as_deref(), Some("b"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_quilt_conflicts_is_warning_never_blocker() {
+        // Quilt `quilt_loader.conflicts` is soft — never blocks.
+        let dir = fresh_instance("quilt_conflicts");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[(
+                "quilt.mod.json",
+                r#"{"quilt_loader":{"id":"a","version":"1.0","conflicts":{"b":"*"}}}"#,
+            )],
+        );
+        write_jar(
+            &mods_dir,
+            "b.jar",
+            &[(
+                "quilt.mod.json",
+                r#"{"quilt_loader":{"id":"b","version":"1.0"}}"#,
+            )],
+        );
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert!(
+            report.blockers.is_empty(),
+            "quilt conflicts must not block: {:?}",
+            report.blockers
+        );
+        assert!(report.warnings.iter().any(
+            |w| w.kind == WarningKind::IncompatibleModSoft && w.mod_id.as_deref() == Some("b")
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_quilt_breaks_version_matched_blocks() {
+        // Quilt breaks B with "<2.0"; B installed at 1.5 — matched, blocker.
+        let dir = fresh_instance("quilt_breaks_matched");
+        let mods_dir = dir.join("mods");
+        write_jar(
+            &mods_dir,
+            "a.jar",
+            &[(
+                "quilt.mod.json",
+                r#"{"quilt_loader":{"id":"a","version":"1.0","breaks":{"b":"<2.0"}}}"#,
+            )],
+        );
+        write_jar(
+            &mods_dir,
+            "b.jar",
+            &[(
+                "quilt.mod.json",
+                r#"{"quilt_loader":{"id":"b","version":"1.5"}}"#,
+            )],
+        );
+        let manifest = tracked_manifest(&[("a.jar", "a"), ("b.jar", "b")]);
+        let report = health(&dir, &manifest, None);
+        assert_eq!(report.blockers.len(), 1);
         assert_eq!(report.blockers[0].kind, BlockerKind::IncompatibleMod);
         let _ = std::fs::remove_dir_all(&dir);
     }

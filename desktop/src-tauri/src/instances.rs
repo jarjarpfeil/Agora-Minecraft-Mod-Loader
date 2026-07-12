@@ -2,7 +2,7 @@ use crate::crash_investigator;
 use crate::db;
 use crate::download;
 use crate::error::{LauncherError, LauncherResult};
-use crate::launcher_profiles::{LauncherProfileEntry, upsert_profile};
+use crate::launcher_profiles::{upsert_profile, LauncherProfileEntry};
 use crate::loader_manifests;
 use crate::models::{InstanceManifest, InstanceRow, JvmConfig};
 use crate::mojang;
@@ -74,7 +74,12 @@ pub async fn create_instance<R: tauri::Runtime>(
     let instance_id_for_prep = instance_id.clone();
 
     // Step 1: blocking directory/manifest setup.
-    emit_progress(&app, &instance_id, "preparing", "Preparing instance directory...");
+    emit_progress(
+        &app,
+        &instance_id,
+        "preparing",
+        "Preparing instance directory...",
+    );
     let prepared = tokio::task::spawn_blocking(move || {
         prepare_instance_dir(&app_for_blocking, &instance_id_for_prep, &req_for_prep)
     })
@@ -82,9 +87,14 @@ pub async fn create_instance<R: tauri::Runtime>(
     .map_err(|_| LauncherError::InstanceCreateFailed)??;
 
     // Step 2: async loader injection (network + hash verification).
-    if let Err(e) =
-        inject_loader(&app, &instance_id, &req.loader, &req.minecraft_version, &req.loader_version)
-            .await
+    if let Err(e) = inject_loader(
+        &app,
+        &instance_id,
+        &req.loader,
+        &req.minecraft_version,
+        &req.loader_version,
+    )
+    .await
     {
         emit_progress(
             &app,
@@ -97,35 +107,49 @@ pub async fn create_instance<R: tauri::Runtime>(
     }
 
     // Step 3: blocking DB + profile persistence.
-    emit_progress(&app, &instance_id, "persisting", "Saving instance to local state...");
+    emit_progress(
+        &app,
+        &instance_id,
+        "persisting",
+        "Saving instance to local state...",
+    );
     let app_for_persist = app.clone();
-    let row = match tokio::task::spawn_blocking(move || persist_instance(&app_for_persist, &prepared))
-        .await
-    {
-        Ok(Ok(row)) => row,
-        Ok(Err(e)) => {
-            emit_progress(
-                &app,
-                &instance_id,
-                "error",
-                &format!("Failed during persistence. See logs."),
-            );
-            cleanup_instance_dir(&app, &instance_id);
-            cleanup_loader_version_json(&req.loader, &req.minecraft_version, &req.loader_version);
-            return Err(e);
-        }
-        Err(_) => {
-            emit_progress(
-                &app,
-                &instance_id,
-                "error",
-                "Failed during persistence (task error). See logs.",
-            );
-            cleanup_instance_dir(&app, &instance_id);
-            cleanup_loader_version_json(&req.loader, &req.minecraft_version, &req.loader_version);
-            return Err(LauncherError::InstanceCreateFailed);
-        }
-    };
+    let row =
+        match tokio::task::spawn_blocking(move || persist_instance(&app_for_persist, &prepared))
+            .await
+        {
+            Ok(Ok(row)) => row,
+            Ok(Err(e)) => {
+                emit_progress(
+                    &app,
+                    &instance_id,
+                    "error",
+                    &format!("Failed during persistence. See logs."),
+                );
+                cleanup_instance_dir(&app, &instance_id);
+                cleanup_loader_version_json(
+                    &req.loader,
+                    &req.minecraft_version,
+                    &req.loader_version,
+                );
+                return Err(e);
+            }
+            Err(_) => {
+                emit_progress(
+                    &app,
+                    &instance_id,
+                    "error",
+                    "Failed during persistence (task error). See logs.",
+                );
+                cleanup_instance_dir(&app, &instance_id);
+                cleanup_loader_version_json(
+                    &req.loader,
+                    &req.minecraft_version,
+                    &req.loader_version,
+                );
+                return Err(LauncherError::InstanceCreateFailed);
+            }
+        };
 
     emit_progress(&app, &instance_id, "done", "Instance created successfully.");
 
@@ -138,7 +162,8 @@ fn prepare_instance_dir<R: tauri::Runtime>(
     instance_id: &str,
     req: &CreateInstanceRequest,
 ) -> LauncherResult<InstanceRow> {
-    let dir = paths::instance_dir(app, instance_id).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let dir =
+        paths::instance_dir(app, instance_id).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     if dir.exists() {
         return Err(LauncherError::Generic {
@@ -147,7 +172,17 @@ fn prepare_instance_dir<R: tauri::Runtime>(
         });
     }
 
-    for sub in ["mods", "resourcepacks", "shaderpacks", "datapacks", "config", "crash-reports", "logs", "saves", "screenshots"] {
+    for sub in [
+        "mods",
+        "resourcepacks",
+        "shaderpacks",
+        "datapacks",
+        "config",
+        "crash-reports",
+        "logs",
+        "saves",
+        "screenshots",
+    ] {
         std::fs::create_dir_all(dir.join(sub)).map_err(|_| LauncherError::InstanceCreateFailed)?;
     }
 
@@ -378,7 +413,9 @@ pub fn launch_instance<R: tauri::Runtime>(
         .map_err(|_| LauncherError::LaunchFailed)?;
 
     // Signal D: record which mods survived this launch for survival baseline learning.
-    if let Ok(manifest_text) = std::fs::read_to_string(paths::instance_manifest_path(app, &sanitized).unwrap_or_default()) {
+    if let Ok(manifest_text) =
+        std::fs::read_to_string(paths::instance_manifest_path(app, &sanitized).unwrap_or_default())
+    {
         if let Ok(manifest) = serde_json::from_str::<InstanceManifest>(&manifest_text) {
             let mod_ids: Vec<String> = manifest
                 .mods
@@ -461,8 +498,7 @@ async fn inject_loader<R: tauri::Runtime>(
             "injecting_loader",
             &format!("Staging installer jar for {loader} {loader_version}..."),
         );
-        let app_data =
-            paths::app_data_dir(app).map_err(|_| LauncherError::InstanceCreateFailed)?;
+        let app_data = paths::app_data_dir(app).map_err(|_| LauncherError::InstanceCreateFailed)?;
         let installer_path = app_data.join(format!("{loader}-installer.jar"));
 
         // Stage the verified installer jar in the app data dir.
@@ -557,16 +593,16 @@ fn build_profile_entry<R: tauri::Runtime>(
         .map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     // Allow user-level override via `jvm_always_pre_touch` setting in user_settings.
-    let user_override = db::get_setting(&db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?, "jvm_always_pre_touch")
-        .ok()
-        .flatten()
-        .and_then(|v| v.as_bool());
+    let user_override = db::get_setting(
+        &db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?,
+        "jvm_always_pre_touch",
+    )
+    .ok()
+    .flatten()
+    .and_then(|v| v.as_bool());
 
-    let always_pre_touch = compute_always_pre_touch(
-        &row.jvm_gc,
-        row.jvm_always_pre_touch,
-        user_override,
-    );
+    let always_pre_touch =
+        compute_always_pre_touch(&row.jvm_gc, row.jvm_always_pre_touch, user_override);
 
     let jvm = JvmConfig {
         memory_mb: row.jvm_memory_mb,
@@ -611,8 +647,7 @@ fn manifest_path<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     instance_id: &str,
 ) -> LauncherResult<PathBuf> {
-    paths::instance_manifest_path(app, instance_id)
-        .map_err(|_| LauncherError::InstanceCreateFailed)
+    paths::instance_manifest_path(app, instance_id).map_err(|_| LauncherError::InstanceCreateFailed)
 }
 
 fn read_manifest<R: tauri::Runtime>(
@@ -635,7 +670,8 @@ fn write_manifest<R: tauri::Runtime>(
     manifest: &InstanceManifest,
 ) -> LauncherResult<()> {
     let path = manifest_path(app, instance_id)?;
-    let text = serde_json::to_string_pretty(manifest).map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let text =
+        serde_json::to_string_pretty(manifest).map_err(|_| LauncherError::InstanceCreateFailed)?;
     // Atomic write: write to .tmp then rename. Abort-safe against mid-write crashes.
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
@@ -785,5 +821,3 @@ mod tests {
         assert_eq!(profile_id_for("test-123"), "agora-test-123");
     }
 }
-
-

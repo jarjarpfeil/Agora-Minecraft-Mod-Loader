@@ -1,4 +1,4 @@
-﻿//! Governance network actions: live triage-poll fetching and comment-flag
+//! Governance network actions: live triage-poll fetching and comment-flag
 //! submission with rate limiting (Â§5.5 / Â§5.6).
 //!
 //! Pure logic is in `agora_core::governance`. This module provides Tauri-coupled
@@ -8,9 +8,7 @@ use crate::auth;
 use crate::db;
 use crate::error::{LauncherError, LauncherResult};
 
-pub use agora_core::governance::{
-    AGORA_ADMIN_ALERTS_REPO, AGORA_GOVERNANCE_REPO, TriagePoll,
-};
+pub use agora_core::governance::{TriagePoll, AGORA_ADMIN_ALERTS_REPO, AGORA_GOVERNANCE_REPO};
 
 use tauri::AppHandle;
 
@@ -82,7 +80,6 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
         });
     }
 
-
     #[derive(Debug, serde::Deserialize)]
     struct SearchResponse {
         search: Option<SearchPayload>,
@@ -100,18 +97,12 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
         title: String,
     }
 
-    let search_resp: SearchResponse = resp
-        .json()
-        .await
-        .map_err(|_| LauncherError::Generic {
-            code: "ERR_TRIAGE_POLL".to_string(),
-            message: "Failed to parse triage poll search response.".to_string(),
-        })?;
+    let search_resp: SearchResponse = resp.json().await.map_err(|_| LauncherError::Generic {
+        code: "ERR_TRIAGE_POLL".to_string(),
+        message: "Failed to parse triage poll search response.".to_string(),
+    })?;
 
-    let nodes = search_resp
-        .search
-        .and_then(|s| s.nodes)
-        .unwrap_or_default();
+    let nodes = search_resp.search.and_then(|s| s.nodes).unwrap_or_default();
 
     // Find the first discussion whose title contains the mod_id.
     let discussion = nodes
@@ -194,10 +185,8 @@ pub async fn fetch_triage_poll(app: &AppHandle, mod_id: String) -> LauncherResul
         content: String,
     }
 
-    let reactions_resp: ReactionsResponse = resp2
-        .json()
-        .await
-        .map_err(|_| LauncherError::Generic {
+    let reactions_resp: ReactionsResponse =
+        resp2.json().await.map_err(|_| LauncherError::Generic {
             code: "ERR_TRIAGE_POLL".to_string(),
             message: "Failed to parse triage poll reactions response.".to_string(),
         })?;
@@ -266,9 +255,7 @@ pub async fn flag_review(
             .unwrap_or_else(|| reset_unix.to_string());
         return Err(LauncherError::Generic {
             code: "ERR_RATE_LIMITED".to_string(),
-            message: format!(
-                "{limit_type} flag limit reached. Resets at <{reset_iso}>."
-            ),
+            message: format!("{limit_type} flag limit reached. Resets at <{reset_iso}>."),
         });
     }
 
@@ -342,13 +329,10 @@ pub async fn flag_review(
         html_url: String,
     }
 
-    let issue_resp: IssueResponse = resp
-        .json()
-        .await
-        .map_err(|_| LauncherError::Generic {
-            code: "ERR_FLAG_REVIEW".to_string(),
-            message: "Failed to parse flag review response.".to_string(),
-        })?;
+    let issue_resp: IssueResponse = resp.json().await.map_err(|_| LauncherError::Generic {
+        code: "ERR_FLAG_REVIEW".to_string(),
+        message: "Failed to parse flag review response.".to_string(),
+    })?;
 
     // Record the submission for rate-limit tracking.
     if let Ok(conn) = db::local_state_connection(app) {
@@ -365,4 +349,3 @@ pub fn get_flag_rate_limit(app: &AppHandle) -> LauncherResult<agora_core::db::Fl
     let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
     agora_core::governance::get_flag_rate_limit(&conn)
 }
-

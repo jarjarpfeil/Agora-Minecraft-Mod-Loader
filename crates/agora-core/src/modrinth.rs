@@ -858,7 +858,7 @@ pub async fn install_raw_modrinth(
         + Send
         + Sync,
     available_disk_space_bytes: impl Fn(&std::path::Path) -> Option<u64> + Send + Sync,
-    parse_jar_metadata: impl Fn(&std::path::Path) -> crate::crash_diagnostics::JarMetadata + Send + Sync,
+    parse_jar_metadata: impl Fn(&std::path::Path) -> crate::dependency_ops::JarDeps + Send + Sync,
     app_data_dir: &PathBuf,
 ) -> LauncherResult<InstalledMod> {
     // Modpacks must use the pack import flow, not single-file install.
@@ -948,6 +948,11 @@ pub async fn install_raw_modrinth(
         depends_on: metadata.depends_on,
         optional_deps: metadata.optional_deps,
         incompatible_deps: metadata.incompatible_deps,
+        provided_mod_ids: metadata
+            .provided_mods
+            .into_iter()
+            .map(|provided| provided.mod_id)
+            .collect(),
         enabled: true,
         content_type: "mod".to_string(),
     };

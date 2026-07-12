@@ -9,12 +9,11 @@
 //! toggle is off, callers receive `LauncherError::ModrinthDisabled` rather than
 //! touching the network.
 
-use crate::crash_investigator;
 use crate::db;
 use crate::error::{LauncherError, LauncherResult};
-use crate::models::{InstanceManifest, InstanceRow, InstalledMod};
-use crate::paths;
 use crate::mod_install::{available_disk_space_bytes, download_mod_bytes, MIN_DISK_SPACE_BYTES};
+use crate::models::{InstalledMod, InstanceManifest, InstanceRow};
+use crate::paths;
 
 use serde::{Deserialize, Serialize};
 
@@ -482,44 +481,40 @@ pub async fn search_modrinth(
 }
 
 /// Fetch the full list of Modrinth category tags (for filter UI).
-pub async fn list_modrinth_categories(app: &tauri::AppHandle) -> LauncherResult<Vec<ModrinthCategoryInfo>> {
+pub async fn list_modrinth_categories(
+    app: &tauri::AppHandle,
+) -> LauncherResult<Vec<ModrinthCategoryInfo>> {
     require_modrinth_enabled(app)?;
-    modrinth_get_json::<Vec<ModrinthCategoryTag>>(
-        "https://api.modrinth.com/v2/tag/category",
-    )
-    .await
-    .map(|tags| {
-        tags.into_iter()
-            .filter(|t| t.project_type == "mod")
-            .map(|t| ModrinthCategoryInfo {
-                name: t.name,
-                project_type: t.project_type,
-                header: t.header,
-            })
-            .collect()
-    })
+    modrinth_get_json::<Vec<ModrinthCategoryTag>>("https://api.modrinth.com/v2/tag/category")
+        .await
+        .map(|tags| {
+            tags.into_iter()
+                .filter(|t| t.project_type == "mod")
+                .map(|t| ModrinthCategoryInfo {
+                    name: t.name,
+                    project_type: t.project_type,
+                    header: t.header,
+                })
+                .collect()
+        })
 }
 
 /// Fetch the full list of Modrinth loader tags (for filter UI).
-pub async fn list_modrinth_loaders(app: &tauri::AppHandle) -> LauncherResult<Vec<ModrinthLoaderInfo>> {
+pub async fn list_modrinth_loaders(
+    app: &tauri::AppHandle,
+) -> LauncherResult<Vec<ModrinthLoaderInfo>> {
     require_modrinth_enabled(app)?;
-    modrinth_get_json::<Vec<ModrinthLoaderTag>>(
-        "https://api.modrinth.com/v2/tag/loader",
-    )
-    .await
-    .map(|tags| {
-        tags.into_iter()
-            .filter(|t| {
-                t.supported_project_types
-                    .iter()
-                    .any(|p| p == "mod")
-            })
-            .map(|t| ModrinthLoaderInfo {
-                name: t.name,
-                supported_project_types: t.supported_project_types,
-            })
-            .collect()
-    })
+    modrinth_get_json::<Vec<ModrinthLoaderTag>>("https://api.modrinth.com/v2/tag/loader")
+        .await
+        .map(|tags| {
+            tags.into_iter()
+                .filter(|t| t.supported_project_types.iter().any(|p| p == "mod"))
+                .map(|t| ModrinthLoaderInfo {
+                    name: t.name,
+                    supported_project_types: t.supported_project_types,
+                })
+                .collect()
+        })
 }
 
 /// Fetch the full list of Modrinth game version tags (for filter UI).
@@ -527,20 +522,18 @@ pub async fn list_modrinth_game_versions(
     app: &tauri::AppHandle,
 ) -> LauncherResult<Vec<ModrinthGameVersionInfo>> {
     require_modrinth_enabled(app)?;
-    modrinth_get_json::<Vec<ModrinthGameVersionTag>>(
-        "https://api.modrinth.com/v2/tag/game_version",
-    )
-    .await
-    .map(|tags| {
-        tags.into_iter()
-            .map(|t| ModrinthGameVersionInfo {
-                version: t.version,
-                version_type: t.version_type,
-                date: t.date,
-                major: t.major,
-            })
-            .collect()
-    })
+    modrinth_get_json::<Vec<ModrinthGameVersionTag>>("https://api.modrinth.com/v2/tag/game_version")
+        .await
+        .map(|tags| {
+            tags.into_iter()
+                .map(|t| ModrinthGameVersionInfo {
+                    version: t.version,
+                    version_type: t.version_type,
+                    date: t.date,
+                    major: t.major,
+                })
+                .collect()
+        })
 }
 
 /// Internal: GET a JSON endpoint from the Modrinth v2 API with the standard
@@ -610,9 +603,10 @@ pub async fn fetch_project_full(
             message: "Failed to parse Modrinth project response.".to_string(),
         })?;
 
-    let page_url = resp.slug.as_ref().map(|slug| {
-        format!("https://modrinth.com/{}/{}", resp.project_type, slug)
-    });
+    let page_url = resp
+        .slug
+        .as_ref()
+        .map(|slug| format!("https://modrinth.com/{}/{}", resp.project_type, slug));
 
     Ok(ModrinthProjectFull {
         id: resp.id,
@@ -655,14 +649,8 @@ pub async fn resolve_modrinth_file_metadata(
         pid = urlencoding::encode(project_id),
     );
 
-    let versions: Vec<ModrinthVersionRaw> = client
-        .get(&url)
-        .send()
-        .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
+    let versions: Vec<ModrinthVersionRaw> =
+        client.get(&url).send().await.ok()?.json().await.ok()?;
 
     for version in &versions {
         // Prefer the primary file matching filename.
@@ -737,8 +725,8 @@ pub async fn list_raw_modrinth_versions(
         url.push_str(&urlencoding::encode(&gv));
         let pt = project_type.unwrap_or("mod");
         if pt == "mod" || pt == "modpack" {
-            let lv = serde_json::to_string(&[inst.loader.as_str()])
-                .unwrap_or_else(|_| "[]".to_string());
+            let lv =
+                serde_json::to_string(&[inst.loader.as_str()]).unwrap_or_else(|_| "[]".to_string());
             url.push_str("&loaders=");
             url.push_str(&urlencoding::encode(&lv));
         }
@@ -796,13 +784,22 @@ pub async fn list_raw_modrinth_versions(
                 sha1,
                 sha512,
                 size,
-                dependencies: v.dependencies.into_iter().map(|dependency| RawModrinthDependency {
-                    project_id: dependency.project_id,
-                    version_id: dependency.version_id,
-                    dependency_type: dependency.dependency_type,
-                }).collect(),
+                dependencies: v
+                    .dependencies
+                    .into_iter()
+                    .map(|dependency| RawModrinthDependency {
+                        project_id: dependency.project_id,
+                        version_id: dependency.version_id,
+                        dependency_type: dependency.dependency_type,
+                    })
+                    .collect(),
                 mc_versions: v.game_versions.unwrap_or_default(),
-                loaders: v.loaders.unwrap_or_default().into_iter().map(|l| l.to_lowercase()).collect(),
+                loaders: v
+                    .loaders
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|l| l.to_lowercase())
+                    .collect(),
                 release_date: v.date_published,
                 primary: primary_file.map(|f| f.primary).unwrap_or(false),
                 changelog: v.changelog,
@@ -852,8 +849,8 @@ pub async fn install_raw_modrinth(
     };
 
     // Pre-check free disk space (§7.1.2).
-    let instance_dir = paths::instance_dir(app, instance_id)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let instance_dir =
+        paths::instance_dir(app, instance_id).map_err(|_| LauncherError::InstanceCreateFailed)?;
     if let Some(free) = available_disk_space_bytes(&instance_dir) {
         if free < MIN_DISK_SPACE_BYTES {
             return Err(LauncherError::DiskFull);
@@ -902,7 +899,7 @@ pub async fn install_raw_modrinth(
     // of the manifest schema which uses sha256 for all entries), while the
     // install was verified against Modrinth's SHA-1.
     let sha256 = crate::download::sha256_hex(&bytes);
-    let metadata = crash_investigator::parse_jar_metadata(&mod_path);
+    let metadata = agora_core::jar_metadata::parse_jar_metadata(&mod_path);
     let installed_mod = InstalledMod {
         filename: candidate.filename.clone(),
         registry_id: None,
@@ -917,27 +914,32 @@ pub async fn install_raw_modrinth(
         depends_on: metadata.depends_on,
         optional_deps: metadata.optional_deps,
         incompatible_deps: metadata.incompatible_deps,
+        provided_mod_ids: metadata
+            .provided_mods
+            .into_iter()
+            .map(|provided| provided.mod_id)
+            .collect(),
         enabled: true,
-        content_type: if project_type.is_empty() || project_type == "modpack" { "mod".to_string() } else { project_type.to_string() },
+        content_type: if project_type.is_empty() || project_type == "modpack" {
+            "mod".to_string()
+        } else {
+            project_type.to_string()
+        },
     };
 
     crate::mod_install::push_to_content_array(&mut manifest, &installed_mod);
 
     let tmp_path = manifest_path.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(&manifest)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    let text =
+        serde_json::to_string_pretty(&manifest).map_err(|_| LauncherError::InstanceCreateFailed)?;
     std::fs::write(&tmp_path, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
-    std::fs::rename(&tmp_path, &manifest_path)
-        .map_err(|_| LauncherError::InstanceCreateFailed)?;
+    std::fs::rename(&tmp_path, &manifest_path).map_err(|_| LauncherError::InstanceCreateFailed)?;
 
     Ok(installed_mod)
 }
 
 /// Resolve instance metadata for raw-modrinth version scoping.
-fn load_instance_info(
-    app: &tauri::AppHandle,
-    instance_id: &str,
-) -> LauncherResult<InstanceRow> {
+fn load_instance_info(app: &tauri::AppHandle, instance_id: &str) -> LauncherResult<InstanceRow> {
     let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
     db::get_instance(&conn, instance_id)
         .map_err(|_| LauncherError::LocalStateFailed)?

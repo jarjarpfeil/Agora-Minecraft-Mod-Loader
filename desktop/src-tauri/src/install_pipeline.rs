@@ -5,7 +5,7 @@
 //! normalization and execution.
 
 use crate::error::{LauncherError, LauncherResult};
-use crate::models::{InstanceManifest, InstalledMod, ModVersionCandidate};
+use crate::models::{InstalledMod, InstanceManifest, ModVersionCandidate};
 use crate::{db, mod_install, modrinth_raw, paths, registry};
 use agora_core::dependency_ops::{AliasMap, DepSource, Requirement};
 use agora_core::install_pipeline::{
@@ -181,10 +181,7 @@ async fn prepare_batch_install(
     })
 }
 
-fn merge_dependencies(
-    target: &mut BTreeMap<String, ResolvedDep>,
-    incoming: Vec<ResolvedDep>,
-) {
+fn merge_dependencies(target: &mut BTreeMap<String, ResolvedDep>, incoming: Vec<ResolvedDep>) {
     for dependency in incoming {
         let key = dependency.mod_jar_id.to_ascii_lowercase();
         target
@@ -272,8 +269,12 @@ fn read_manifest(app: &tauri::AppHandle, instance_id: &str) -> LauncherResult<In
             format!("Could not read {}: {e}", path.display()),
         )
     })?;
-    serde_json::from_str(&text)
-        .map_err(|e| generic("ERR_MANIFEST_PARSE", format!("Invalid instance manifest: {e}")))
+    serde_json::from_str(&text).map_err(|e| {
+        generic(
+            "ERR_MANIFEST_PARSE",
+            format!("Invalid instance manifest: {e}"),
+        )
+    })
 }
 
 async fn prepare_curated_install(
@@ -288,8 +289,7 @@ async fn prepare_curated_install(
     let candidates = mod_install::list_mod_versions(app, &manifest.instance_id, item_id).await?;
     let candidate = select_curated_candidate(&candidates, requested_version)?;
     let artifact = curated_artifact(&item, candidate)?;
-    let (dependencies, conflicts) =
-        resolve_curated_dependencies(app, manifest, item_id).await?;
+    let (dependencies, conflicts) = resolve_curated_dependencies(app, manifest, item_id).await?;
 
     let operation = if update {
         let installed = find_installed_by_identity(manifest, item_id).ok_or_else(|| {
@@ -299,7 +299,10 @@ async fn prepare_curated_install(
             )
         })?;
         ResolvedOperation::Update {
-            old_version_id: installed.version.clone().unwrap_or_else(|| "unknown".into()),
+            old_version_id: installed
+                .version
+                .clone()
+                .unwrap_or_else(|| "unknown".into()),
             new_artifact: artifact,
         }
     } else {
@@ -341,7 +344,10 @@ async fn prepare_modrinth_install(
             )
         })?;
         ResolvedOperation::Update {
-            old_version_id: installed.version.clone().unwrap_or_else(|| "unknown".into()),
+            old_version_id: installed
+                .version
+                .clone()
+                .unwrap_or_else(|| "unknown".into()),
             new_artifact: artifact,
         }
     } else {
@@ -362,7 +368,12 @@ fn prepare_manual_install(
 ) -> LauncherResult<PreparedPlan> {
     let source_path = source_path
         .filter(|path| !path.trim().is_empty())
-        .ok_or_else(|| generic("ERR_MANUAL_PATH", "Manual install requires a local file path."))?;
+        .ok_or_else(|| {
+            generic(
+                "ERR_MANUAL_PATH",
+                "Manual install requires a local file path.",
+            )
+        })?;
     let path = Path::new(source_path);
     if !path.is_file() {
         return Err(generic(
@@ -375,8 +386,12 @@ fn prepare_manual_install(
         .and_then(|name| name.to_str())
         .filter(|name| name.to_ascii_lowercase().ends_with(".jar"))
         .ok_or_else(|| generic("ERR_MANUAL_FILE", "Manual mods must be .jar files."))?;
-    let bytes = std::fs::read(path)
-        .map_err(|e| generic("ERR_MANUAL_READ", format!("Could not read manual artifact: {e}")))?;
+    let bytes = std::fs::read(path).map_err(|e| {
+        generic(
+            "ERR_MANUAL_READ",
+            format!("Could not read manual artifact: {e}"),
+        )
+    })?;
     let sha256 = agora_core::download::sha256_hex(&bytes);
     Ok(PreparedPlan {
         operation: ResolvedOperation::Install {
@@ -420,11 +435,8 @@ fn prepare_remove(
         })?;
     let aliases = AliasMap::from_pairs(&[]);
     let installed: Vec<InstalledMod> = all_installed(manifest).cloned().collect();
-    let removal = agora_core::dependency_ops::build_removal_plan_with_aliases(
-        &installed,
-        target,
-        &aliases,
-    );
+    let removal =
+        agora_core::dependency_ops::build_removal_plan_with_aliases(&installed, target, &aliases);
     Ok(PreparedPlan {
         operation: ResolvedOperation::Remove {
             target_filename: effective_filename(target),
@@ -451,8 +463,8 @@ async fn resolve_curated_dependencies(
     root_item_id: &str,
 ) -> LauncherResult<(Vec<ResolvedDep>, Vec<DepConflict>)> {
     let (dependency_map, aliases, known_conflicts) = {
-        let connection = db::registry_connection(app)
-            .map_err(|e| generic("ERR_REGISTRY_DB", e.to_string()))?;
+        let connection =
+            db::registry_connection(app).map_err(|e| generic("ERR_REGISTRY_DB", e.to_string()))?;
         let dependency_map = agora_core::registry::get_all_manifest_dependencies(&connection)?;
         let alias_pairs = registry::get_all_mod_aliases(&connection)?;
         let known_conflicts = registry::get_known_conflicts(&connection)?;
@@ -529,16 +541,15 @@ async fn resolve_curated_dependencies(
 
         let registry_item = mod_install::load_registry_item(app, &canonical);
         let disposition = match registry_item {
-            Ok(item) => match mod_install::list_mod_versions(
-                app,
-                &manifest.instance_id,
-                &canonical,
-            )
-            .await
-            {
-                Ok(candidates) => match select_curated_candidate(&candidates, None) {
-                    Ok(candidate) => match curated_artifact(&item, candidate) {
-                        Ok(artifact) => DepDisposition::InstallCandidate { artifact },
+            Ok(item) => {
+                match mod_install::list_mod_versions(app, &manifest.instance_id, &canonical).await {
+                    Ok(candidates) => match select_curated_candidate(&candidates, None) {
+                        Ok(candidate) => match curated_artifact(&item, candidate) {
+                            Ok(artifact) => DepDisposition::InstallCandidate { artifact },
+                            Err(error) => DepDisposition::Unresolved {
+                                reason: error.to_string(),
+                            },
+                        },
                         Err(error) => DepDisposition::Unresolved {
                             reason: error.to_string(),
                         },
@@ -546,11 +557,8 @@ async fn resolve_curated_dependencies(
                     Err(error) => DepDisposition::Unresolved {
                         reason: error.to_string(),
                     },
-                },
-                Err(error) => DepDisposition::Unresolved {
-                    reason: error.to_string(),
-                },
-            },
+                }
+            }
             Err(error) => DepDisposition::Unresolved {
                 reason: error.to_string(),
             },
@@ -577,16 +585,28 @@ async fn resolve_curated_dependencies(
     let installed_set: HashSet<String> = installed_ids.keys().cloned().collect();
     let mut conflicts = Vec::new();
     for conflict in known_conflicts {
-        let a = aliases.resolve_or_self(&conflict.mod_a_id).to_ascii_lowercase();
-        let b = aliases.resolve_or_self(&conflict.mod_b_id).to_ascii_lowercase();
+        let a = aliases
+            .resolve_or_self(&conflict.mod_a_id)
+            .to_ascii_lowercase();
+        let b = aliases
+            .resolve_or_self(&conflict.mod_b_id)
+            .to_ascii_lowercase();
         if (incoming.contains(&a) && (installed_set.contains(&b) || incoming.contains(&b)))
             || (incoming.contains(&b) && (installed_set.contains(&a) || incoming.contains(&a)))
         {
             conflicts.push(DepConflict {
                 conflict_id: format!("known:{a}:{b}"),
                 kind: ConflictKind::IncompatibleMod,
-                existing_mod_jar_id: if installed_set.contains(&a) { a.clone() } else { b.clone() },
-                incoming_mod_jar_id: if incoming.contains(&a) { a.clone() } else { b.clone() },
+                existing_mod_jar_id: if installed_set.contains(&a) {
+                    a.clone()
+                } else {
+                    b.clone()
+                },
+                incoming_mod_jar_id: if incoming.contains(&a) {
+                    a.clone()
+                } else {
+                    b.clone()
+                },
                 message: conflict.notes.unwrap_or_else(|| {
                     format!("The curated registry reports a conflict between {a} and {b}.")
                 }),
@@ -693,10 +713,7 @@ async fn resolve_modrinth_dependencies(
                 Ok(candidate) => {
                     let children = candidate.dependencies.clone();
                     match raw_modrinth_artifact(&project_id, candidate) {
-                        Ok(artifact) => (
-                            DepDisposition::InstallCandidate { artifact },
-                            children,
-                        ),
+                        Ok(artifact) => (DepDisposition::InstallCandidate { artifact }, children),
                         Err(error) => (
                             DepDisposition::Unresolved {
                                 reason: error.to_string(),
@@ -777,7 +794,10 @@ fn curated_artifact(
         .ok_or_else(|| {
             generic(
                 "ERR_HASH_UNAVAILABLE",
-                format!("No trusted SHA-256 is available for {} {}.", item.id, candidate.version),
+                format!(
+                    "No trusted SHA-256 is available for {} {}.",
+                    item.id, candidate.version
+                ),
             )
         })?;
     hashes.push(HashedValue {
@@ -828,7 +848,10 @@ fn raw_modrinth_artifact(
     if hashes.is_empty() {
         return Err(generic(
             "ERR_HASH_UNAVAILABLE",
-            format!("Modrinth did not publish a usable hash for {}.", candidate.filename),
+            format!(
+                "Modrinth did not publish a usable hash for {}.",
+                candidate.filename
+            ),
         ));
     }
     Ok(ResolvedArtifact::Download(ResolvedDownload {
@@ -857,9 +880,7 @@ fn select_curated_candidate<'a>(
     if let Some(requested) = requested {
         return candidates
             .iter()
-            .find(|candidate| {
-                candidate.version == requested || candidate.filename == requested
-            })
+            .find(|candidate| candidate.version == requested || candidate.filename == requested)
             .ok_or(LauncherError::VersionNotFound);
     }
     candidates
@@ -896,15 +917,15 @@ fn normalize_requested_version(requested: Option<&str>) -> Option<&str> {
 fn valid_hash(value: Option<&str>, length: usize) -> Option<String> {
     value
         .map(str::trim)
-        .filter(|value| {
-            value.len() == length && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
+        .filter(|value| value.len() == length && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .map(str::to_ascii_lowercase)
 }
 
 fn is_platform_dependency(dependency: &str, loader: &str) -> bool {
-    matches!(dependency, "minecraft" | "java" | "fabricloader" | "fabric_loader" | "quilt_loader" | "quilt-loader")
-        || dependency.eq_ignore_ascii_case(loader)
+    matches!(
+        dependency,
+        "minecraft" | "java" | "fabricloader" | "fabric_loader" | "quilt_loader" | "quilt-loader"
+    ) || dependency.eq_ignore_ascii_case(loader)
         || (loader == "neoforge" && dependency == "forge")
 }
 

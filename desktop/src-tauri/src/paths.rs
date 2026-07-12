@@ -1,4 +1,4 @@
-﻿//! Thin compat shim: preserves the original `&tauri::AppHandle` signatures
+//! Thin compat shim: preserves the original `&tauri::AppHandle` signatures
 //! so no caller across the desktop crate needs to change.
 //!
 //! Internally this module resolves the app data directory from the handle
@@ -60,7 +60,9 @@ pub fn registry_sig_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow
 }
 
 /// Path to the mutable local state database.
-pub fn local_state_db_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<PathBuf> {
+pub fn local_state_db_path<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> anyhow::Result<PathBuf> {
     let base = app_data_dir(app)?;
     agora_core::paths::local_state_db_path(&base)
 }

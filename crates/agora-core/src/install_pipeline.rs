@@ -1287,22 +1287,21 @@ impl InstallPipeline {
                     );
                 }
             };
-            let manifest: crate::models::InstanceManifest = match serde_json::from_str(
-                &manifest_text,
-            ) {
-                Ok(manifest) => manifest,
-                Err(error) => {
-                    let restore = crate::snapshot::restore_snapshot(instance_dir, &snapshot.id);
-                    let _ = std::fs::remove_dir_all(&staging_dir);
-                    return fail(
-                        format!(
+            let manifest: crate::models::InstanceManifest =
+                match serde_json::from_str(&manifest_text) {
+                    Ok(manifest) => manifest,
+                    Err(error) => {
+                        let restore = crate::snapshot::restore_snapshot(instance_dir, &snapshot.id);
+                        let _ = std::fs::remove_dir_all(&staging_dir);
+                        return fail(
+                            format!(
                             "Committed manifest is invalid ({error}); restore result: {restore:?}"
                         ),
-                        Some(snapshot.id),
-                        restore.is_ok(),
-                    );
-                }
-            };
+                            Some(snapshot.id),
+                            restore.is_ok(),
+                        );
+                    }
+                };
             let report = crate::health::health(instance_dir, &manifest, None);
             if !report.blockers.is_empty() {
                 let restore = crate::snapshot::restore_snapshot(instance_dir, &snapshot.id);
@@ -1961,6 +1960,11 @@ fn prepare_manifest(
             depends_on: jar.depends_on,
             optional_deps: jar.optional_deps,
             incompatible_deps: jar.incompatible_deps,
+            provided_mod_ids: jar
+                .provided_mods
+                .iter()
+                .map(|pm| pm.mod_id.clone())
+                .collect(),
         };
         remove_manifest_identity(&mut manifest, &installed);
         content_entries_mut(&mut manifest, &installed.content_type).push(installed);

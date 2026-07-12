@@ -1,4 +1,4 @@
-﻿use crate::models::InstanceRow;
+use crate::models::InstanceRow;
 use crate::paths;
 use rusqlite::Connection;
 use serde::Serialize;
@@ -8,9 +8,8 @@ use serde::Serialize;
 pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 3;
 
 /// Open a connection to the mutable local state database, creating it if needed.
-
 // Re-exported from agora-core for desktop-internal callers.
-pub use agora_core::db::{record_co_crash, normalize_pair, get_flag_rate_limit_status};
+pub use agora_core::db::{get_flag_rate_limit_status, normalize_pair, record_co_crash};
 
 pub fn local_state_connection<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -61,11 +60,7 @@ pub fn get_setting(conn: &Connection, key: &str) -> anyhow::Result<Option<serde_
 }
 
 /// Upsert a JSON-encoded setting into user_settings.
-pub fn set_setting(
-    conn: &Connection,
-    key: &str,
-    value: &serde_json::Value,
-) -> anyhow::Result<()> {
+pub fn set_setting(conn: &Connection, key: &str, value: &serde_json::Value) -> anyhow::Result<()> {
     let text = serde_json::to_string(value)?;
     conn.execute(
         "INSERT INTO user_settings (key, value_json) VALUES (?1, ?2)
@@ -204,20 +199,13 @@ pub fn set_locked(conn: &Connection, instance_id: &str, locked: bool) -> anyhow:
 // ---------------------------------------------------------------------------
 
 /// Read the stored Modrinth version page from settings.
-pub fn get_version_page(
-    conn: &Connection,
-    mod_id: &str,
-) -> anyhow::Result<Option<String>> {
+pub fn get_version_page(conn: &Connection, mod_id: &str) -> anyhow::Result<Option<String>> {
     let key = format!("modrinth_versions_page_{}", mod_id);
     get_setting(conn, &key).map(|v| v.and_then(|j| j.as_str().map(String::from)))
 }
 
 /// Store a Modrinth version page in settings.
-pub fn set_version_page(
-    conn: &Connection,
-    mod_id: &str,
-    data: &str,
-) -> anyhow::Result<()> {
+pub fn set_version_page(conn: &Connection, mod_id: &str, data: &str) -> anyhow::Result<()> {
     let key = format!("modrinth_versions_page_{}", mod_id);
     set_setting(conn, &key, &serde_json::Value::String(data.to_string()))
 }
@@ -299,11 +287,7 @@ pub fn get_mod_survival_count(conn: &Connection, mod_id: &str) -> anyhow::Result
 }
 
 /// Return the number of survivals where both mods a and b appear together.
-pub fn get_pair_survival_count(
-    conn: &Connection,
-    a: &str,
-    b: &str,
-) -> anyhow::Result<i64> {
+pub fn get_pair_survival_count(conn: &Connection, a: &str, b: &str) -> anyhow::Result<i64> {
     use agora_core::db::normalize_pair;
     let (first, second) = normalize_pair(a, b);
     conn.query_row(
@@ -318,12 +302,8 @@ pub fn get_pair_survival_count(
 
 /// Return the total number of crash_survivals rows.
 pub fn get_total_survival_count(conn: &Connection) -> anyhow::Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM crash_survivals",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(Into::into)
+    conn.query_row("SELECT COUNT(*) FROM crash_survivals", [], |row| row.get(0))
+        .map_err(Into::into)
 }
 
 /// Return confirmed attributions for a fingerprint, ordered by confirm_count DESC.
@@ -370,11 +350,7 @@ pub fn increment_confirmation(
 }
 
 /// Idempotently add a ruled-out mod for a fingerprint.
-pub fn add_ruled_out(
-    conn: &Connection,
-    fingerprint: &str,
-    mod_id: &str,
-) -> anyhow::Result<()> {
+pub fn add_ruled_out(conn: &Connection, fingerprint: &str, mod_id: &str) -> anyhow::Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
         "INSERT OR IGNORE INTO crash_ruled_out (fingerprint, mod_id, ruled_out_at) VALUES (?1, ?2, ?3)",
@@ -384,25 +360,15 @@ pub fn add_ruled_out(
 }
 
 /// Check whether a mod has been ruled out for a fingerprint.
-pub fn is_ruled_out(
-    conn: &Connection,
-    fingerprint: &str,
-    mod_id: &str,
-) -> anyhow::Result<bool> {
-    let mut stmt = conn.prepare(
-        "SELECT 1 FROM crash_ruled_out WHERE fingerprint = ?1 AND mod_id = ?2",
-    )?;
+pub fn is_ruled_out(conn: &Connection, fingerprint: &str, mod_id: &str) -> anyhow::Result<bool> {
+    let mut stmt =
+        conn.prepare("SELECT 1 FROM crash_ruled_out WHERE fingerprint = ?1 AND mod_id = ?2")?;
     Ok(stmt.exists([fingerprint, mod_id])?)
 }
 
 /// Return the mod_ids ruled out for a fingerprint.
-pub fn get_ruled_out_mods(
-    conn: &Connection,
-    fingerprint: &str,
-) -> anyhow::Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT mod_id FROM crash_ruled_out WHERE fingerprint = ?1",
-    )?;
+pub fn get_ruled_out_mods(conn: &Connection, fingerprint: &str) -> anyhow::Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT mod_id FROM crash_ruled_out WHERE fingerprint = ?1")?;
     let rows = stmt.query_map([fingerprint], |row| row.get(0))?;
     let mut out = Vec::new();
     for r in rows {

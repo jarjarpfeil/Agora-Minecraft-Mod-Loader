@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   checkInstanceHealth,
   disableModForTest,
@@ -37,6 +37,13 @@ export function HealthDialog({ instanceId, instanceName, initialReport, onConfir
   const [silenced, setSilenced] = useState<Set<string>>(new Set());
   const [fixing, setFixing] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+
+  // Scroll container ref — reset to top whenever the report changes so a long
+  // list of findings always starts at the top instead of clipping out of view.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [report]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,14 +123,14 @@ export function HealthDialog({ instanceId, instanceName, initialReport, onConfir
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !launching) onCancel(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col gap-3">
         <DialogTitle>Health Check</DialogTitle>
         <DialogDescription>
           {instanceName} has warnings or blockers that should be reviewed before launch.
         </DialogDescription>
 
         {/* Score badge */}
-        <div className={`rounded-lg border ${sc.border} ${sc.bg} p-3 mb-4`}>
+        <div className={`rounded-lg border ${sc.border} ${sc.bg} p-3`}>
           <div className="flex items-center gap-2">
             <div className={`text-lg font-bold ${sc.text}`}>
               {effectiveScore === 'green' ? '●' : effectiveScore === 'yellow' ? '◐' : '○'}
@@ -135,84 +142,92 @@ export function HealthDialog({ instanceId, instanceName, initialReport, onConfir
           </div>
         </div>
 
-        {/* Blockers */}
-        {report.blockers.length > 0 && (
-          <div className="mb-3">
-            <h4 className="text-sm font-semibold mb-2">Blockers ({report.blockers.length})</h4>
-            <div className="space-y-2">
-              {report.blockers.map((b, i) => {
-                const key = silenceKey(b);
-                const isSilenced = silenced.has(key);
-                return (
-                  <div key={i} className={`rounded border p-2 text-sm ${isSilenced ? 'border-border bg-muted/50 opacity-60' : 'border-destructive bg-destructive/10'}`}>
-                    <p className={isSilenced ? 'text-muted-foreground line-through' : 'text-destructive'}>{b.message}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      {b.suggested_action && (
-                        <span className="text-xs text-muted-foreground">{b.suggested_action}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 mt-2">
-                      {(b.kind === 'missing_required_dependency' || b.kind === 'incompatible_mod' || b.kind === 'curated_conflict') && b.filename && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={fixing === key}
-                          onClick={() => handleFixDisable(b.filename!, key)}
-                        >
-                          {fixing === key ? 'Fixing...' : 'Disable'}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Warnings */}
-        {report.warnings.length > 0 && (
-          <div className="mb-3">
-            <h4 className="text-sm font-semibold mb-2">Warnings ({report.warnings.length})</h4>
-            <div className="space-y-2">
-              {report.warnings.map((w, i) => {
-                const key = silenceKey(w);
-                const isSilenced = silenced.has(key);
-                return (
-                  <div key={i} className={`rounded border p-2 text-sm ${isSilenced ? 'border-border bg-muted/50 opacity-60' : 'border-amber-500 bg-amber-500/10'}`}>
-                    <p className={isSilenced ? 'text-muted-foreground line-through' : 'text-amber-600 dark:text-amber-400'}>{w.message}</p>
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center gap-2 text-xs">
-                        <Switch
-                          checked={!isSilenced}
-                          onCheckedChange={() => handleSilence(key, isSilenced)}
-                          aria-label="Show this warning"
-                        />
-                        <span className="text-muted-foreground">
-                          {isSilenced ? 'Muted' : 'Show on next launch'}
-                        </span>
+        {/* Scrollable findings region — blockers + warnings.
+            A long list scrolls internally instead of clipping out of view;
+            the dialog caps at 85vh and the actions footer stays pinned. */}
+        <div
+          ref={scrollRef}
+          className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1"
+        >
+          {/* Blockers */}
+          {report.blockers.length > 0 && (
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold mb-2">Blockers ({report.blockers.length})</h4>
+              <div className="space-y-2">
+                {report.blockers.map((b, i) => {
+                  const key = silenceKey(b);
+                  const isSilenced = silenced.has(key);
+                  return (
+                    <div key={i} className={`rounded border p-2 text-sm ${isSilenced ? 'border-border bg-muted/50 opacity-60' : 'border-destructive bg-destructive/10'}`}>
+                      <p className={isSilenced ? 'text-muted-foreground line-through' : 'text-destructive'}>{b.message}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {b.suggested_action && (
+                          <span className="text-xs text-muted-foreground">{b.suggested_action}</span>
+                        )}
                       </div>
-                      {w.suggested_action && !isSilenced && (
-                        <span className="text-xs text-muted-foreground">{w.suggested_action}</span>
-                      )}
+                      <div className="flex items-center gap-3 mt-2">
+                        {(b.kind === 'missing_required_dependency' || b.kind === 'incompatible_mod' || b.kind === 'curated_conflict') && b.filename && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={fixing === key}
+                            onClick={() => handleFixDisable(b.filename!, key)}
+                          >
+                            {fixing === key ? 'Fixing...' : 'Disable'}
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* All clear */}
-        {effectiveScore === 'green' && (
-          <p className="text-sm text-green-600 dark:text-green-400 mb-4">
-            No issues found. Instance is ready to launch.
-          </p>
-        )}
+          {/* Warnings */}
+          {report.warnings.length > 0 && (
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold mb-2">Warnings ({report.warnings.length})</h4>
+              <div className="space-y-2">
+                {report.warnings.map((w, i) => {
+                  const key = silenceKey(w);
+                  const isSilenced = silenced.has(key);
+                  return (
+                    <div key={i} className={`rounded border p-2 text-sm ${isSilenced ? 'border-border bg-muted/50 opacity-60' : 'border-amber-500 bg-amber-500/10'}`}>
+                      <p className={isSilenced ? 'text-muted-foreground line-through' : 'text-amber-600 dark:text-amber-400'}>{w.message}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex items-center gap-2 text-xs">
+                          <Switch
+                            checked={!isSilenced}
+                            onCheckedChange={() => handleSilence(key, isSilenced)}
+                            aria-label="Show this warning"
+                          />
+                          <span className="text-muted-foreground">
+                            {isSilenced ? 'Muted' : 'Show on next launch'}
+                          </span>
+                        </div>
+                        {w.suggested_action && !isSilenced && (
+                          <span className="text-xs text-muted-foreground">{w.suggested_action}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* All clear */}
+          {effectiveScore === 'green' && (
+            <p className="text-sm text-green-600 dark:text-green-400 mb-4">
+              No issues found. Instance is ready to launch.
+            </p>
+          )}
+        </div>
 
         {/* Actions */}
-        {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
-        <div className="flex gap-2 justify-end">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex gap-2 justify-end pt-3 border-t border-border">
           <Button variant="outline" onClick={onCancel} disabled={launching}>Cancel</Button>
           {activeBlockers.length > 0 ? (
             <Button variant="destructive" disabled>

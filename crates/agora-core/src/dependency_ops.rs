@@ -91,7 +91,8 @@ pub type InstallPlan = ResolvedInstallDeps;
 ///
 /// Fabric distinguishes `breaks` (hard: matching version is a launch failure)
 /// from `conflicts` (soft: matching version is a warning). Forge/NeoForge use
-/// `type = "incompatible"` (hard) and `type = "discouraged"` (soft).
+/// `type = "incompatible"` (hard) and `type = "discouraged"` (soft). Quilt
+/// follows Fabric's model via `quilt_loader.breaks` / `quilt_loader.conflicts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IncompatibilitySource {
@@ -103,12 +104,29 @@ pub enum IncompatibilitySource {
     ForgeIncompatible,
     /// NeoForge `type = "discouraged"` — soft warning.
     ForgeDiscouraged,
+    /// Quilt `quilt_loader.breaks` — hard failure.
+    QuiltBreaks,
+    /// Quilt `quilt_loader.conflicts` — soft warning.
+    QuiltConflicts,
 }
 
 impl IncompatibilitySource {
     /// True for hard (launch-breaking) declarations, false for soft warnings.
     pub fn is_hard(&self) -> bool {
-        matches!(self, Self::FabricBreaks | Self::ForgeIncompatible)
+        matches!(
+            self,
+            Self::FabricBreaks | Self::ForgeIncompatible | Self::QuiltBreaks
+        )
+    }
+
+    /// True when the version-range grammar is Fabric/Quilt predicate syntax
+    /// (e.g. `"<2.0"`, `">=1.0 <2.0"`, `"*"`). False for Forge Maven ranges
+    /// (e.g. `"[1.0,2.0)"`).
+    pub fn is_fabric_grammar(&self) -> bool {
+        matches!(
+            self,
+            Self::FabricBreaks | Self::FabricConflicts | Self::QuiltBreaks | Self::QuiltConflicts
+        )
     }
 }
 
@@ -130,6 +148,19 @@ pub struct IncompatibilityDecl {
     pub source: IncompatibilitySource,
 }
 
+/// An additional mod ID satisfied by the same physical JAR.
+///
+/// This includes aliases declared through Fabric/Quilt `provides` and primary
+/// IDs discovered in explicitly declared nested JARs. Keeping the version here
+/// lets the health checker evaluate incompatibility ranges against bundled
+/// modules without treating them as separately installed files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProvidedMod {
+    pub mod_id: String,
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
 /// Jar dependency metadata extracted from a mod JAR file.
 ///
 /// Renamed from `JarMetadata` to avoid collision with
@@ -149,6 +180,29 @@ pub struct JarDeps {
     /// these (incompatibles are curatorial notes for v1).
     #[serde(default)]
     pub incompatibility_decls: Vec<IncompatibilityDecl>,
+    /// The mod's own version string, extracted from `fabric.mod.json`
+    /// (`"version"` field), Forge `mods.toml` (`version=` in the `[[mods]]`
+    /// block), or `META-INF/MANIFEST.MF` (`Implementation-Version`) when the
+    /// TOML uses `${file.jarVersion}`. Used by the health check for
+    /// version-range matching against incompatibility declarations.
+    #[serde(default)]
+    pub mod_version: Option<String>,
+    /// Additional mod IDs loaded/provided by this physical JAR. Populated from
+    /// Fabric/Quilt `provides` and explicitly declared nested JAR metadata.
+    #[serde(default)]
+    pub provided_mods: Vec<ProvidedMod>,
+}
+
+impl JarDeps {
+    /// Iterate every loader-visible mod ID supplied by this physical JAR,
+    /// including its primary ID, metadata aliases, and nested module IDs.
+    pub fn all_mod_ids(&self) -> impl Iterator<Item = &str> {
+        self.mod_jar_id.as_deref().into_iter().chain(
+            self.provided_mods
+                .iter()
+                .map(|provided| provided.mod_id.as_str()),
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,8 +295,27 @@ pub fn find_dependents_with_aliases(
     target_mod_jar_id: &str,
     aliases: &AliasMap,
 ) -> Vec<DependentInfo> {
-    let target_resolved = aliases.resolve_or_self(target_mod_jar_id);
-    let target_lower = target_resolved.to_lowercase();
+    let target_ids = HashSet::from([aliases.resolve_or_self(target_mod_jar_id).to_lowercase()]);
+    find_dependents_for_ids(installed, &target_ids, aliases)
+}
+
+/// Return every loader-visible ID supplied by an installed physical JAR.
+fn installed_mod_ids(mod_entry: &InstalledMod, aliases: &AliasMap) -> HashSet<String> {
+    mod_entry
+        .mod_jar_id
+        .iter()
+        .chain(mod_entry.provided_mod_ids.iter())
+        .map(|id| aliases.resolve_or_self(id).to_lowercase())
+        .collect()
+}
+
+/// Find dependents whose required/optional declarations reference any ID
+/// supplied by a target physical JAR.
+fn find_dependents_for_ids(
+    installed: &[InstalledMod],
+    target_ids: &HashSet<String>,
+    aliases: &AliasMap,
+) -> Vec<DependentInfo> {
     let mut seen: HashMap<String, DependentInfo> = HashMap::new();
 
     for m in installed {
@@ -251,7 +324,7 @@ pub fn find_dependents_with_aliases(
         // Check required deps
         if m.depends_on
             .iter()
-            .any(|d| aliases.resolve_or_self(d).to_lowercase() == target_lower)
+            .any(|d| target_ids.contains(&aliases.resolve_or_self(d).to_lowercase()))
         {
             let entry = DependentInfo {
                 mod_id: mod_id.clone(),
@@ -266,7 +339,7 @@ pub fn find_dependents_with_aliases(
         // Check optional deps
         if m.optional_deps
             .iter()
-            .any(|d| aliases.resolve_or_self(d).to_lowercase() == target_lower)
+            .any(|d| target_ids.contains(&aliases.resolve_or_self(d).to_lowercase()))
         {
             seen.entry(mod_id.clone()).or_insert(DependentInfo {
                 mod_id,
@@ -293,11 +366,7 @@ pub fn resolve_install_deps_with_aliases(
     // Build installed set with alias resolution.
     let installed_ids: HashSet<String> = installed
         .iter()
-        .filter_map(|m| {
-            m.mod_jar_id
-                .as_ref()
-                .map(|id| aliases.resolve_or_self(id).to_lowercase())
-        })
+        .flat_map(|m| installed_mod_ids(m, aliases))
         .collect();
 
     // Build jar-dep candidates with alias-resolved ids.
@@ -478,10 +547,8 @@ pub fn build_removal_plan_with_aliases(
     target: &InstalledMod,
     aliases: &AliasMap,
 ) -> RemovalPlan {
-    let dependents = match &target.mod_jar_id {
-        Some(jar_id) => find_dependents_with_aliases(installed, jar_id, aliases),
-        None => Vec::new(),
-    };
+    let target_ids = installed_mod_ids(target, aliases);
+    let dependents = find_dependents_for_ids(installed, &target_ids, aliases);
     RemovalPlan { dependents }
 }
 
@@ -491,10 +558,8 @@ pub fn build_disable_plan_with_aliases(
     target: &InstalledMod,
     aliases: &AliasMap,
 ) -> DisablePlan {
-    let dependents = match &target.mod_jar_id {
-        Some(jar_id) => find_dependents_with_aliases(installed, jar_id, aliases),
-        None => Vec::new(),
-    };
+    let target_ids = installed_mod_ids(target, aliases);
+    let dependents = find_dependents_for_ids(installed, &target_ids, aliases);
     DisablePlan { dependents }
 }
 
@@ -676,6 +741,7 @@ mod tests {
             depends_on: deps.iter().map(|s| s.to_string()).collect(),
             optional_deps: opt_deps.iter().map(|s| s.to_string()).collect(),
             incompatible_deps: Vec::new(),
+            provided_mod_ids: Vec::new(),
             enabled: true,
             content_type: "mod".to_string(),
         }
@@ -704,6 +770,8 @@ mod tests {
             optional_deps: opt_deps.iter().map(|s| s.to_string()).collect(),
             incompatible_deps,
             incompatibility_decls,
+            mod_version: None,
+            provided_mods: Vec::new(),
         }
     }
 
@@ -1085,5 +1153,40 @@ mod tests {
 
         let result = find_dependents(&installed, "fabric");
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_install_plan_treats_provided_id_as_installed() {
+        let mut fabric_api = installed("fabric-api.jar", Some("fabric-api"), &[], &[]);
+        fabric_api.provided_mod_ids = vec![
+            "fabric-command-api-v2".into(),
+            "fabric-resource-loader-v1".into(),
+        ];
+        let target = jar_deps(
+            Some("skyboxify"),
+            &["fabric-command-api-v2", "fabric-resource-loader-v1"],
+            &[],
+            &[],
+        );
+
+        let plan = build_install_plan(None, &target, &[fabric_api]);
+        assert!(plan.missing_required.is_empty());
+    }
+
+    #[test]
+    fn test_removal_plan_matches_dependency_on_provided_id() {
+        let mut fabric_api = installed("fabric-api.jar", Some("fabric-api"), &[], &[]);
+        fabric_api.provided_mod_ids = vec!["fabric-resource-loader-v1".into()];
+        let mod_menu = installed(
+            "modmenu.jar",
+            Some("modmenu"),
+            &["fabric-resource-loader-v1"],
+            &[],
+        );
+        let installed = vec![fabric_api.clone(), mod_menu];
+
+        let plan = build_removal_plan(&installed, &fabric_api);
+        assert_eq!(plan.dependents.len(), 1);
+        assert_eq!(plan.dependents[0].filename, "modmenu.jar");
     }
 }

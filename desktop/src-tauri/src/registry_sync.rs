@@ -1,4 +1,4 @@
-﻿//! Thin compat shim: preserves the original `&tauri::AppHandle` signatures
+//! Thin compat shim: preserves the original `&tauri::AppHandle` signatures
 //! so no caller across the desktop crate needs to change.
 //!
 //! Internally this module resolves Tauri-specific paths from the handle
@@ -11,24 +11,23 @@ pub async fn check_and_download_update<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     force: bool,
 ) -> agora_core::error::LauncherResult<RegistryStatus> {
-    let base = crate::paths::app_data_dir(app)
-        .map_err(|e| agora_core::error::LauncherError::Generic {
+    let base =
+        crate::paths::app_data_dir(app).map_err(|e| agora_core::error::LauncherError::Generic {
             code: "ERR_APP_DATA_DIR".to_string(),
             message: e.to_string(),
         })?;
-    let ls_path = crate::paths::local_state_db_path(app)
-        .map_err(|e| agora_core::error::LauncherError::Generic {
+    let ls_path = crate::paths::local_state_db_path(app).map_err(|e| {
+        agora_core::error::LauncherError::Generic {
             code: "ERR_LOCAL_STATE_PATH".to_string(),
             message: e.to_string(),
-        })?;
+        }
+    })?;
     let token = crate::auth::get_token(app);
     agora_core::registry_sync::check_and_download_update(&base, &ls_path, force, token).await
 }
 
 /// Return the current registry status without performing a network check.
-pub fn get_status<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> RegistryStatus {
+pub fn get_status<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> RegistryStatus {
     let base = crate::paths::app_data_dir(app).ok();
     let ls_path = crate::paths::local_state_db_path(app).ok();
     match (base, ls_path) {
@@ -51,8 +50,8 @@ pub fn get_status<R: tauri::Runtime>(
 pub fn seed_from_local_build<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> agora_core::error::LauncherResult<bool> {
-    let base = crate::paths::app_data_dir(app)
-        .map_err(|e| agora_core::error::LauncherError::Generic {
+    let base =
+        crate::paths::app_data_dir(app).map_err(|e| agora_core::error::LauncherError::Generic {
             code: "ERR_APP_DATA_DIR".to_string(),
             message: e.to_string(),
         })?;

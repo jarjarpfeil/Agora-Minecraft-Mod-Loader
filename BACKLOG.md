@@ -2,7 +2,9 @@
 
 > Single source of truth for remaining work. Organized by spec phase, then by priority within each phase.
 > Each item has a **short** summary (one line) and a **detailed** description (what, why, spec ref, acceptance criteria).
-> Status: `[x]` done · `[~]` in progress · `[ ]` not started
+> Status: `[x]` verified done · `[~]` implemented in part or awaiting acceptance criteria · `[ ]` not started/deferred
+>
+> **Verification status (2026-07-12):** Reconciled against the current uncommitted working tree and superseding decisions in `MASTER_SPEC.md` §19. Rust formatting, 499 workspace tests, the desktop and web builds, 21 mocked Playwright tests, Clippy (warnings only), and 20 script tests passed. The compiler suite is **not green**: 86 tests ran with 3 failures and 10 errors (missing test imports plus stale alias/known-conflict expectations). Native desktop smoke checks and the final Release C/D gate have not been completed. Deferred or removed features remain listed as `[ ]` for traceability.
 
 ---
 
@@ -72,8 +74,8 @@
   - **Acceptance:** A `modrinth_id` mod with a 5-line manifest renders a rich detail page (description + formatted markdown body + categories + icon) entirely from local `registry.db` with no network calls. Verified: `xaeros-minimap` and a synthetic no-category test both hydrate from the live Modrinth API.
 
 - [x] **Audit log generation**
-  - **Short:** Generate `registry/governance/audit_log.json` during compilation with 1000-entry rotation. Implemented in `compiler/compile.py`.
-  - **Detail:** Append-only transparency log written at end of compile. If file exists, reads + appends; enforces 1000-entry rotation. Also writes `audit_log_json` path to `system_config` table. Verified: `registry/governance/audit_log.json` created after compile with compile-entry.
+  - **Short:** Generate `registry/governance/audit_log.json` during compilation with spec-compliant rotation. Implemented in `compiler/compile.py`.
+  - **Detail:** Append-only transparency log written at end of compile. When the log exceeds 10,000 entries, the oldest 2,000 are moved to a dated archive. Also writes `audit_log_json` path to `system_config`. Verified by implementation and focused tests; the full compiler suite currently has unrelated/stale failures recorded in the verification note above.
   - **Spec:** §4.6
   - **Acceptance:** `audit_log.json` exists after compile; Transparency Log UI has data to surface.
 
@@ -148,7 +150,7 @@
   - **Acceptance:** A simulated crash matches a regex signature, shows the fix hint, and the user can preview + submit a GitHub issue.
 
 - [x] **OAuth + token storage** (§7.5, §5.1)
-  - **Short:** GitHub Device Flow + keyring/AES-256-GCM token storage; enables voting, reviews, crash reporting, and triage. Implemented in `desktop/src-tauri/src/auth.rs` (Device Flow + OS keyring store/read/delete). AES-256-GCM encrypted-file fallback not yet implemented.
+  - **Short:** GitHub Device Flow + keyring/AES-256-GCM token storage; enables voting, reviews, crash reporting, and triage. Implemented via the desktop auth facade and `agora-core` auth support, including the PBKDF2/AES-256-GCM `tokens.enc` fallback.
   - **Detail:** (a) Implement GitHub Device Flow (`POST /login/device/code` → poll `POST /login/oauth/access_token`). (b) Store token in OS keyring via `keyring` crate. (c) Fallback: AES-256-GCM encrypt to `tokens.enc` in app data dir with machine-bound key. (d) Token is never in config files, env vars, or SQLite. (e) Use token for: voting (emoji reactions), reviews (issue comments), crash reports (issue creation), flag submission, and triage participation. (f) Browse-Only Mode: all of the above gracefully degrade when token is absent.
   - **Spec:** §7.5, §5
   - **Acceptance:** User signs in via Device Flow; can vote on a mod; token survives restart via keyring.
@@ -173,8 +175,8 @@
   - **Acceptance:** App finds launcher installed via MSIX/registry on Windows.
 
 - [x] **MCP server** (§10)
-  - **Short:** Implement localhost MCP server with ephemeral port, per-session token, 6 tools, approval queue, and system context injection.
-  - **Detail:** (a) Bind to `127.0.0.1` on an ephemeral port, (b) Bearer token auth via `LAUNCHER_MCP_TOKEN`, (c) 6 tools: `list_instances`, `list_instance_mods`, `disable_mod`, `search_crash_signatures`, `suggest_mod_incompatibility`, `get_system_context`, (d) approval state machine with persistent grants in `local_state.db`, (e) `resources/list` exposing `system_context.md`, (f) toggle on/off from Settings.
+  - **Short:** Implement localhost MCP server with 6 tools, approval queue, and system context injection.
+  - **Detail:** Binds only to `127.0.0.1`; the localhost boundary is the current security model. Per-session Bearer authentication is intentionally deferred by `MASTER_SPEC.md` §19.6. Includes the six launcher tools, approval state with persistent grants, `resources/list` system context, and a Settings toggle.
   - **Spec:** §10
   - **Acceptance:** Claude Desktop connects with token, calls `list_instance_mods`, user sees approval prompt.
 
@@ -196,9 +198,9 @@
   - **Spec:** §6.2
   - **Acceptance:** After installing 3 "magic" mods, Browse surfaces more magic mods.
 
-- [x] **Raw Modrinth tab** (§6.3)
-  - **Short:** Live Modrinth API search with uncurated warning banner and SHA-1 hash verification.
-  - **Detail:** Backend in `desktop/src-tauri/src/modrinth_raw.rs`: `search_modrinth` calls `GET https://api.modrinth.com/v2/search` (facets filter to `project_type:mod`, URL-encoded query, up to 100 results); `list_raw_modrinth_versions` calls `GET /v2/project/{id}/version` scoped by the instance's `game_versions`+`loaders` when an instance is selected, returning `RawModrinthVersionCandidate` carrying the Modrinth-published SHA-1; `install_raw_modrinth` downloads via the existing allowlisted/redirect-safe `download_mod_bytes`, verifies SHA-1 against the published hash before writing, and appends an `InstalledMod` with `source: "modrinth_raw"` to `instance_manifest.json`. All three entrypoints are gated by `require_modrinth_enabled` (returns `ERR_MODRINTH_DISABLED` when the setting is off). Frontend `desktop/src/pages/ModrinthRaw.tsx`: search box + initial relevance set, persistent uncurated warning banner, project detail with instance picker → version picker (shows SHA-1 fingerprint per version, disables install when no hash published) → install spinner → success with link to instance editor. Added conditional "Modrinth" sidebar tab in `App.tsx` (re-reads `modrinth_enabled` on every tab switch so toggling is reflected without a restart) and "Search all of Modrinth →" CTA in the Browse empty state.
+- [x] **Federated Modrinth discovery** (§6.3, §19.9 E4)
+  - **Short:** Live Modrinth API search is federated into Browse with uncurated labeling and published-hash verification.
+  - **Detail:** The former standalone Raw Modrinth tab was removed by the E4 architecture pivot. Backend Modrinth search/version/install support remains, while Browse presents curated and uncurated results through one discovery surface and preserves source labeling, opt-in gating, allowlisted downloads, and published-hash verification.
   - **Spec:** §6.3
   - **Acceptance:** User can search Modrinth directly, download a mod, and it's hash-verified before writing to `mods/`.
 
@@ -233,9 +235,9 @@
 - [x] **Landing page + about page + content-type pages + detail pages + client-side search/filter.**
 - [x] **Image URL scheme validation** — Only `https:` and `data:` render.
 
-- [x] **react-markdown strict allow-list** (§4.1c #3, §13)
-  - **Short:** Curator notes rendered via `react-markdown` with strict `allowedElements` allow-list. Implemented in `web/src/components/MarkdownRenderer.tsx`.
-  - **Detail:** New `MarkdownRenderer` client component wraps `react-markdown` with `allowedElements={['p','strong','em','code','a','pre','ul','ol','li']}` and `unwrapDisallowed`. Detail page (`[type]/[id]/page.tsx`) uses it for curator note rendering. No `dangerouslySetInnerHTML` anywhere in curator content.
+- [x] **Sanitized react-markdown rendering** (§4.1c #3, §13)
+  - **Short:** Curator notes render through `react-markdown` with `rehype-raw` and a strict `rehype-sanitize` schema in `web/src/components/MarkdownRenderer.tsx`.
+  - **Detail:** The detail page uses the shared renderer; allowed tags, attributes, and URL protocols are constrained by the sanitizer, and curator content is never passed to `dangerouslySetInnerHTML`.
   - **Spec:** §4.1c #3, §13
   - **Acceptance:** Curator note renders bold/italic/links but never raw HTML.
 
@@ -317,25 +319,27 @@
   - **Spec:** §17
   - **Acceptance:** Signed binary doesn't trigger SmartScreen/Gatekeeper warnings.
 
-- [x] **Auto-update** (§17 Phase 9)
+- [ ] **Auto-update** (§17 Phase 9)
   - **Short:** Tauri built-in updater for seamless app updates.
+  - **Detail:** Deferred. Updater dependencies exist, but `tauri.conf.json` has no updater endpoints/public key configuration and the acceptance flow is not operational.
   - **Spec:** §17
   - **Acceptance:** New release auto-downloads and installs on next launch.
 
-- [x] **Telemetry opt-in flow** (§12)
+- [ ] **Telemetry opt-in flow** (§12, §19.9 E5)
   - **Short:** Clear opt-in prompt for anonymous crash telemetry; respects user choice.
-  - **Detail:** Adding setting `crash_telemetry_opt_in` (boolean, default off/unset). `db::purge_stale_crash_telemetry` (defined but previously uncalled) now runs at startup inside `spawn_blocking` in `lib.rs` `.setup()` — it is local data hygiene (90-day / count<2 retention), independent of opt-in. `Settings.tsx` adds a "Crash Telemetry" toggle card; `App.tsx` shows a one-time opt-in prompt only while the setting is unset (`null`), with "Allow" (true) / "Not now" (false) — once answered it never reappears. No upload endpoint exists yet (separate "anonymous crash telemetry aggregation" backlog item); opting out disables all future sharing.
+  - **Detail:** Deferred/removed from the active v1 UI by §19.9 E5. Local crash-data retention remains, but the opt-in prompt/toggle and upload path are not active.
   - **Spec:** §12
   - **Acceptance:** User is prompted once; saying no disables all telemetry.
 
-- [x] **Localization (i18n)** (§17 Phase 9)
+- [ ] **Localization (i18n)** (§17 Phase 9)
   - **Short:** Extract all UI strings into a resource bundle; add language selector.
+  - **Detail:** Deferred post-v1. `desktop/src/i18n/index.ts` and the language selector are currently commented out.
   - **Spec:** §17
   - **Acceptance:** App renders in at least one non-English language.
 
-- [x] **Automated test suite** (§18.1)
+- [~] **Automated test suite** (§18.1)
   - **Short:** Add unit tests, integration tests, and end-to-end tests.
-  - **Detail:** Spec explicitly notes "No automated tests are defined." Add: (a) Rust unit tests for hash verification, profile mutation, pair normalization (2 tests exist), (b) Python tests for compiler validation, (c) Playwright or Cypress E2E for browse/launch flows.
+  - **Detail:** Rust coverage (499 passing workspace tests), Python unit/integration suites, and 21 passing mocked Playwright tests exist. Remaining acceptance gaps: the compiler suite currently has 3 failures and 10 errors, and a native E2E instance-create-and-launch run has not been demonstrated.
   - **Spec:** §18.1
   - **Acceptance:** `cargo test` and `pytest` pass; E2E test creates an instance and launches.
 
@@ -403,66 +407,88 @@ Tracking packages A1 through D5 from `Agora Desktop Upgrade.md`. Packages are co
 
 ### Release B — Desktop Application Infrastructure
 
-- [x] **B1** — Typed destination and history model
+- [~] **B1** — Typed destination and history model (navigation/history implemented; explicit recoverable not-found handling for invalid entity IDs remains)
 - [x] **B2** — Canonical launch and process controller
-- [x] **B3** — Typed settings access and settings decomposition
+- [~] **B3** — Typed settings access and settings decomposition (launcher Browse/Auto-detect/Test actions and persistent per-section save errors remain)
 - [x] **B4** — Accessible dialogs, notifications, and sidebar
 - [x] **B5** — Critical integration-test matrix
 
 ### Release C — Canonical Safe-Install Infrastructure
 
 - [x] **C0** — Install-transaction architecture ✅ (Design in MASTER_SPEC.md §19.13.3, core types implemented)
-- [ ] **C1** — Read-only install-plan contract
-- [ ] **C2** — Transactional install execution
-- [ ] **C3** — One frontend install flow
-- [ ] **C4** — Safe batch updates
+- [~] **C1** — Read-only install-plan contract (resolver/fingerprint implemented; migration gate and complete acceptance remain)
+- [~] **C2** — Transactional install execution (pipeline exists; legacy pack-import install paths still bypass it)
+- [~] **C3** — One frontend install flow (`InstallFlow` exists; legacy `ModDetail` and pack-import paths remain)
+- [~] **C4** — Safe batch updates (detection/core types exist; complete transactional batch-update UX remains)
 
 ### Release D — Product Differentiation and UX Coherence
 
-- [ ] **D1** — Action-oriented Home and instance-aware discovery
-- [ ] **D2** — Last-known-good recovery and reproducibility model (Sol architect)
-- [ ] **D3** — Last-known-good user flow
-- [ ] **D4** — Explainable Crash Doctor
-- [ ] **D5** — Reproducible sharing and drift detection
+- [~] **D1** — Action-oriented Home and instance-aware discovery (partial Home/discovery implementation)
+- [~] **D2** — Last-known-good recovery and reproducibility model (architecture/core model implemented; final integration validation pending)
+- [~] **D3** — Last-known-good user flow (snapshot/LKG integration exists; complete one-click recovery acceptance pending)
+- [~] **D4** — Explainable Crash Doctor (deterministic investigation exists; fully reversible, navigation-safe flow pending)
+- [~] **D5** — Reproducible sharing and drift detection (lockfile/drift foundations exist; exact end-to-end reproduction and repair acceptance pending)
 
 ---
 
 ### Health-check follow-ups (post incompatibility/dependency bug fix)
 
-- [ ] **HF1** — Deduplicate the desktop JAR parser against `agora_core::jar_metadata`
+- [x] **HF1** — Deduplicate the desktop JAR parser against `agora_core::jar_metadata` ✅
   - The pre-launch health check's false-positive incompatibility/blocker bug was
     fixed in the **core** parser (`crates/agora-core/src/jar_metadata.rs`) — Forge
     dependency blocks now read the inner `modId` (not the section header, which
     caused self-conflicts), Fabric `breaks`/`conflicts` carry severity + version
     ranges, NeoForge `neoforge.mods.toml` is parsed, `mandatory=false` → optional,
     and `forge`/`neoforge` are ignored as loader deps.
-  - A **duplicate, still-buggy** copy lives in
-    `desktop/src-tauri/src/crash_investigator.rs::parse_jar_metadata`. It feeds the
-    install-plan path (`get_install_plan` → `build_install_plan`) and persists
-    `InstalledMod.incompatible_deps`. Health does NOT use it (it re-parses via
-    core), so the reported false-positive blocker issue is resolved, but:
-    Forge mods can still produce false `MissingRequiredDependency` entries in
-    install plans, and persisted `incompatible_deps` lists remain stale-wrong.
-  - Fix: make `crash_investigator::parse_jar_metadata` delegate to
-    `agora_core::jar_metadata::parse_jar_metadata` and add
-    `From<JarDeps> for JarMetadata` (drop the structured decls; keep the flat
-    list). Remove the now-dead `extract_fabric_deps`/`extract_forge_deps`/
-    `flush_forge`/`DEPENDENCY_IGNORE_LIST` copies. Update the Forge test fixture
-    at `crash_investigator.rs::~1762` whose `mods.toml` had no inner `modId`
-    (it asserted the old buggy header-as-dep behavior).
+  - The **duplicate, still-buggy** copy that lived in
+    `desktop/src-tauri/src/crash_investigator.rs::parse_jar_metadata` has been
+    **deleted**. All callers (`modrinth_raw.rs`, `mod_install.rs`, `commands.rs`,
+    internal `parse_jar_packages`) now call
+    `agora_core::jar_metadata::parse_jar_metadata` directly. The
+    `impl From<JarMetadata> for JarDeps` bridge in
+    `desktop/src-tauri/src/dependency_ops.rs` is gone;
+    `build_install_plan` now accepts `&JarDeps` directly. Six duplicate tests in
+    `crash_investigator.rs` (sections E–J) that asserted the legacy buggy
+    Forge header-as-dep behavior were removed (the core parser has comprehensive
+    tests for these cases).
 
-- [ ] **HF2** — Implement real version-range matching for JAR incompatibilities
-  - Today: only `is_unconditional()` (`*`/empty/[,)) is matched; conditional
-    Fabric predicates (`<2.0`, `>=1.0 <2.0`) and Forge Maven ranges
-    (`[1.0,2.0)`) are treated as unverified → warning (never blocker).
-  - Need: Fabric predicate grammar (space=AND, array=OR) + Forge Maven range
-    grammar. Requires a `mod_version` field on `JarDeps` (Fabric `version`;
-    Forge `${file.jarVersion}` → `MANIFEST.MF` `Implementation-Version`).
-    Fabric versions are frequently non-SemVer (e.g. `MC1.20.1-3.2.1-build.42`),
-    so a lenient comparator is required. Until then, curated `known_conflicts`
-    remain the authoritative hard-blocker source.
+- [x] **HF2** — Real version-range matching for JAR incompatibilities ✅
+  - New module `crates/agora-core/src/version_match.rs`:
+    - `compare_versions()` — lenient non-SemVer comparator; splits on
+      `.`, `-`, `+`, `_`; numeric segments compare numerically (empty = 0,
+      so `1.0.0` == `1.0`); non-numeric > numeric; case-insensitive
+      lexicographic fallback for alphabetic segments.
+    - `fabric_predicate_matches()` — Fabric predicate grammar: space-separated
+      sub-predicates are AND-joined; recognizes `>=`, `<=`, `>`, `<`, `=`,
+      `~` (treated as `>=`), `*`; bare version = exact match.
+    - `fabric_ranges_match()` — OR semantics across the array of predicate
+      entries; empty list = unconditional (any version).
+    - `maven_range_matches()` — Forge Maven range grammar: `[a,b)`,
+      `[a,b]`, `(a,b)`, `(a,b]`, `[a,]`, `[a,)`, `(,b]`, `[a]` (exact),
+      and bare version (treated as `>=` minimum).
+    - `evaluate_version_match()` — unified entry point returning
+      `Matched` / `NotMatched` / `Unconditional`, switching on
+      `IncompatibilitySource::is_fabric_grammar()`.
+  - `JarDeps` gained `mod_version: Option<String>` (`#[serde(default)]`,
+    not persisted to `instance_manifest.json`; re-parsed fresh by health).
+    The parser populates it from: Fabric `fabric.mod.json::version`,
+    Quilt `quilt_loader.version`, Forge `mods.toml::version=` (literal
+    value used directly), `MANIFEST.MF::Implementation-Version`
+    (resolved when the TOML used `${file.jarVersion}`).
+  - `health.rs` Step 6 policy updated: hard incompat now consults
+    `evaluate_version_match()`. `Matched` or `Unconditional` → blocker;
+    `NotMatched` → informational warning, NOT a blocker. Soft incompat
+    (Fabric `conflicts`, NeoForge `discouraged`, legacy backfill) remains
+    a warning, never a blocker. When the target mod has no
+    machine-readable version, an unconditional declaration still blocks
+    (preserving the safety default); a conditional one warns.
 
-- [ ] **HF3** — Add `quilt.mod.json` parsing (`quilt_loader.breaks`/`.depends`)
-  - Deferred: Quilt-only mods (no `fabric.mod.json`) currently parse to
-    `UnknownMod` warning (no false-positive blocker). Reuse
-    `IncompatibilityDecl` + add `QuiltBreaks` to `IncompatibilitySource`.
+- [x] **HF3** — `quilt.mod.json` parsing (`quilt_loader.breaks`/`.depends`) ✅
+  - `IncompatibilitySource` gained `QuiltBreaks` (hard) and `QuiltConflicts`
+    (soft); the new `is_fabric_grammar()` helper groups them with Fabric,
+    since Quilt uses the same predicate syntax.
+  - `jar_metadata.rs` parses `quilt.mod.json`, extracting `quilt_loader.id`
+    (→ `mod_jar_id`), `quilt_loader.version` (→ `mod_version`), and the
+    `depends` / `breaks` / `conflicts` sections through the existing
+    Fabric `extract_fabric_deps` helper (which already handles object /
+    array / string forms). Quilt-only mods are no longer `UnknownMod`.

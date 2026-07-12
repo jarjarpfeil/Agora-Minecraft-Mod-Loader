@@ -1,8 +1,8 @@
-﻿use crate::error::{LauncherError, LauncherResult};
+use crate::error::{LauncherError, LauncherResult};
 
 pub use agora_core::auth::{
-    start_device_flow, poll_device_flow, get_github_user,
-    AGORA_OAUTH_CLIENT_ID, DeviceFlowResponse, GithubProfile,
+    get_github_user, poll_device_flow, start_device_flow, DeviceFlowResponse, GithubProfile,
+    AGORA_OAUTH_CLIENT_ID,
 };
 
 pub fn log_line(line: &str) {
@@ -41,4 +41,3 @@ pub async fn get_validated_github_profile<R: tauri::Runtime>(
         Err(e) => Err(e),
     }
 }
-

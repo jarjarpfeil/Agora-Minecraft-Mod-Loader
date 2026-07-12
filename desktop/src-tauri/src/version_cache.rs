@@ -74,10 +74,7 @@ pub async fn extend_versions(
 ) -> Option<usize> {
     let mut c = cache.write().await;
     if let Some(ref mut entry) = c.entry {
-        if entry.item_id == item_id
-            && entry.mc_version == mc_version
-            && entry.loader == loader
-        {
+        if entry.item_id == item_id && entry.mc_version == mc_version && entry.loader == loader {
             entry.versions.append(&mut more);
             // Re-sort so compatibles stay on top after new data arrives
             entry.versions.sort_by(|a, b| {
@@ -113,10 +110,7 @@ pub async fn get_page(
 ) -> Option<ModVersionPage> {
     let c = cache.read().await;
     if let Some(ref entry) = c.entry {
-        if entry.item_id == item_id
-            && entry.mc_version == mc_version
-            && entry.loader == loader
-        {
+        if entry.item_id == item_id && entry.mc_version == mc_version && entry.loader == loader {
             let total = entry.versions.len();
             let start = page * VERSION_PAGE_SIZE;
             let end = std::cmp::min(start + VERSION_PAGE_SIZE, total);
@@ -152,10 +146,7 @@ pub async fn get_entry(
 ) -> Option<VersionListEntry> {
     let c = cache.read().await;
     if let Some(ref entry) = c.entry {
-        if entry.item_id == item_id
-            && entry.mc_version == mc_version
-            && entry.loader == loader
-        {
+        if entry.item_id == item_id && entry.mc_version == mc_version && entry.loader == loader {
             return Some(entry.clone());
         }
     }

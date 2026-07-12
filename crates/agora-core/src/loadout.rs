@@ -224,6 +224,7 @@ mod tests {
                 depends_on: Vec::new(),
                 optional_deps: Vec::new(),
                 incompatible_deps: Vec::new(),
+                provided_mod_ids: Vec::new(),
                 enabled: true,
                 content_type: "mod".to_string(),
             })
@@ -416,6 +417,7 @@ mod tests {
             depends_on: Vec::new(),
             optional_deps: Vec::new(),
             incompatible_deps: Vec::new(),
+            provided_mod_ids: Vec::new(),
             enabled: true,
             content_type: "shader".to_string(),
         });
