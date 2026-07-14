@@ -1,11 +1,10 @@
 use crate::models::InstanceRow;
 use crate::paths;
 use rusqlite::Connection;
-use serde::Serialize;
 
 /// Expected schema version for the mutable local SQLite database.
 /// Migrations are applied sequentially on startup.
-pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 3;
+pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 4;
 
 /// Open a connection to the mutable local state database, creating it if needed.
 // Re-exported from agora-core for desktop-internal callers.
@@ -76,8 +75,9 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
         "INSERT INTO user_instances (
              instance_id, name, minecraft_version, loader, loader_version,
              is_modpack, is_locked, last_launched_at,
-             jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at,
+             java_path, java_incompatible_override
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(instance_id) DO UPDATE SET
              name = excluded.name,
              minecraft_version = excluded.minecraft_version,
@@ -89,7 +89,9 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
              jvm_memory_mb = excluded.jvm_memory_mb,
              jvm_gc = excluded.jvm_gc,
              jvm_custom_args = excluded.jvm_custom_args,
-             jvm_always_pre_touch = excluded.jvm_always_pre_touch",
+             jvm_always_pre_touch = excluded.jvm_always_pre_touch,
+             java_path = excluded.java_path,
+             java_incompatible_override = excluded.java_incompatible_override",
         rusqlite::params![
             row.instance_id,
             row.name,
@@ -104,7 +106,23 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
             row.jvm_custom_args,
             row.jvm_always_pre_touch as i64,
             row.created_at,
+            row.java_path,
+            row.java_incompatible_override as i64,
         ],
+    )?;
+    Ok(())
+}
+
+/// Update Java path and incompatible override for an instance.
+pub fn update_instance_java(
+    conn: &Connection,
+    instance_id: &str,
+    java_path: Option<&str>,
+    allow_incompatible: bool,
+) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE user_instances SET java_path = ?1, java_incompatible_override = ?2 WHERE instance_id = ?3",
+        rusqlite::params![java_path, allow_incompatible as i64, instance_id],
     )?;
     Ok(())
 }
@@ -123,7 +141,8 @@ pub fn list_instances(conn: &Connection) -> anyhow::Result<Vec<InstanceRow>> {
     let mut stmt = conn.prepare(
         "SELECT instance_id, name, minecraft_version, loader, loader_version,
                 is_modpack, is_locked, last_launched_at,
-                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at
+                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at,
+                java_path, java_incompatible_override
          FROM user_instances
          ORDER BY last_launched_at DESC NULLS LAST, created_at DESC",
     )?;
@@ -140,7 +159,8 @@ pub fn get_instance(conn: &Connection, instance_id: &str) -> anyhow::Result<Opti
     let mut stmt = conn.prepare(
         "SELECT instance_id, name, minecraft_version, loader, loader_version,
                 is_modpack, is_locked, last_launched_at,
-                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at
+                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at,
+                java_path, java_incompatible_override
          FROM user_instances
          WHERE instance_id = ?1",
     )?;
@@ -430,5 +450,7 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstanceRow> {
         jvm_custom_args: row.get(10)?,
         jvm_always_pre_touch: row.get::<_, i64>(11)? != 0,
         created_at: row.get(12)?,
+        java_path: row.get(13)?,
+        java_incompatible_override: row.get::<_, i64>(14)? != 0,
     })
 }

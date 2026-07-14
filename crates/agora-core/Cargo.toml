@@ -38,6 +38,8 @@ base64 = { workspace = true }
 uuid = { workspace = true }
 sysinfo = { workspace = true }
 rand = { workspace = true }
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 tempfile = "3"

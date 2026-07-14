@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import {
+  cancelJavaRuntime,
   checkInstanceCrash,
   checkInstanceUpdates,
   createInstance,
@@ -13,10 +14,12 @@ import {
   formatError,
   type CreateInstanceRequest,
   type InstanceRow,
-  type LoaderVersionSummary,
-  type UpdateInfo,
+  type JavaRuntimeProgressEvent,
   type LauncherAction,
+  type LoaderVersionSummary,
+  type RecoverableJavaIssue,
   type RecoverableProfileIssue,
+  type UpdateInfo,
 } from '../lib/tauri';
 import type { InstallIntent } from '../lib/installFlow';
 import { type ProcessState } from '../lib/useProcessController';
@@ -177,6 +180,7 @@ export function Instances({
             const isLaunchBusy = processState.phase === 'launching' || processState.phase === 'checking-health';
             const isCurrentLaunchBusy = isLaunchBusy && processState.instanceId === instance.instance_id;
 
+            const isCurrentThisInstance = processState.instanceId === instance.instance_id;
             const instanceLogs = processLogs.filter((l) => l.instance_id === instance.instance_id);
 
             return (
@@ -193,7 +197,9 @@ export function Instances({
                 onKill={onKillProcess}
                 controllerError={processState.phase === 'failed' ? processState.error : null}
                 controllerRecoverableIssue={isCurrentFailed ? processState.recoverableIssue : null}
+                controllerRecoverableJavaIssue={isCurrentThisInstance ? processState.recoverableJavaIssue : null}
                 controllerAvailableActions={isCurrentFailed ? processState.availableActions : []}
+                runtimeProgress={isCurrentThisInstance ? processState.runtimeProgress : null}
                 onDismissError={onClearError}
                 logs={instanceLogs}
                 onRepairAndRetry={onRepairAndRetry}
@@ -261,7 +267,9 @@ function InstanceCard({
   onKill,
   controllerError,
   controllerRecoverableIssue,
+  controllerRecoverableJavaIssue,
   controllerAvailableActions,
+  runtimeProgress,
   onDismissError,
   logs,
   onRepairAndRetry,
@@ -279,7 +287,9 @@ function InstanceCard({
   onKill: () => void;
   controllerError: string | null;
   controllerRecoverableIssue: RecoverableProfileIssue | null;
+  controllerRecoverableJavaIssue: RecoverableJavaIssue | null;
   controllerAvailableActions: LauncherAction[];
+  runtimeProgress: JavaRuntimeProgressEvent | null;
   onDismissError: () => void;
   logs?: import('../lib/useProcessController').LogLine[];
   onRepairAndRetry: () => Promise<void>;
@@ -288,9 +298,20 @@ function InstanceCard({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
+  const [cancellingJava, setCancellingJava] = useState(false);
 
   const displayError = error ?? controllerError;
-  const effectiveBusy = launchBusy || repairBusy || repairing;
+  const effectiveBusy = launchBusy || repairBusy || repairing || cancellingJava;
+
+  const handleCancelJavaProvisioning = async () => {
+    if (!runtimeProgress) return;
+    setCancellingJava(true);
+    try {
+      await cancelJavaRuntime(`java-runtime-${instance.instance_id}-${runtimeProgress.major}`);
+    } catch {
+      // Operation may already be complete — ignore
+    }
+  };
 
   const remove = async () => {
     if (!confirm(`Delete instance "${instance.name}"? This moves the folder to trash.`)) return;
@@ -427,8 +448,81 @@ function InstanceCard({
         </div>
       )}
 
+      {/* ── Java runtime provisioning panel ── */}
+      {runtimeProgress && !controllerRecoverableJavaIssue && (
+        <div className="mt-3 rounded-lg border border-blue-500 bg-blue-500/10 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                Provisioning Java {runtimeProgress.major}…
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                {runtimeProgress.message}
+              </p>
+            </div>
+            <button
+              onClick={handleCancelJavaProvisioning}
+              disabled={cancellingJava}
+              className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50 shrink-0"
+            >
+              {cancellingJava ? 'Cancelling…' : 'Cancel'}
+            </button>
+          </div>
+          <div className="h-1.5 bg-background rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500 rounded-full transition-all duration-300"
+              style={{ width: `${Math.min(runtimeProgress.percent, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Java runtime cancelled panel ── */}
+      {controllerRecoverableJavaIssue && controllerAvailableActions.includes('cancel') && !controllerAvailableActions.includes('download_runtime') && !controllerAvailableActions.includes('choose_java') && !controllerAvailableActions.includes('open_privacy') && (
+        <div className="mt-3 rounded-lg border border-amber-500 bg-amber-500/10 p-3">
+          <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+            Java provisioning cancelled
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Java {controllerRecoverableJavaIssue.major} runtime download was cancelled.
+          </p>
+        </div>
+      )}
+
+      {/* ── Java runtime download disabled panel ── */}
+      {controllerRecoverableJavaIssue && controllerAvailableActions.includes('open_privacy') && (
+        <div className="mt-3 rounded-lg border border-amber-500 bg-amber-500/10 p-3 space-y-2">
+          <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+            Java downloads are disabled
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Java {controllerRecoverableJavaIssue.major} runtime download is disabled in Privacy settings.
+            Enable "Java runtime downloads" or choose a local Java installation.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {controllerAvailableActions.includes('choose_java') && (
+              <button
+                onClick={onDismissError}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Choose Java…
+              </button>
+            )}
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('agora-navigate', { detail: 'settings' }));
+                onDismissError();
+              }}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+            >
+              Open Privacy Settings
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Plain error display (fallback, non-recoverable) ── */}
-      {displayError && !controllerRecoverableIssue && (
+      {displayError && !controllerRecoverableIssue && !controllerRecoverableJavaIssue && (
         <div className="mt-2 flex items-center gap-2">
           <p className="text-xs text-destructive flex-1">{displayError}</p>
           {controllerError && (

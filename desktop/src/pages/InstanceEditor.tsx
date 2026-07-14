@@ -8,13 +8,20 @@ import {
   enableInstanceMod,
   disableInstanceMod,
   exportInstancePack,
-  pickOpenFile,
+  formatError,
   importInstancePack,
+  inspectJavaExecutable,
+  pickOpenFile,
+  importInstance,
+  exportLockfile,
+  verifyLockfile,
+  repairLockfile,
+  importLockfile,
+  updateInstanceJava,
   browseItems,
   listCategories,
   listModVersions,
   listPackMods,
-  formatError,
   unlockInstance,
   lockInstance,
   renameInstance,
@@ -28,12 +35,8 @@ import {
   createLoadoutProfile,
   applyLoadoutProfile,
   deleteLoadoutProfile,
-  importInstance,
-  exportLockfile,
-  verifyLockfile,
-  repairLockfile,
-  importLockfile,
   type InstanceDetail,
+  type JavaRuntimeSummary,
   type RegistryItem,
   type CategoryInfo,
   type ModVersionCandidate,
@@ -82,12 +85,19 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState<string | null>(null);
 
   // Import state (Phase 6)
-  const [symlinkSaves, setSymlinkSaves] = useState(true);
   const [importBusy, setImportBusy] = useState(false);
+  const [symlinkSaves, setSymlinkSaves] = useState(true);
   const [lockfileText, setLockfileText] = useState('');
   const [lockfileBusy, setLockfileBusy] = useState<'export' | 'verify' | 'repair' | 'clone' | 'copy' | null>(null);
   const [lockfileReport, setLockfileReport] = useState<LockfileDriftReport | null>(null);
   const [lockfileNotice, setLockfileNotice] = useState<string | null>(null);
+
+  // Java & Args state
+  const [instanceJavaPath, setInstanceJavaPath] = useState('');
+  const [instanceJavaInspected, setInstanceJavaInspected] = useState<JavaRuntimeSummary | null>(null);
+  const [instanceJavaInspectError, setInstanceJavaInspectError] = useState<string | null>(null);
+  const [instanceJavaAllowOverride, setInstanceJavaAllowOverride] = useState(false);
+  const [instanceJavaSaving, setInstanceJavaSaving] = useState(false);
 
 
 
@@ -147,6 +157,8 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
         const result = await getInstanceDetail(instanceId);
         if (!cancelled) {
           setDetail(result);
+          setInstanceJavaPath(result?.row?.java_path ?? '');
+          setInstanceJavaAllowOverride(result?.row?.java_incompatible_override ?? false);
           if (!result) setError('Instance not found.');
         }
       } catch (e) {
@@ -1843,11 +1855,146 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor }: { i
       )}
 
       {activeTab === 'java-args' && (
-        <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <section className="rounded-xl border border-border bg-card p-4 space-y-4">
           <h3 className="font-semibold text-sm">Java & Args</h3>
           <p className="text-xs text-muted-foreground">
-            Configure per-instance Java path, JVM arguments, and GC profile. (Full GC architect UI coming soon — for now, settings are controlled via the Settings page.)
+            Configure per-instance Java runtime path. By default Agora auto-selects the exact
+            major version required by the instance's Minecraft version. Override only when you
+            need a specific Java distribution for this instance.
           </p>
+
+          {/* Per-instance Java path */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Java executable path</label>
+            <p className="text-xs text-muted-foreground">
+              Leave empty to use the global default (from Settings) or auto-detection.
+            </p>
+            <div className="flex gap-2">
+              <input
+                value={instanceJavaPath}
+                onChange={(e) => {
+                  setInstanceJavaPath(e.target.value);
+                  setInstanceJavaInspected(null);
+                  setInstanceJavaInspectError(null);
+                }}
+                placeholder="Auto (global default)"
+                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              />
+              <button
+                onClick={async () => {
+                  setInstanceJavaInspectError(null);
+                  setInstanceJavaInspected(null);
+                  try {
+                    const chosen = await pickOpenFile('Select Java executable', ['exe', 'java']);
+                    if (chosen) {
+                      setInstanceJavaPath(chosen);
+                      const info = await inspectJavaExecutable(chosen);
+                      setInstanceJavaInspected(info);
+                    }
+                  } catch (e) {
+                    setInstanceJavaInspectError(formatError(e));
+                  }
+                }}
+                className="rounded-lg border border-input px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                Browse…
+              </button>
+            </div>
+
+            {/* Inspect result */}
+            {instanceJavaInspected && (
+              <div className="rounded-lg bg-muted px-3 py-2 space-y-1">
+                <p className="text-xs text-green-600 dark:text-green-400">Java {instanceJavaInspected.version} detected</p>
+                <p className="text-xs text-muted-foreground">
+                  {instanceJavaInspected.version_string} · {instanceJavaInspected.arch ?? 'unknown arch'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Source: <span className="font-medium">{instanceJavaInspected.source}</span>
+                </p>
+              </div>
+            )}
+            {instanceJavaInspectError && (
+              <p className="text-xs text-destructive">{instanceJavaInspectError}</p>
+            )}
+
+            {/* Allow incompatible override (Advanced Mode only) */}
+            {advancedMode && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={instanceJavaAllowOverride}
+                    onChange={(e) => setInstanceJavaAllowOverride(e.target.checked)}
+                    className="h-4 w-4 accent-brand-600"
+                  />
+                  <span className="text-sm">
+                    Allow this Java major even when Minecraft requests a different major
+                  </span>
+                </label>
+                {instanceJavaAllowOverride && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">⚠ Compatibility warning</p>
+                    <p className="text-xs text-amber-600/80 dark:text-amber-400/80 mt-0.5">
+                      Using an incompatible Java version may cause crashes or unexpected behavior.
+                      Only enable this if you understand the risks and have verified that the
+                      selected Java runtime works with this Minecraft version.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Save / Clear buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setInstanceJavaSaving(true);
+                  setInstanceJavaInspectError(null);
+                  try {
+                    // Validate path if non-empty
+                    if (instanceJavaPath.trim()) {
+                      await inspectJavaExecutable(instanceJavaPath.trim());
+                    }
+                    await updateInstanceJava(
+                      instanceId,
+                      instanceJavaPath.trim() || null,
+                      instanceJavaAllowOverride,
+                    );
+                    setStatus('Java path saved.');
+                    // Refresh to update the displayed detail
+                    const fresh = await getInstanceDetail(instanceId);
+                    setDetail(fresh);
+                  } catch (e) {
+                    setInstanceJavaInspectError(formatError(e));
+                  } finally {
+                    setInstanceJavaSaving(false);
+                  }
+                }}
+                disabled={instanceJavaSaving}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {instanceJavaSaving ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={async () => {
+                  setInstanceJavaPath('');
+                  setInstanceJavaInspected(null);
+                  setInstanceJavaInspectError(null);
+                  try {
+                    await updateInstanceJava(instanceId, null, false);
+                    setStatus('Java path cleared.');
+                    const fresh = await getInstanceDetail(instanceId);
+                    setDetail(fresh);
+                  } catch (e) {
+                    setInstanceJavaInspectError(formatError(e));
+                  }
+                }}
+                className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
         </section>
       )}
 

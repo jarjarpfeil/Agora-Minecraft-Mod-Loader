@@ -176,9 +176,10 @@ fn build_plan_in_dirs(
         base_version_id: "1.21".into(),
         loader: None,
         java: launch_planner::ResolvedJava {
-            path: PathBuf::from("java"),
+            path: std::path::PathBuf::from("java"),
             major_version: 21,
             required_major_version: 21,
+            incompatible_override: false,
         },
         version,
         game_dir,
@@ -348,6 +349,51 @@ fn validate_fails_when_java_too_old() {
     let tmp = tempfile::TempDir::new().unwrap();
     let (mut plan, _, _) = build_vanilla_plan(&tmp);
     plan.resolved.java.major_version = 8; // required is 21
+    let err = launch_planner::validate(&plan).unwrap_err();
+    assert!(matches!(
+        err,
+        agora_core::error::LauncherError::JavaIncompatible
+    ));
+}
+
+#[test]
+fn validate_fails_when_java_major_too_high_without_override() {
+    // Default policy: exact major match required.
+    // Java 21 selected for a Java 17 instance must be rejected even though
+    // 21 >= 17, because modded Minecraft depends on exact-major behaviour.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let (mut plan, _, _) = build_vanilla_plan(&tmp);
+    plan.resolved.java.required_major_version = 17;
+    plan.resolved.java.major_version = 21;
+    plan.resolved.java.incompatible_override = false;
+    let err = launch_planner::validate(&plan).unwrap_err();
+    assert!(matches!(
+        err,
+        agora_core::error::LauncherError::JavaIncompatible
+    ));
+}
+
+#[test]
+fn validate_allows_higher_java_with_explicit_override() {
+    // Override policy: user explicitly accepted a higher Java.
+    // Java 21 for a Java 17 instance should pass when override is set.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let (mut plan, _, _) = build_vanilla_plan(&tmp);
+    plan.resolved.java.required_major_version = 17;
+    plan.resolved.java.major_version = 21;
+    plan.resolved.java.incompatible_override = true;
+    launch_planner::validate(&plan).unwrap();
+}
+
+#[test]
+fn validate_rejects_lower_java_even_with_override() {
+    // Override is for using a *newer* Java, not an insufficiently old one.
+    // Java 8 for a Java 17 instance must still be rejected with override.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let (mut plan, _, _) = build_vanilla_plan(&tmp);
+    plan.resolved.java.required_major_version = 17;
+    plan.resolved.java.major_version = 8;
+    plan.resolved.java.incompatible_override = true;
     let err = launch_planner::validate(&plan).unwrap_err();
     assert!(matches!(
         err,
@@ -1384,8 +1430,11 @@ fn prepare_offline_fixtures(
             path: std::path::PathBuf::from("java"),
             version: 21,
             version_string: "21".into(),
+            source: agora_core::java::JavaSource::System,
+            arch: None,
         }],
         network_policy: NetworkPolicy::all_disabled(),
+        allow_incompatible_java_override: false,
         minecraft_dir: None,
         receipts_root: None,
     };
@@ -1471,8 +1520,11 @@ fn disabled_resolve_request(tmp: &tempfile::TempDir) -> launch_planner::ResolveR
             path: std::path::PathBuf::from("java"),
             version: 21,
             version_string: "21".into(),
+            source: agora_core::java::JavaSource::System,
+            arch: None,
         }],
         network_policy: NetworkPolicy::all_disabled(),
+        allow_incompatible_java_override: false,
         minecraft_dir: None,
         receipts_root: None,
     }
@@ -1568,6 +1620,7 @@ async fn materialize_denied_when_client_jar_cache_miss_and_content_disabled() {
             path: std::path::PathBuf::from("java"),
             major_version: 21,
             required_major_version: 21,
+            incompatible_override: false,
         },
         version: launch::VersionInfo {
             id: "1.21".into(),
@@ -1661,10 +1714,13 @@ async fn stale_manifest_falls_back_on_transport_error() {
             path: std::path::PathBuf::from("java"),
             version: 21,
             version_string: "21".into(),
+            source: agora_core::java::JavaSource::System,
+            arch: None,
         }],
         // Metadata ENABLED so it attempts refresh, but the client has no
         // route to the manifest URL -> transport error -> fall back.
         network_policy: NetworkPolicy::all_enabled(),
+        allow_incompatible_java_override: false,
         minecraft_dir: None,
         receipts_root: None,
     };
@@ -1704,6 +1760,7 @@ async fn materialize_rejects_tampered_client_jar_offline() {
             path: std::path::PathBuf::from("java"),
             major_version: 21,
             required_major_version: 21,
+            incompatible_override: false,
         },
         version: launch::VersionInfo {
             id: "1.21".into(),

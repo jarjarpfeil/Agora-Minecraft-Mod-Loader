@@ -32,6 +32,104 @@ test.describe('parseLauncherError structured parsing', () => {
   });
 });
 
+test.describe('Java runtime error parsing', () => {
+  test('parses ERR_JAVA_RUNTIME_MISSING details and actions', () => {
+    const result = parseLauncherError({
+      code: 'ERR_JAVA_RUNTIME_MISSING',
+      message: 'No Java 21 runtime found (component: java-runtime-gamma). Install a compatible JDK/JRE.',
+      details: {
+        major: 21,
+        component: 'java-runtime-gamma',
+        suggested_actions: ['download_runtime', 'choose_java', 'cancel'],
+      },
+      suggested_action: null,
+    });
+
+    expect(result.code).toBe('ERR_JAVA_RUNTIME_MISSING');
+    expect(result.recoverableJavaIssue?.major).toBe(21);
+    expect(result.recoverableJavaIssue?.component).toBe('java-runtime-gamma');
+    expect(result.availableActions).toEqual(['download_runtime', 'choose_java', 'cancel']);
+  });
+
+  test('parses ERR_JAVA_RUNTIME_CATALOG_MISSING details and actions', () => {
+    const result = parseLauncherError({
+      code: 'ERR_JAVA_RUNTIME_CATALOG_MISSING',
+      message: 'No catalog entry for Java 21 on linux/x64. This platform is not supported.',
+      details: {
+        major: 21,
+        os: 'linux',
+        arch: 'x64',
+        suggested_actions: ['choose_java', 'cancel'],
+      },
+      suggested_action: null,
+    });
+
+    expect(result.code).toBe('ERR_JAVA_RUNTIME_CATALOG_MISSING');
+    expect(result.recoverableJavaIssue?.major).toBe(21);
+    expect(result.recoverableJavaIssue?.os).toBe('linux');
+    expect(result.recoverableJavaIssue?.arch).toBe('x64');
+    expect(result.availableActions).toEqual(['choose_java', 'cancel']);
+  });
+
+  test('parses privacy-blocked Java error with open_privacy action', () => {
+    const result = parseLauncherError({
+      code: 'ERR_JAVA_RUNTIME_MISSING',
+      message: 'Java 21 is required, but runtime downloads are disabled in Privacy settings.',
+      details: {
+        major: 21,
+        suggested_actions: ['choose_java', 'cancel'],
+      },
+      suggested_action: null,
+    });
+
+    expect(result.code).toBe('ERR_JAVA_RUNTIME_MISSING');
+    expect(result.recoverableJavaIssue?.major).toBe(21);
+    expect(result.availableActions).toContain('choose_java');
+    expect(result.availableActions).toContain('cancel');
+  });
+
+  test('generic error has no Java issue', () => {
+    const result = parseLauncherError('Something went wrong');
+    expect(result.recoverableJavaIssue).toBeNull();
+  });
+
+  test('parses ERR_JAVA_RUNTIME_CANCELLED details and actions', () => {
+    const result = parseLauncherError({
+      code: 'ERR_JAVA_RUNTIME_CANCELLED',
+      message: 'Java 21 runtime provisioning was cancelled (component: java-runtime-gamma).',
+      details: {
+        major: 21,
+        component: 'java-runtime-gamma',
+        suggested_actions: ['cancel'],
+      },
+      suggested_action: null,
+    });
+
+    expect(result.code).toBe('ERR_JAVA_RUNTIME_CANCELLED');
+    expect(result.recoverableJavaIssue?.major).toBe(21);
+    expect(result.recoverableJavaIssue?.component).toBe('java-runtime-gamma');
+    expect(result.availableActions).toEqual(['cancel']);
+  });
+
+  test('parses ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED with all three actions', () => {
+    const result = parseLauncherError({
+      code: 'ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED',
+      message: 'Java 21 runtime download is disabled (component: java-runtime-gamma). Enable runtime downloads in Privacy settings or choose a local Java installation.',
+      details: {
+        major: 21,
+        component: 'java-runtime-gamma',
+        suggested_actions: ['choose_java', 'open_privacy', 'cancel'],
+      },
+      suggested_action: null,
+    });
+
+    expect(result.code).toBe('ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED');
+    expect(result.recoverableJavaIssue?.major).toBe(21);
+    expect(result.recoverableJavaIssue?.component).toBe('java-runtime-gamma');
+    expect(result.availableActions).toEqual(['choose_java', 'open_privacy', 'cancel']);
+  });
+});
+
 test.describe('Profile recovery warning panel UI', () => {
   test('shows recovery actions and Dismiss does not relaunch', async ({ page }) => {
     await page.addInitScript(() => {

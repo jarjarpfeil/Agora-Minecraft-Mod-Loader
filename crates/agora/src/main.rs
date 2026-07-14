@@ -8,6 +8,22 @@ impl agora_core::install_pipeline::ProgressReporter for SilentReporter {
     fn report(&self, _event: agora_core::install_pipeline::ProgressEvent) {}
 }
 
+/// A console progress reporter for runtime operations.
+struct ConsoleRuntimeProgress;
+
+impl agora_core::runtime_manager::RuntimeProgress for ConsoleRuntimeProgress {
+    fn on_progress(&self, message: &str, percent: Option<f64>) {
+        if let Some(pct) = percent {
+            eprintln!("[{}%] {}", pct, message);
+        } else {
+            eprintln!("[..] {}", message);
+        }
+    }
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "agora", about = "Agora Minecraft Launcher CLI")]
 struct Cli {
@@ -61,6 +77,10 @@ enum Commands {
         port: u16,
     },
     Sync,
+    Runtime {
+        #[command(subcommand)]
+        action: RuntimeCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -107,6 +127,16 @@ enum AuthCmd {
     Login,
     Status,
     Logout,
+}
+
+#[derive(Subcommand)]
+enum RuntimeCmd {
+    /// List all discovered Java runtimes (managed + Mojang + system).
+    List,
+    /// Ensure a managed Java runtime for the given major version is installed.
+    Ensure { major: u32 },
+    /// Remove unused managed Java runtimes (keep newest per major).
+    RemoveUnused,
 }
 
 fn print_table(columns: &[&str], rows: &[Vec<String>]) {
@@ -830,8 +860,17 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                 std::process::exit(2);
             }
 
-            let java_candidates =
-                tokio::task::spawn_blocking(agora_core::java::detect_installed_jres).await?;
+            let runtimes_root = data_dir.join("runtimes");
+            let java_candidates = tokio::task::spawn_blocking({
+                let rt = runtimes_root.clone();
+                move || {
+                    agora_core::java::detect_java_candidates(
+                        Some(&rt),
+                        agora_core::paths::minecraft_dir().as_deref(),
+                    )
+                }
+            })
+            .await?;
             let loader = if matches!(manifest.loader.as_str(), "" | "vanilla") {
                 None
             } else {
@@ -841,24 +880,102 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                     version_url: String::new(),
                 })
             };
-            let resolved =
+
+            // Read java_runtime_mode from local state
+            let java_runtime_mode: String = if db_path.exists() {
+                let conn = agora_core::db::local_state_connection(&db_path)?;
+                agora_core::db::get_setting(&conn, "java_runtime_mode")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "automatic".to_string())
+            } else {
+                "automatic".to_string()
+            };
+
+            let resolve_result =
                 agora_core::launch_planner::resolve(agora_core::launch_planner::ResolveRequest {
                     instance_id: instance.clone(),
                     base_version_id: manifest.minecraft_version.clone(),
-                    loader,
+                    loader: loader.clone(),
                     game_dir: instance_dir.clone(),
                     assets_dir: data_dir.join("assets"),
                     cache_dir: data_dir.join("launch_cache"),
                     java_override: None,
-                    java_candidates,
-                    network_policy,
+                    java_candidates: java_candidates.clone(),
+                    network_policy: network_policy.clone(),
+                    allow_incompatible_java_override: false,
                     minecraft_dir: agora_core::paths::minecraft_dir(),
                     receipts_root: Some(
                         data_dir.join(agora_core::installed_profile::RECEIPTS_DIR_NAME),
                     ),
                 })
-                .await?;
+                .await;
+
+            let resolved = match resolve_result {
+                Ok(plan) => plan,
+                Err(agora_core::error::LauncherError::JavaRuntimeMissing { major, component }) => {
+                    if java_runtime_mode == "automatic" {
+                        let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+
+                        network_policy
+                            .check(agora_core::network::NetworkCategory::JavaRuntime)
+                            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                        let progress = ConsoleRuntimeProgress;
+                        let rt_root = runtimes_root.clone();
+                        let np_clone = network_policy.clone();
+                        let ensured = tokio::task::spawn_blocking(move || {
+                            agora_core::runtime_manager::ensure_runtime(
+                                &rt_root,
+                                major,
+                                &catalog,
+                                &np_clone,
+                                Some(&progress),
+                            )
+                        })
+                        .await??;
+
+                        let mut fresh_candidates = java_candidates;
+                        fresh_candidates.push(agora_core::java::JavaInstallation {
+                            path: ensured.path,
+                            version: ensured.version,
+                            version_string: ensured.version_string,
+                            source: agora_core::java::JavaSource::Managed,
+                            arch: ensured.arch,
+                        });
+
+                        agora_core::launch_planner::resolve(
+                            agora_core::launch_planner::ResolveRequest {
+                                instance_id: instance.clone(),
+                                base_version_id: manifest.minecraft_version.clone(),
+                                loader,
+                                game_dir: instance_dir.clone(),
+                                assets_dir: data_dir.join("assets"),
+                                cache_dir: data_dir.join("launch_cache"),
+                                java_override: None,
+                                java_candidates: fresh_candidates,
+                                network_policy: network_policy.clone(),
+                                allow_incompatible_java_override: false,
+                                minecraft_dir: agora_core::paths::minecraft_dir(),
+                                receipts_root: Some(
+                                    data_dir.join(agora_core::installed_profile::RECEIPTS_DIR_NAME),
+                                ),
+                            },
+                        )
+                        .await?
+                    } else {
+                        // prompt/manual mode: return clear error
+                        anyhow::bail!(
+                            "Java {major} runtime is required but not found (component: {component}). \
+                             Install Java {major} or run 'agora runtime ensure {major}'."
+                        );
+                    }
+                }
+                Err(e) => return Err(e.into()),
+            };
             let materialized = agora_core::launch_planner::materialize(resolved).await?;
+            let cli_java_path = materialized.resolved.java.path.clone();
             // Clone access_token before moving it into LaunchIdentity, so it
             // is still available for runtime log sanitization.
             let access_token = credentials.access_token.clone();
@@ -930,6 +1047,17 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                 outcome.clone(),
             )
             .map_err(|error| anyhow::anyhow!(error))?;
+            // Mark the managed runtime as successfully used after a success.
+            if outcome == agora_core::lkg::LaunchOutcome::Success {
+                let runtimes_root = data_dir.join("runtimes");
+                if let Err(error) =
+                    agora_core::runtime_manager::mark_successful_use(&runtimes_root, &cli_java_path)
+                {
+                    if !json {
+                        eprintln!("Warning: failed to mark runtime successful use: {error}");
+                    }
+                }
+            }
             if json {
                 println!(
                     "{}",
@@ -1046,6 +1174,115 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                 println!("{}", report.message);
             }
         }
+        Commands::Runtime { action } => match action {
+            RuntimeCmd::List => {
+                let runtimes_root = data_dir.join("runtimes");
+                let minecraft_dir = agora_core::paths::minecraft_dir();
+                let candidates = tokio::task::spawn_blocking(move || {
+                    agora_core::java::detect_java_candidates(
+                        Some(&runtimes_root),
+                        minecraft_dir.as_deref(),
+                    )
+                })
+                .await?;
+
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&candidates)?);
+                } else {
+                    let rows: Vec<Vec<String>> = candidates
+                        .iter()
+                        .map(|j| {
+                            vec![
+                                j.version.to_string(),
+                                j.version_string.clone(),
+                                j.path.to_string_lossy().to_string(),
+                                format!("{:?}", j.source),
+                                j.arch.clone().unwrap_or_default(),
+                            ]
+                        })
+                        .collect();
+                    print_table(&["Major", "Version", "Path", "Source", "Arch"], &rows);
+                }
+            }
+            RuntimeCmd::Ensure { major } => {
+                let runtimes_root = data_dir.join("runtimes");
+                let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+
+                // Read java_runtime_mode from local state
+                let local_state = data_dir.join("local_state.db");
+                let java_runtime_mode: String = if local_state.exists() {
+                    let conn = agora_core::db::local_state_connection(&local_state)?;
+                    agora_core::db::get_setting(&conn, "java_runtime_mode")
+                        .ok()
+                        .flatten()
+                        .and_then(|v| v.as_str().map(|s| s.to_string()))
+                        .unwrap_or_else(|| "automatic".to_string())
+                } else {
+                    "automatic".to_string()
+                };
+
+                if java_runtime_mode != "automatic" {
+                    anyhow::bail!(
+                        "Java runtime mode is '{java_runtime_mode}'. \
+                         Set it to 'automatic' to allow managed provisioning, \
+                         or use a system-installed JRE matching Java {major}."
+                    );
+                }
+
+                // Read network policy
+                let policy = if local_state.exists() {
+                    let conn = agora_core::db::local_state_connection(&local_state)?;
+                    agora_core::network::NetworkPolicy::from_db(&conn)
+                } else {
+                    agora_core::network::NetworkPolicy::all_enabled()
+                };
+
+                policy
+                    .check(agora_core::network::NetworkCategory::JavaRuntime)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                if !json {
+                    println!("Ensuring Java {major} runtime...");
+                }
+
+                let progress = ConsoleRuntimeProgress;
+                let ensured = tokio::task::spawn_blocking(move || {
+                    agora_core::runtime_manager::ensure_runtime(
+                        &runtimes_root,
+                        major,
+                        &catalog,
+                        &policy,
+                        Some(&progress),
+                    )
+                })
+                .await??;
+
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&ensured)?);
+                } else {
+                    println!(
+                        "Java {} runtime ready at {}",
+                        ensured.version,
+                        ensured.path.display()
+                    );
+                }
+            }
+            RuntimeCmd::RemoveUnused => {
+                let runtimes_root = data_dir.join("runtimes");
+                let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+
+                let removed = tokio::task::spawn_blocking(move || {
+                    agora_core::runtime_manager::remove_unused(&runtimes_root, &catalog, &[])
+                })
+                .await??;
+
+                if json {
+                    println!("{}", serde_json::json!({"removed": removed}));
+                } else {
+                    println!("Removed {removed} unused runtime(s).");
+                }
+            }
+        },
     }
 
     Ok(())

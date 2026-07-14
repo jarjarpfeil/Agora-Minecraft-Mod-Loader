@@ -1353,7 +1353,7 @@ async fn handle_connection(
 async fn handle_sse(
     writer: tokio::net::tcp::OwnedWriteHalf,
     store: SessionStore,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> std::io::Result<()> {
     let session_id = generate_session_id();
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);

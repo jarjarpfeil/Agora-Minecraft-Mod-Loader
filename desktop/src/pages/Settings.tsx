@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
+import { listen } from '@tauri-apps/api/event';
 import {
+  cancelJavaRuntime,
   copilotStatus,
   copilotLogout,
   detectMojangLauncher,
+  ensureJavaRuntime,
   formatError,
   getAuthStatus,
   getGithubProfile,
@@ -15,12 +18,15 @@ import {
   githubLogin,
   githubLoginPoll,
   githubLogout,
+  inspectJavaExecutable,
   isAuthExpired,
   listInstances,
+  listJavaRuntimes,
   msaLogin,
   msaGetStatus,
   msaLogout,
   pickOpenFile,
+  removeUnusedJavaRuntimes,
   setMcpApproval,
   startMcpServer,
   stopMcpServer,
@@ -28,7 +34,7 @@ import {
   regenerateMCPToken,
   testLauncherPath,
 } from '../lib/tauri';
-import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, McpStatus, McpTokenData, MsaAccountStatus } from '../lib/tauri';
+import type { CopilotToken, DeviceFlowResponse, GithubProfile, InstanceRow, JavaRuntimeProgressEvent, JavaRuntimeSummary, McpStatus, McpTokenData, MsaAccountStatus } from '../lib/tauri';
 import { Privacy } from './Privacy';
 import { useAdvancedMode } from '../components/AdvancedModeContext';
 import { DeviceFlowPanel } from '../components/DeviceFlowPanel';
@@ -119,6 +125,21 @@ export function Settings() {
   const [msaBusy, setMsaBusy] = useState(false);
 
 
+  // Java Runtime Management state
+  const [javaRuntimeMode, setJavaRuntimeMode] = useState<'automatic' | 'prompt' | 'manual'>('automatic');
+  const [javaRuntimes, setJavaRuntimes] = useState<JavaRuntimeSummary[]>([]);
+  const [javaRuntimesLoading, setJavaRuntimesLoading] = useState(false);
+  const [javaRuntimesError, setJavaRuntimesError] = useState<string | null>(null);
+  const [globalJavaPath, setGlobalJavaPath] = useState('');
+  const [globalJavaPathInspected, setGlobalJavaPathInspected] = useState<string | null>(null);
+  const [globalJavaPathError, setGlobalJavaPathError] = useState<string | null>(null);
+  const [javaDownloadBusy, setJavaDownloadBusy] = useState<number | null>(null);
+  const [javaDownloadProgress, setJavaDownloadProgress] = useState<string | null>(null);
+  const [javaDownloadPercent, setJavaDownloadPercent] = useState<number | null>(null);
+  const [javaCancelling, setJavaCancelling] = useState(false);
+  const [javaRemoveBusy, setJavaRemoveBusy] = useState(false);
+  const [customMajorInput, setCustomMajorInput] = useState('');
+
   // Launcher path action states (Browse, Auto-detect, Test)
   const [launcherPathError, setLauncherPathError] = useState<string | null>(null);
   const [launcherPathSuccess, setLauncherPathSuccess] = useState<string | null>(null);
@@ -155,6 +176,8 @@ export function Settings() {
     setLauncherPath(ts.values.launcherPath as string ?? '');
     setAlwaysPreTouch(ts.values.alwaysPreTouch as boolean ?? true);
     setDirectLaunch((ts.values.launchMode as string) === 'direct');
+    setJavaRuntimeMode((ts.values.javaRuntimeMode as string) as 'automatic' | 'prompt' | 'manual' || 'automatic');
+    setGlobalJavaPath((ts.values.javaPath as string) ?? '');
     setLoading(false);
   }, [ts.loading, ts.values]);
 
@@ -392,6 +415,136 @@ export function Settings() {
       showToast('Launcher path saved.', 'success');
     } catch (e) {
       showToast(formatError(e), 'error');
+    }
+  };
+
+  const refreshJavaRuntimes = useCallback(async () => {
+    setJavaRuntimesLoading(true);
+    setJavaRuntimesError(null);
+    try {
+      const runtimes = await listJavaRuntimes();
+      setJavaRuntimes(runtimes);
+    } catch (e) {
+      setJavaRuntimesError(formatError(e));
+    } finally {
+      setJavaRuntimesLoading(false);
+    }
+  }, []);
+
+  // Listen for java-runtime-progress events in Settings
+  useEffect(() => {
+    const unlisten = listen<JavaRuntimeProgressEvent>(
+      'java-runtime-progress',
+      (event) => {
+        // Only track progress for settings operations (empty instance_id)
+        if (event.payload.instance_id !== '') return;
+        setJavaDownloadPercent(event.payload.percent);
+        setJavaDownloadProgress(event.payload.message);
+        if (event.payload.stage === 'ready') {
+          refreshJavaRuntimes();
+        }
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [refreshJavaRuntimes]);
+
+  const handleJavaRuntimeModeChange = async (mode: 'automatic' | 'prompt' | 'manual') => {
+    setJavaRuntimeMode(mode);
+    try {
+      await ts.update(SETTINGS.javaRuntimeMode, mode);
+    } catch (e) {
+      setJavaRuntimeMode(javaRuntimeMode); // revert
+      showToast(formatError(e), 'error');
+    }
+  };
+
+  const handleGlobalJavaPathBrowse = async () => {
+    setGlobalJavaPathError(null);
+    setGlobalJavaPathInspected(null);
+    try {
+      const chosen = await pickOpenFile('Select Java executable', ['exe', 'java']);
+      if (chosen) {
+        setGlobalJavaPath(chosen);
+        // Auto-inspect
+        try {
+          const info = await inspectJavaExecutable(chosen);
+          setGlobalJavaPathInspected(`Java ${info.version} (${info.arch ?? 'unknown arch'}) — ${info.version_string}`);
+        } catch {
+          setGlobalJavaPathInspected(null);
+        }
+      }
+    } catch (e) {
+      setGlobalJavaPathError(formatError(e));
+    }
+  };
+
+  const handleGlobalJavaPathSave = async () => {
+    setGlobalJavaPathError(null);
+    setGlobalJavaPathInspected(null);
+    try {
+      if (globalJavaPath.trim()) {
+        const info = await inspectJavaExecutable(globalJavaPath.trim());
+        setGlobalJavaPathInspected(`Java ${info.version} (${info.arch ?? 'n/a'}) — ${info.version_string}`);
+      }
+      await ts.update(SETTINGS.javaPath, globalJavaPath.trim() || null);
+      showToast('Java path saved.', 'success');
+    } catch (e) {
+      setGlobalJavaPathError(formatError(e));
+    }
+  };
+
+  const handleGlobalJavaPathClear = async () => {
+    setGlobalJavaPath('');
+    setGlobalJavaPathInspected(null);
+    setGlobalJavaPathError(null);
+    try {
+      await ts.update(SETTINGS.javaPath, null);
+      showToast('Java path cleared.', 'success');
+    } catch (e) {
+      showToast(formatError(e), 'error');
+    }
+  };
+
+  const handleDownloadJava = async (major: number) => {
+    setJavaDownloadBusy(major);
+    setJavaDownloadProgress(null);
+    setJavaDownloadPercent(null);
+    setJavaCancelling(false);
+    try {
+      await ensureJavaRuntime(major, `settings-java-${major}`);
+      setJavaDownloadProgress(`Java ${major} downloaded successfully.`);
+      setJavaDownloadPercent(100);
+      await refreshJavaRuntimes();
+    } catch (e) {
+      setJavaDownloadProgress(`Failed: ${formatError(e)}`);
+    } finally {
+      setJavaDownloadBusy(null);
+    }
+  };
+
+  const handleCancelJavaDownload = async (major: number) => {
+    setJavaCancelling(true);
+    try {
+      await cancelJavaRuntime(`settings-java-${major}`);
+      setJavaDownloadProgress('Cancelling…');
+    } catch {
+      // Operation may already be done — ignore
+    }
+  };
+
+  const handleRemoveUnusedJava = async () => {
+    if (!window.confirm('Remove unused managed Java runtimes? Only the newest runtime per major version will be kept.')) return;
+    setJavaRemoveBusy(true);
+    try {
+      const removed = await removeUnusedJavaRuntimes();
+      showToast(`Removed ${removed} unused runtime${removed === 1 ? '' : 's'}.`, 'success');
+      await refreshJavaRuntimes();
+    } catch (e) {
+      showToast(formatError(e), 'error');
+    } finally {
+      setJavaRemoveBusy(false);
     }
   };
 
@@ -1057,6 +1210,219 @@ export function Settings() {
               <p className="text-xs text-destructive">{ts.statuses['launch_mode']?.error}</p>
             )}
 
+          </div>
+
+          {/* Java Runtime Management */}
+          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+            <h3 className="font-semibold">Java Runtime Management</h3>
+            <p className="text-xs text-muted-foreground">
+              Agora can automatically download and manage Java runtimes for Minecraft.
+              Managed runtimes are stored in private app-data and never modify your system PATH.
+              Each instance uses the exact major version required by the selected Minecraft version.
+            </p>
+
+            {/* Runtime mode selector */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Java runtime mode</label>
+              <div className="flex flex-wrap gap-2">
+                {(['automatic', 'prompt', 'manual'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => handleJavaRuntimeModeChange(mode)}
+                    className={[
+                      'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                      javaRuntimeMode === mode
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-input hover:bg-accent',
+                    ].join(' ')}
+                  >
+                    {mode === 'automatic' ? 'Automatic (recommended)'
+                      : mode === 'prompt' ? 'Prompt'
+                      : 'Manual'}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {javaRuntimeMode === 'automatic'
+                  ? 'Automatically provision the required Java runtime when launching.'
+                  : javaRuntimeMode === 'prompt'
+                    ? 'Prompt the user when a required Java runtime is missing.'
+                    : 'Do not download runtimes. Only use user-specified and system Java installations.'}
+              </p>
+            </div>
+
+            {/* Global Java path override */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Global Java executable (override)</label>
+              <div className="flex gap-2">
+                <input
+                  value={globalJavaPath}
+                  onChange={(e) => {
+                    setGlobalJavaPath(e.target.value);
+                    setGlobalJavaPathInspected(null);
+                    setGlobalJavaPathError(null);
+                  }}
+                  placeholder="Leave empty to auto-detect"
+                  className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={handleGlobalJavaPathBrowse}
+                  className="rounded-lg border border-input px-3 py-2 text-sm font-medium hover:bg-accent"
+                >
+                  Browse…
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleGlobalJavaPathSave}
+                  disabled={!globalJavaPath.trim()}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleGlobalJavaPathClear}
+                  disabled={!globalJavaPath}
+                  className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                >
+                  Clear
+                </button>
+              </div>
+              {globalJavaPathInspected && (
+                <p className="text-xs text-green-600 dark:text-green-400">{globalJavaPathInspected}</p>
+              )}
+              {globalJavaPathError && (
+                <p className="text-xs text-destructive">{globalJavaPathError}</p>
+              )}
+            </div>
+
+            {/* Download buttons */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Download managed runtimes</label>
+              <div className="flex flex-wrap items-center gap-2">
+                {[8, 17, 21].map((major) => (
+                  <button
+                    key={major}
+                    onClick={() => handleDownloadJava(major)}
+                    disabled={javaDownloadBusy !== null}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {javaDownloadBusy === major ? `Downloading Java ${major}…` : `Download Java ${major}`}
+                  </button>
+                ))}
+                {/* Custom major input */}
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="8"
+                    max="25"
+                    value={customMajorInput}
+                    onChange={(e) => setCustomMajorInput(e.target.value)}
+                    placeholder="major"
+                    className="w-16 rounded-lg border border-input bg-background px-2 py-1.5 text-xs"
+                  />
+                  <button
+                    onClick={() => {
+                      const m = parseInt(customMajorInput, 10);
+                      if (m >= 8 && m <= 25) handleDownloadJava(m);
+                    }}
+                    disabled={javaDownloadBusy !== null || !customMajorInput}
+                    className="rounded-lg border border-input px-2 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+              {javaDownloadProgress && javaDownloadBusy !== null && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(javaDownloadPercent ?? 0, 100)}%` }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleCancelJavaDownload(javaDownloadBusy!)}
+                      disabled={javaCancelling}
+                      className="rounded-lg border border-border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50 shrink-0"
+                    >
+                      {javaCancelling ? 'Cancelling…' : 'Cancel'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{javaDownloadProgress}</p>
+                </div>
+              )}
+              {javaDownloadProgress && javaDownloadBusy === null && (
+                <p className="text-xs text-muted-foreground">{javaDownloadProgress}</p>
+              )}
+            </div>
+
+            {/* Runtime table */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Detected Java runtimes</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={refreshJavaRuntimes}
+                    disabled={javaRuntimesLoading}
+                    className="rounded-lg border border-input px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                  >
+                    {javaRuntimesLoading ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                  <button
+                    onClick={handleRemoveUnusedJava}
+                    disabled={javaRemoveBusy || javaRuntimesLoading}
+                    className="rounded-lg border border-input px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                  >
+                    {javaRemoveBusy ? 'Removing…' : 'Remove unused'}
+                  </button>
+                </div>
+              </div>
+              {javaRuntimesError && (
+                <p className="text-xs text-destructive">{javaRuntimesError}</p>
+              )}
+              {javaRuntimesLoading ? (
+                <p className="text-xs text-muted-foreground">Scanning for Java runtimes…</p>
+              ) : javaRuntimes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No Java runtimes detected.</p>
+              ) : (
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-border">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="px-3 py-1.5 text-left font-medium">Source</th>
+                        <th className="px-3 py-1.5 text-left font-medium">Version</th>
+                        <th className="px-3 py-1.5 text-left font-medium">Arch</th>
+                        <th className="px-3 py-1.5 text-left font-medium">Path</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {javaRuntimes.map((rt, idx) => (
+                        <tr key={idx} className="border-t border-border">
+                          <td className="px-3 py-1.5">
+                            <span className={[
+                              'inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                              rt.source === 'Managed' ? 'bg-brand-600/10 text-brand-600 dark:text-brand-400'
+                                : rt.source === 'Mojang' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                : rt.source === 'System' ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                                : 'bg-muted text-muted-foreground',
+                            ].join(' ')}>
+                              {rt.source}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 font-medium">{rt.version_string || `Java ${rt.version}`}</td>
+                          <td className="px-3 py-1.5">{rt.arch ?? '—'}</td>
+                          <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[200px]" title={rt.path}>
+                            {rt.path}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="rounded-xl border border-border bg-card p-4 space-y-3">

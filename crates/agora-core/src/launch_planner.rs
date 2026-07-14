@@ -202,6 +202,12 @@ pub struct ResolveRequest {
     pub java_override: Option<PathBuf>,
     /// Discovery should run off the async command thread and be supplied here.
     pub java_candidates: Vec<JavaInstallation>,
+    /// If `true` and the user has set an explicit `java_override`, allow
+    /// selecting a Java runtime whose major version does not match the
+    /// required version.  The resolved plan will carry
+    /// [`incompatible_override`](ResolvedJava::incompatible_override) `true`.
+    /// Default: `false`.
+    pub allow_incompatible_java_override: bool,
     /// Explicit network policy. Core never guesses a DB path.
     pub network_policy: NetworkPolicy,
     /// For Forge/NeoForge adoption: path to the Minecraft directory
@@ -217,6 +223,10 @@ pub struct ResolvedJava {
     pub path: PathBuf,
     pub major_version: u32,
     pub required_major_version: u32,
+    /// `true` when the selected Java does NOT match the required major
+    /// version but was accepted because `allow_incompatible_java_override`
+    /// was set in the resolve request.
+    pub incompatible_override: bool,
 }
 
 /// Metadata-only plan. No client JAR, libraries, assets or natives have been
@@ -433,6 +443,7 @@ pub async fn resolve(request: ResolveRequest) -> LauncherResult<ResolvedLaunchPl
                 request.java_override.as_deref(),
                 &request.java_candidates,
                 required_major,
+                request.allow_incompatible_java_override,
             )?;
 
             let version_id = if version.id.is_empty() {
@@ -530,6 +541,7 @@ pub async fn resolve(request: ResolveRequest) -> LauncherResult<ResolvedLaunchPl
         request.java_override.as_deref(),
         &request.java_candidates,
         required_major,
+        request.allow_incompatible_java_override,
     )?;
 
     let version_id = if version.id.is_empty() {
@@ -1123,6 +1135,22 @@ pub fn validate(plan: &MaterializedLaunchPlan) -> LauncherResult<()> {
             code: "ERR_MAIN_CLASS_MISSING".into(),
             message: "Resolved Minecraft metadata has no main class.".into(),
         });
+    }
+    // Enforce the selected compatibility policy.
+    //
+    // Default policy (incompatible_override == false): the selected Java major
+    // must EXACTLY match the required major.  A higher version is just as
+    // wrong as a lower one for modded Minecraft — old loaders and mods depend
+    // on behaviour removed or restricted in later Java versions.
+    //
+    // Override policy (incompatible_override == true): the user explicitly
+    // accepted a mismatch (e.g. "Use Java 21 despite this instance requesting
+    // Java 17").  We still reject LOWER versions because an override is meant
+    // for using a *newer* Java, not an insufficiently old one.
+    if !plan.resolved.java.incompatible_override
+        && plan.resolved.java.major_version != plan.resolved.java.required_major_version
+    {
+        return Err(LauncherError::JavaIncompatible);
     }
     if plan.resolved.java.major_version < plan.resolved.java.required_major_version {
         return Err(LauncherError::JavaIncompatible);
@@ -2515,39 +2543,82 @@ fn select_java(
     override_path: Option<&Path>,
     candidates: &[JavaInstallation],
     required_major: u32,
+    allow_incompatible_override: bool,
 ) -> LauncherResult<ResolvedJava> {
-    let selected = if let Some(path) = override_path {
-        java::inspect_java(path).ok_or_else(|| LauncherError::Generic {
+    if let Some(path) = override_path {
+        // --- Explicit override path ---
+        let inspected = java::inspect_java(path).ok_or_else(|| LauncherError::Generic {
             code: "ERR_JAVA_INVALID".into(),
             message: format!(
                 "Configured Java executable is missing or invalid: {}",
                 path.display()
             ),
-        })?
-    } else {
-        candidates
-            .iter()
-            .filter(|candidate| candidate.version >= required_major)
-            .min_by_key(|candidate| {
-                let is_javaw = candidate
-                    .path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.eq_ignore_ascii_case("javaw.exe") || name == "javaw");
-                (candidate.version, is_javaw)
-            })
-            .cloned()
-            .ok_or(LauncherError::JavaIncompatible)?
-    };
+        })?;
 
-    if selected.version < required_major {
+        if inspected.version == required_major {
+            return Ok(ResolvedJava {
+                path: inspected.path,
+                major_version: inspected.version,
+                required_major_version: required_major,
+                incompatible_override: false,
+            });
+        }
+
+        // Mismatch: only accept if the caller explicitly allows it.
+        if allow_incompatible_override {
+            // Warn the caller via the flag.
+            return Ok(ResolvedJava {
+                path: inspected.path,
+                major_version: inspected.version,
+                required_major_version: required_major,
+                incompatible_override: true,
+            });
+        }
+
         return Err(LauncherError::JavaIncompatible);
     }
-    Ok(ResolvedJava {
-        path: selected.path,
-        major_version: selected.version,
-        required_major_version: required_major,
-    })
+
+    // --- Non-override: require exact major match, rank by source ---
+    let exact_candidates: Vec<&JavaInstallation> = candidates
+        .iter()
+        .filter(|c| c.version == required_major)
+        .collect();
+
+    if exact_candidates.is_empty() {
+        // No exact major candidate found — report which component needs it.
+        return Err(LauncherError::JavaRuntimeMissing {
+            major: required_major,
+            component: "required_major".into(),
+        });
+    }
+
+    // Rank: Managed > Mojang > System, then stable path as tiebreaker.
+    let selected = exact_candidates
+        .iter()
+        .min_by_key(|c| {
+            let source_rank = match c.source {
+                java::JavaSource::Managed => 0u8,
+                java::JavaSource::Mojang => 1,
+                java::JavaSource::System => 2,
+                java::JavaSource::Override => 3, // shouldn't appear in candidates
+            };
+            (source_rank, c.path.clone())
+        })
+        .cloned()
+        .cloned();
+
+    match selected {
+        Some(inst) => Ok(ResolvedJava {
+            path: inst.path,
+            major_version: inst.version,
+            required_major_version: required_major,
+            incompatible_override: false,
+        }),
+        None => Err(LauncherError::JavaRuntimeMissing {
+            major: required_major,
+            component: "required_major".into(),
+        }),
+    }
 }
 
 fn sha1_hex(bytes: &[u8]) -> String {
@@ -2653,20 +2724,24 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn java_selection_prefers_lowest_compatible_console_runtime() {
+    fn java_selection_prefers_exact_major() {
         let candidates = vec![
             JavaInstallation {
                 path: PathBuf::from("javaw.exe"),
                 version: 21,
                 version_string: "21".into(),
+                source: java::JavaSource::System,
+                arch: None,
             },
             JavaInstallation {
                 path: PathBuf::from("java.exe"),
                 version: 17,
                 version_string: "17".into(),
+                source: java::JavaSource::System,
+                arch: None,
             },
         ];
-        let selected = select_java(None, &candidates, 17).unwrap();
+        let selected = select_java(None, &candidates, 17, false).unwrap();
         assert_eq!(selected.major_version, 17);
         assert_eq!(selected.path, PathBuf::from("java.exe"));
     }
@@ -2677,10 +2752,13 @@ mod tests {
             path: PathBuf::from("java.exe"),
             version: 8,
             version_string: "1.8".into(),
+            source: java::JavaSource::System,
+            arch: None,
         }];
+        // With no exact match for 17, expect JavaRuntimeMissing.
         assert!(matches!(
-            select_java(None, &candidates, 17),
-            Err(LauncherError::JavaIncompatible)
+            select_java(None, &candidates, 17, false),
+            Err(LauncherError::JavaRuntimeMissing { .. })
         ));
     }
 
@@ -2884,6 +2962,7 @@ mod tests {
             java_override: None,
             java_candidates: vec![],
             network_policy: NetworkPolicy::all_enabled(),
+            allow_incompatible_java_override: false,
             minecraft_dir: None,
             receipts_root: None,
         };
@@ -2906,6 +2985,7 @@ mod tests {
                 path: PathBuf::from("java"),
                 major_version: 21,
                 required_major_version: 21,
+                incompatible_override: false,
             },
             version: VersionInfo::default(),
             game_dir: PathBuf::from("/tmp"),
@@ -3653,11 +3733,22 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn make_java_candidate() -> Vec<crate::java::JavaInstallation> {
-        vec![crate::java::JavaInstallation {
-            path: std::path::PathBuf::from("java"),
-            version: 21,
-            version_string: "21".into(),
-        }]
+        vec![
+            crate::java::JavaInstallation {
+                path: std::path::PathBuf::from("java8"),
+                version: 8,
+                version_string: "1.8.0".into(),
+                source: crate::java::JavaSource::System,
+                arch: None,
+            },
+            crate::java::JavaInstallation {
+                path: std::path::PathBuf::from("java21"),
+                version: 21,
+                version_string: "21".into(),
+                source: crate::java::JavaSource::System,
+                arch: None,
+            },
+        ]
     }
 
     fn make_adopt_fixture(tmp: &tempfile::TempDir) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -3764,6 +3855,7 @@ mod tests {
             java_override: None,
             java_candidates: make_java_candidate(),
             network_policy: NetworkPolicy::all_disabled(),
+            allow_incompatible_java_override: false,
             minecraft_dir: Some(minecraft_dir),
             receipts_root: Some(receipts_root),
         })
@@ -3802,6 +3894,7 @@ mod tests {
             java_override: None,
             java_candidates: make_java_candidate(),
             network_policy: NetworkPolicy::all_disabled(),
+            allow_incompatible_java_override: false,
             minecraft_dir: Some(minecraft_dir),
             receipts_root: Some(receipts_root),
         })
@@ -3848,6 +3941,7 @@ mod tests {
             java_override: None,
             java_candidates: make_java_candidate(),
             network_policy: NetworkPolicy::all_disabled(),
+            allow_incompatible_java_override: false,
             minecraft_dir: Some(minecraft_dir),
             receipts_root: Some(receipts_root),
         })
@@ -3904,6 +3998,7 @@ mod tests {
             java_override: None,
             java_candidates: make_java_candidate(),
             network_policy: NetworkPolicy::all_disabled(),
+            allow_incompatible_java_override: false,
             minecraft_dir: Some(minecraft_dir),
             receipts_root: Some(receipts_root),
         })
@@ -3937,6 +4032,7 @@ mod tests {
             java_override: None,
             java_candidates: make_java_candidate(),
             network_policy: NetworkPolicy::all_disabled(),
+            allow_incompatible_java_override: false,
             minecraft_dir: None,
             receipts_root: None,
         })

@@ -182,7 +182,6 @@ const KNOWN_LOADERS: &[&str] = &["fabric", "forge", "neoforge", "quilt"];
 fn extract_mc_version(text: &str) -> Option<String> {
     let lower = text.to_lowercase();
     let bytes_lower = lower.as_bytes();
-    let bytes_orig = text.as_bytes();
 
     // Pass 1 â€” scan for `mc` prefix with word-boundary check.
     // `mc` must be preceded by a non-alphanumeric char (or start of string)
@@ -360,6 +359,7 @@ struct GitHubRelease {
 #[derive(Debug, Deserialize)]
 struct GitHubReleaseAsset {
     name: String,
+    #[allow(dead_code)]
     browser_download_url: String,
     #[serde(default)]
     size: Option<u64>,

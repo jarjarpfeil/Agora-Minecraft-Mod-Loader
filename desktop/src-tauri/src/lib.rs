@@ -163,7 +163,13 @@ pub fn run() {
             commands::get_windows_accent_color,
             commands::detect_mojang_launcher,
             commands::test_launcher_path,
-            commands::repair_instance_loader
+            commands::repair_instance_loader,
+            commands::list_java_runtimes,
+            commands::ensure_java_runtime,
+            commands::remove_unused_java_runtimes,
+            commands::inspect_java_executable,
+            commands::update_instance_java,
+            commands::cancel_java_runtime,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

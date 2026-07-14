@@ -74,20 +74,43 @@ export interface RecoverableProfileIssue {
 /**
  * Available user actions for a recoverable profile issue.
  * Derived from Rust's SUGGEST_* constants in installed_profile.rs.
+ *
+ * Extended for Stage 4 Java recovery with download_runtime, choose_java,
+ * open_privacy actions.
  */
-export type LauncherAction = 'reinstall_loader' | 'use_delegated_launch' | 'dismiss';
+export type LauncherAction =
+  | 'reinstall_loader'
+  | 'use_delegated_launch'
+  | 'dismiss'
+  | 'download_runtime'
+  | 'choose_java'
+  | 'cancel'
+  | 'open_privacy';
+
+/**
+ * Structured recoverable Java issue extracted from a LauncherError details
+ * envelope for ERR_JAVA_RUNTIME_MISSING or ERR_JAVA_RUNTIME_CATALOG_MISSING.
+ */
+export interface RecoverableJavaIssue {
+  major: number;
+  component?: string;
+  os?: string;
+  arch?: string;
+}
 
 /**
  * Parsed structured launcher error envelope.
  *
  * All errors (even non-recoverable ones) produce a ParsedLauncherError by
  * extracting code + message. Only profile-related errors populate
- * `recoverableIssue` and `availableActions`.
+ * `recoverableIssue` and `availableActions`. Java runtime errors populate
+ * `recoverableJavaIssue`.
  */
 export interface ParsedLauncherError {
   code: string;
   message: string;
   recoverableIssue: RecoverableProfileIssue | null;
+  recoverableJavaIssue: RecoverableJavaIssue | null;
   availableActions: LauncherAction[];
 }
 
@@ -110,6 +133,7 @@ export function parseLauncherError(e: unknown): ParsedLauncherError {
     code: 'ERR_UNKNOWN',
     message,
     recoverableIssue: null,
+    recoverableJavaIssue: null,
     availableActions: [],
   });
 
@@ -128,13 +152,19 @@ export function parseLauncherError(e: unknown): ParsedLauncherError {
     if (code && message) {
       const details = obj.details;
       let recoverableIssue: RecoverableProfileIssue | null = null;
+      let recoverableJavaIssue: RecoverableJavaIssue | null = null;
       let availableActions: LauncherAction[] = [];
 
       if (details && typeof details === 'object') {
         const det = details as Record<string, unknown>;
         const rawIssue = det.recoverable_issue;
         const rawActions = det.suggested_actions;
+        const rawMajor = det.major;
+        const rawComponent = det.component;
+        const rawOs = det.os;
+        const rawArch = det.arch;
 
+        // Parse recoverable profile issue
         if (rawIssue && typeof rawIssue === 'object') {
           const ri = rawIssue as Record<string, unknown>;
           const kind = ri.kind;
@@ -158,9 +188,88 @@ export function parseLauncherError(e: unknown): ParsedLauncherError {
             }
           }
         }
+
+        // Parse recoverable Java issue (ERR_JAVA_RUNTIME_MISSING / ERR_JAVA_RUNTIME_CATALOG_MISSING)
+        if (code === 'ERR_JAVA_RUNTIME_MISSING' && typeof rawMajor === 'number') {
+          recoverableJavaIssue = {
+            major: rawMajor,
+            component: typeof rawComponent === 'string' ? rawComponent : undefined,
+          };
+
+          if (Array.isArray(rawActions)) {
+            availableActions = rawActions.filter(
+              (a): a is LauncherAction =>
+                a === 'download_runtime' || a === 'choose_java' || a === 'cancel' || a === 'open_privacy',
+            );
+            // Default actions when backend doesn't provide them
+            if (availableActions.length === 0) {
+              availableActions = ['download_runtime', 'choose_java', 'cancel'];
+            }
+          }
+        }
+
+        if (code === 'ERR_JAVA_RUNTIME_CATALOG_MISSING' && typeof rawMajor === 'number') {
+          recoverableJavaIssue = {
+            major: rawMajor,
+            os: typeof rawOs === 'string' ? rawOs : undefined,
+            arch: typeof rawArch === 'string' ? rawArch : undefined,
+          };
+
+          if (Array.isArray(rawActions)) {
+            availableActions = rawActions.filter(
+              (a): a is LauncherAction =>
+                a === 'choose_java' || a === 'cancel',
+            );
+            if (availableActions.length === 0) {
+              availableActions = ['choose_java', 'cancel'];
+            }
+          }
+        }
+
+        // Parse ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED
+        if (code === 'ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED' && typeof rawMajor === 'number') {
+          recoverableJavaIssue = {
+            major: rawMajor,
+            component: typeof rawComponent === 'string' ? rawComponent : undefined,
+          };
+          if (Array.isArray(rawActions)) {
+            availableActions = rawActions.filter(
+              (a): a is LauncherAction =>
+                a === 'choose_java' || a === 'open_privacy' || a === 'cancel',
+            );
+            if (availableActions.length === 0) {
+              availableActions = ['choose_java', 'open_privacy', 'cancel'];
+            }
+          }
+        }
+
+        // Parse ERR_JAVA_RUNTIME_CANCELLED
+        if (code === 'ERR_JAVA_RUNTIME_CANCELLED' && typeof rawMajor === 'number') {
+          recoverableJavaIssue = {
+            major: rawMajor,
+            component: typeof rawComponent === 'string' ? rawComponent : undefined,
+          };
+          availableActions = ['cancel'];
+        }
+
+        // Also handle ERR_JAVA_RUNTIME_MISSING when the backend uses Generic envelope
+        // (network-disabled path that preserves major via format string)
+        if (!recoverableJavaIssue && rawActions === undefined) {
+          if (code === 'ERR_JAVA_RUNTIME_MISSING' && typeof rawMajor === 'number') {
+            // Raw generic error still carries major from the details
+            recoverableJavaIssue = {
+              major: rawMajor,
+            };
+            availableActions = ['choose_java', 'cancel'];
+            // add open_privacy only when message mentions privacy
+            if (message && message.toLowerCase().includes('privacy')) {
+              availableActions.push('open_privacy');
+            }
+          }
+        }
       }
 
-      return { code, message, recoverableIssue, availableActions };
+      return { code, message, recoverableIssue, recoverableJavaIssue, availableActions };
     }
 
     // Try Tauri externally-tagged enum variant: { VariantName: { code, message } }
@@ -173,6 +282,7 @@ export function parseLauncherError(e: unknown): ParsedLauncherError {
             code: innerObj.code as string,
             message: innerObj.message as string,
             recoverableIssue: null,
+            recoverableJavaIssue: null,
             availableActions: [],
           };
         }
@@ -226,6 +336,8 @@ export interface InstanceRow {
   jvm_gc: string;
   jvm_custom_args: string;
   created_at: string;
+  java_path: string | null;
+  java_incompatible_override: boolean;
 }
 
 export interface InstalledMod {
@@ -1268,3 +1380,112 @@ export interface InstallReceiptSummary {
 /** Force-reinstall the loader for an instance. Returns the install receipt. */
 export const repairInstanceLoader = (instanceId: string) =>
   invoke<InstallReceiptSummary>('repair_instance_loader', { instanceId });
+
+// ---------------------------------------------------------------------------
+// Stage 3: Managed Java runtime
+// ---------------------------------------------------------------------------
+
+/**
+ * Summary of a detected or managed Java runtime.
+ * Mirrors Rust `JavaRuntimeSummary` / `JavaInstallation`.
+ */
+export interface JavaRuntimeSummary {
+  path: string;
+  version: number;
+  version_string: string;
+  source: string;
+  arch: string | null;
+}
+
+/** List all discovered Java runtimes (managed + Mojang + system). */
+export const listJavaRuntimes = () =>
+  invoke<JavaRuntimeSummary[]>('list_java_runtimes');
+
+/**
+ * Ensure a managed Java runtime for the given major version is installed.
+ * Provisions from the embedded Adoptium catalog when missing.
+ * Returns the provisioned runtime summary.
+ *
+ * @param operationId - Optional operation ID for cancellation tracking.
+ *   When omitted, a stable key `"settings-{major}"` is used by the backend.
+ */
+export const ensureJavaRuntime = (major: number, operationId?: string) =>
+  invoke<JavaRuntimeSummary>('ensure_java_runtime', { major, operationId: operationId ?? null });
+
+/**
+ * Remove unused managed Java runtimes (keep newest per major).
+ * Returns the number of runtimes that were removed.
+ */
+export const removeUnusedJavaRuntimes = () =>
+  invoke<number>('remove_unused_java_runtimes');
+
+/**
+ * Inspect a Java executable at the given path and return its summary.
+ * Used for picker validation before the user saves a custom Java path.
+ */
+export const inspectJavaExecutable = (path: string) =>
+  invoke<JavaRuntimeSummary>('inspect_java_executable', { path });
+
+/**
+ * Update per-instance Java path and incompatible override setting.
+ * Pass path as null/undefined to clear the per-instance override.
+ */
+export const updateInstanceJava = (
+  instanceId: string,
+  path: string | null,
+  allowIncompatible: boolean,
+) =>
+  invoke<void>('update_instance_java', {
+    instanceId,
+    path,
+    allowIncompatible,
+  });
+
+/**
+ * Structured error details for JavaRuntimeMissing.
+ * Available when the LauncherError code is 'ERR_JAVA_RUNTIME_MISSING'.
+ */
+export interface JavaRuntimeMissingDetails {
+  major: number;
+  component: string;
+  suggested_actions: Array<'download_runtime' | 'choose_java' | 'cancel'>;
+}
+
+/**
+ * Structured error details for JavaRuntimeCatalogMissing.
+ * Available when the LauncherError code is 'ERR_JAVA_RUNTIME_CATALOG_MISSING'.
+ */
+export interface JavaRuntimeCatalogMissingDetails {
+  major: number;
+  os: string;
+  arch: string;
+  suggested_actions: Array<'choose_java' | 'cancel'>;
+}
+
+/**
+ * Progress event payload for java-runtime-progress events.
+ * Emitted by the backend during runtime provisioning.
+ */
+export interface JavaRuntimeProgressEvent {
+  instance_id: string;
+  major: number;
+  stage: 'ensuring' | 'downloading' | 'ready' | string;
+  message: string;
+  percent: number;
+}
+
+/**
+ * Cancel a Java runtime provisioning operation by its operation ID.
+ */
+export const cancelJavaRuntime = (operationId: string) =>
+  invoke<void>('cancel_java_runtime', { operationId });
+
+/**
+ * Structured error details for JavaRuntimeDownloadDisabled.
+ * Available when the LauncherError code is 'ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED'.
+ */
+export interface JavaRuntimeDownloadDisabledDetails {
+  major: number;
+  component: string;
+  suggested_actions: Array<'choose_java' | 'open_privacy' | 'cancel'>;
+}

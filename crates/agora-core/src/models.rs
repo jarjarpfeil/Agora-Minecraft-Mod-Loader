@@ -16,6 +16,14 @@ pub struct InstanceRow {
     pub jvm_custom_args: String,
     pub jvm_always_pre_touch: bool,
     pub created_at: String,
+    /// Per-instance Java path override (TEXT NULL).
+    /// When set, overrides the global `java_path` setting for this instance.
+    #[serde(default)]
+    pub java_path: Option<String>,
+    /// Whether to allow incompatible Java version for this instance.
+    /// Default: false (0).
+    #[serde(default)]
+    pub java_incompatible_override: bool,
 }
 
 /// JVM configuration assembled from instance settings (see §8.5).

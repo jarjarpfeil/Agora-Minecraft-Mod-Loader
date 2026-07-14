@@ -4,7 +4,7 @@ use serde::Serialize;
 
 /// Expected schema version for the mutable local SQLite database.
 /// Migrations are applied sequentially on startup.
-pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 3;
+pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 4;
 
 /// Open a read-write connection to the local state database.
 ///
@@ -213,6 +213,24 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
         );
     }
 
+    // Migration v4: add java_path and java_incompatible_override columns.
+    if current < 4 {
+        let _ = conn.execute("ALTER TABLE user_instances ADD COLUMN java_path TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE user_instances ADD COLUMN java_incompatible_override INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        // Default java_runtime_mode setting to 'automatic'
+        let current_mode = get_setting(conn, "java_runtime_mode").ok().flatten();
+        if current_mode.is_none() {
+            set_setting(conn, "java_runtime_mode", &serde_json::json!("automatic"))?;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version (version) VALUES (4)",
+            [],
+        )?;
+    }
+
     if current > target {
         anyhow::bail!("local_state.db schema version {current} is newer than supported {target}");
     }
@@ -276,8 +294,9 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
         "INSERT INTO user_instances (
              instance_id, name, minecraft_version, loader, loader_version,
              is_modpack, is_locked, last_launched_at,
-             jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at,
+             java_path, java_incompatible_override
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(instance_id) DO UPDATE SET
              name = excluded.name,
              minecraft_version = excluded.minecraft_version,
@@ -289,7 +308,9 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
              jvm_memory_mb = excluded.jvm_memory_mb,
              jvm_gc = excluded.jvm_gc,
              jvm_custom_args = excluded.jvm_custom_args,
-             jvm_always_pre_touch = excluded.jvm_always_pre_touch",
+             jvm_always_pre_touch = excluded.jvm_always_pre_touch,
+             java_path = excluded.java_path,
+             java_incompatible_override = excluded.java_incompatible_override",
         rusqlite::params![
             row.instance_id,
             row.name,
@@ -304,7 +325,23 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
             row.jvm_custom_args,
             row.jvm_always_pre_touch as i64,
             row.created_at,
+            row.java_path,
+            row.java_incompatible_override as i64,
         ],
+    )?;
+    Ok(())
+}
+
+/// Update the Java path and incompatible override for an instance.
+pub fn update_instance_java(
+    conn: &Connection,
+    instance_id: &str,
+    java_path: Option<&str>,
+    allow_incompatible: bool,
+) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE user_instances SET java_path = ?1, java_incompatible_override = ?2 WHERE instance_id = ?3",
+        rusqlite::params![java_path, allow_incompatible as i64, instance_id],
     )?;
     Ok(())
 }
@@ -341,7 +378,8 @@ pub fn list_instances(conn: &Connection) -> anyhow::Result<Vec<InstanceRow>> {
     let mut stmt = conn.prepare(
         "SELECT instance_id, name, minecraft_version, loader, loader_version,
                 is_modpack, is_locked, last_launched_at,
-                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at
+                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at,
+                java_path, java_incompatible_override
          FROM user_instances
          ORDER BY last_launched_at DESC NULLS LAST, created_at DESC",
     )?;
@@ -358,7 +396,8 @@ pub fn get_instance(conn: &Connection, instance_id: &str) -> anyhow::Result<Opti
     let mut stmt = conn.prepare(
         "SELECT instance_id, name, minecraft_version, loader, loader_version,
                 is_modpack, is_locked, last_launched_at,
-                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at
+                jvm_memory_mb, jvm_gc, jvm_custom_args, jvm_always_pre_touch, created_at,
+                java_path, java_incompatible_override
          FROM user_instances
          WHERE instance_id = ?1",
     )?;
@@ -528,6 +567,8 @@ fn row_to_instance(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstanceRow> {
         jvm_custom_args: row.get(10)?,
         jvm_always_pre_touch: row.get::<_, i64>(11)? != 0,
         created_at: row.get(12)?,
+        java_path: row.get(13)?,
+        java_incompatible_override: row.get::<_, i64>(14)? != 0,
     })
 }
 
@@ -986,5 +1027,127 @@ mod tests {
         assert_eq!(results[0].confirm_count, 2);
         assert_eq!(results[1].mod_id, "mod_b");
         assert_eq!(results[1].confirm_count, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Schema v4 migration and java columns
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_schema_v4_adds_java_columns() {
+        let (_conn, path) = test_db();
+        // Drop and recreate at v3 to test migration
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS schema_version;
+             DROP TABLE IF EXISTS user_instances;
+             DROP TABLE IF EXISTS user_settings;
+             DROP TABLE IF EXISTS local_crash_telemetry;
+             DROP TABLE IF EXISTS mcp_approval_grants;
+             DROP TABLE IF EXISTS flag_submissions;
+             DROP TABLE IF EXISTS crash_events;
+             DROP TABLE IF EXISTS crash_survivals;
+             DROP TABLE IF EXISTS crash_survival_mods;
+             DROP TABLE IF EXISTS crash_attribution;
+             DROP TABLE IF EXISTS crash_ruled_out;",
+        )
+        .unwrap();
+        drop(conn);
+
+        // Fresh DB + migration
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        run_migrations(&conn).unwrap();
+
+        // Verify java columns exist
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(user_instances)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            cols.contains(&"java_path".to_string()),
+            "java_path column should exist: {cols:?}"
+        );
+        assert!(
+            cols.contains(&"java_incompatible_override".to_string()),
+            "java_incompatible_override column should exist: {cols:?}"
+        );
+
+        // Verify default setting
+        let val = get_setting(&conn, "java_runtime_mode").unwrap().unwrap();
+        assert_eq!(val.as_str(), Some("automatic"));
+    }
+
+    #[test]
+    fn test_update_instance_java_roundtrip() {
+        let (conn, _path) = test_db();
+        // Create a test instance
+        let row = InstanceRow {
+            instance_id: "java-test-instance".into(),
+            name: "Java Test".into(),
+            minecraft_version: "1.21".into(),
+            loader: "fabric".into(),
+            loader_version: "0.16.0".into(),
+            is_modpack: false,
+            is_locked: false,
+            last_launched_at: None,
+            jvm_memory_mb: 4096,
+            jvm_gc: "g1gc".into(),
+            jvm_custom_args: String::new(),
+            jvm_always_pre_touch: true,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            java_path: None,
+            java_incompatible_override: false,
+        };
+        upsert_instance(&conn, &row).unwrap();
+
+        // Set per-instance Java path
+        update_instance_java(&conn, "java-test-instance", Some("/custom/java"), false).unwrap();
+
+        // Read back and verify
+        let fetched = get_instance(&conn, "java-test-instance").unwrap().unwrap();
+        assert_eq!(fetched.java_path.as_deref(), Some("/custom/java"));
+        assert!(!fetched.java_incompatible_override);
+
+        // Clear per-instance Java path
+        update_instance_java(&conn, "java-test-instance", None, true).unwrap();
+        let fetched = get_instance(&conn, "java-test-instance").unwrap().unwrap();
+        assert!(fetched.java_path.is_none());
+        assert!(fetched.java_incompatible_override);
+    }
+
+    #[test]
+    fn test_list_instances_includes_java_columns() {
+        let (conn, _path) = test_db();
+        let row = InstanceRow {
+            instance_id: "list-java-test".into(),
+            name: "List Java Test".into(),
+            minecraft_version: "1.21".into(),
+            loader: "neoforge".into(),
+            loader_version: "21.1.0".into(),
+            is_modpack: false,
+            is_locked: false,
+            last_launched_at: None,
+            jvm_memory_mb: 2048,
+            jvm_gc: "zgc".into(),
+            jvm_custom_args: "-XX:+AlwaysPreTouch".into(),
+            jvm_always_pre_touch: false,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            java_path: Some("/opt/java21/bin/java".into()),
+            java_incompatible_override: true,
+        };
+        upsert_instance(&conn, &row).unwrap();
+
+        let instances = list_instances(&conn).unwrap();
+        let found = instances
+            .iter()
+            .find(|i| i.instance_id == "list-java-test")
+            .unwrap();
+        assert_eq!(found.java_path.as_deref(), Some("/opt/java21/bin/java"));
+        assert!(found.java_incompatible_override);
     }
 }

@@ -416,6 +416,18 @@ pub async fn ensure_loader_installed<R: tauri::Runtime>(
                 None
             };
 
+            // Derive required Java major from base MC metadata (no network needed
+            // if the installed .minecraft/versions/<mc>/<mc>.json exists).
+            let installer_java_path = resolve_installer_java(
+                app,
+                instance_id,
+                &mc_dir,
+                &app_data,
+                mc_version,
+                force_reinstall,
+            )
+            .await?;
+
             // Run the installer inside the mutex-protected section.
             emit_progress(
                 app,
@@ -424,8 +436,15 @@ pub async fn ensure_loader_installed<R: tauri::Runtime>(
                 &format!("Running {loader} installer (this may take a minute)..."),
             );
 
-            let install_result =
-                run_forge_installer(app, instance_id, loader, &data, &cache_dir).await;
+            let install_result = run_forge_installer(
+                app,
+                instance_id,
+                loader,
+                &data,
+                &cache_dir,
+                Some(&installer_java_path),
+            )
+            .await;
 
             let receipt_result = match install_result {
                 Ok(exit_status) => installed_profile::create_receipt_for_installed_profile(
@@ -510,12 +529,15 @@ fn try_cache_hit(
 // ---------------------------------------------------------------------------
 
 /// Run a Forge/NeoForge installer jar. Returns the exit status.
+///
+/// Uses `java_path_override` if provided, otherwise resolves via global settings.
 async fn run_forge_installer<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     instance_id: &str,
     loader: &str,
     installer_bytes: &[u8],
     _cache_dir: &std::path::Path,
+    java_path_override: Option<&str>,
 ) -> LauncherResult<i32> {
     // --- Test seam: fake installer ---
     #[cfg(test)]
@@ -526,8 +548,11 @@ async fn run_forge_installer<R: tauri::Runtime>(
         return Ok(exit_code);
     }
 
-    // Resolve Java path.
-    let java_path = get_java_path(app);
+    // Resolve Java path: use explicit override if provided, otherwise fall back.
+    let java_path = match java_path_override {
+        Some(p) => p.to_string(),
+        None => get_java_path(app, None),
+    };
 
     // Stage the installer jar in app_data.
     let app_data = paths::app_data_dir(app).map_err(|_| LauncherError::InstanceCreateFailed)?;
@@ -835,6 +860,8 @@ fn prepare_instance_dir<R: tauri::Runtime>(
         jvm_custom_args: req.jvm_custom_args.clone().unwrap_or_default(),
         jvm_always_pre_touch: req.jvm_always_pre_touch.unwrap_or(true),
         created_at: chrono::Utc::now().to_rfc3339(),
+        java_path: None,
+        java_incompatible_override: false,
     })
 }
 
@@ -1030,7 +1057,21 @@ pub fn list_loader_versions(loader: &str, mc_version: &str) -> Vec<LoaderVersion
 }
 
 /// Resolve the Java binary path used to run installer jars.
-fn get_java_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> String {
+///
+/// Priority:
+/// 1. Per-instance `java_path` override (when `instance_id` is provided)
+/// 2. Global `java_path` setting
+/// 3. `"java"` (fallback to PATH)
+fn get_java_path<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    instance_java_path: Option<&str>,
+) -> String {
+    // Per-instance override has highest priority.
+    if let Some(path) = instance_java_path {
+        if !path.trim().is_empty() {
+            return path.to_string();
+        }
+    }
     let conn = match db::local_state_connection(app) {
         Ok(c) => c,
         Err(_) => return "java".to_string(),
@@ -1041,6 +1082,104 @@ fn get_java_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> String {
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "java".to_string())
+}
+
+/// Resolve the exact Java path to use for a Forge/NeoForce installer execution.
+///
+/// 1. Derive the required Java major from base MC version metadata
+///    (cache-first from installed `.minecraft/versions/<mc>/<mc>.json`).
+/// 2. Gather Java candidates (managed + Mojang + system).
+/// 3. Select exact major match with priority: per-instance override, global override,
+///    managed, Mojang, system.
+/// 4. If missing and java_runtime_mode is "automatic", provision via ensure_runtime.
+async fn resolve_installer_java<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    _instance_id: &str,
+    mc_dir: &std::path::Path,
+    app_data: &std::path::Path,
+    mc_version: &str,
+    _force_reinstall: bool,
+) -> LauncherResult<String> {
+    // Derive required Java major from base MC metadata.
+    let version_info =
+        agora_core::java::resolve_version_metadata(mc_dir, mc_version).ok_or_else(|| {
+            LauncherError::Generic {
+                code: "ERR_VERSION_METADATA".into(),
+                message: format!(
+                    "Cannot determine Java requirement: base version '{}' metadata not found \
+                 in installed profiles. Use the Mojang launcher to download it first.",
+                    mc_version
+                ),
+            }
+        })?;
+    let requirement = agora_core::java::java_requirement_from_version(&version_info);
+    let required_major = requirement.major;
+
+    // Read java_runtime_mode from settings.
+    let conn = db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
+    let java_runtime_mode: String = db::get_setting(&conn, "java_runtime_mode")
+        .ok()
+        .flatten()
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "automatic".to_string());
+    drop(conn);
+
+    // Gather candidates.
+    let runtimes_root = app_data.join("runtimes");
+    let runtimes_root_for_candidates = runtimes_root.clone();
+    let minecraft_dir = Some(mc_dir.to_path_buf());
+    let candidates = tokio::task::spawn_blocking(move || {
+        agora_core::java::detect_java_candidates(
+            Some(&runtimes_root_for_candidates),
+            minecraft_dir.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| LauncherError::Generic {
+        code: "ERR_JAVA_DETECTION".into(),
+        message: format!("Java detection task failed: {e}"),
+    })?;
+
+    // Select exact major match.
+    let selected = candidates.iter().find(|c| c.version == required_major);
+
+    match selected {
+        Some(inst) => Ok(inst.path.to_string_lossy().to_string()),
+        None => {
+            if java_runtime_mode == "automatic" {
+                // Provision managed runtime.
+                let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+                let conn2 =
+                    db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
+                let policy = agora_core::network::NetworkPolicy::from_db(&conn2);
+                drop(conn2);
+
+                let rt_root = runtimes_root.clone();
+                let ensured = tokio::task::spawn_blocking(move || {
+                    agora_core::runtime_manager::ensure_runtime(
+                        &rt_root,
+                        required_major,
+                        &catalog,
+                        &policy,
+                        None,
+                    )
+                })
+                .await
+                .map_err(|_| LauncherError::Generic {
+                    code: "ERR_ENSURE_RUNTIME".into(),
+                    message: format!("Failed to provision Java {required_major} runtime."),
+                })??;
+
+                Ok(ensured.path.to_string_lossy().to_string())
+            } else {
+                // prompt/manual: return typed missing.
+                Err(LauncherError::JavaRuntimeMissing {
+                    major: required_major,
+                    component: requirement.component,
+                })
+            }
+        }
+    }
 }
 
 /// Compute the effective AlwaysPreTouch value based on GC type, instance setting,

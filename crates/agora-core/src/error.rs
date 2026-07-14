@@ -69,6 +69,18 @@ pub enum LauncherError {
     /// ERR_JAVA_INCOMPATIBLE — The selected Java runtime is older than the
     /// major version required by this Minecraft version's metadata.
     JavaIncompatible,
+    /// ERR_JAVA_RUNTIME_MISSING — No Java runtime could be found for the
+    /// required major version across all candidate sources (system, Mojang,
+    /// managed).
+    JavaRuntimeMissing { major: u32, component: String },
+    /// ERR_JAVA_RUNTIME_CATALOG_MISSING — The runtime catalog has no entry
+    /// for the requested (major, os, arch) tuple. The platform is not
+    /// supported by the curated catalog.
+    JavaRuntimeCatalogMissing {
+        major: u32,
+        os: String,
+        arch: String,
+    },
     /// ERR_UNRESOLVED_PLACEHOLDER — A `${...}` token in the JVM or game
     /// arguments could not be substituted before spawn.
     UnresolvedPlaceholder,
@@ -90,6 +102,11 @@ pub enum LauncherError {
     NetworkMsaDisabled,
     /// ERR_NETWORK_JAVA_DISABLED — Java runtime downloads are disabled in Privacy settings.
     NetworkJavaDisabled,
+    /// ERR_JAVA_RUNTIME_CANCELLED — The Java runtime provisioning was cancelled by the user.
+    JavaRuntimeCancelled { major: u32, component: String },
+    /// ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED — Java runtime downloads are disabled,
+    /// with structured details for the frontend to show suggested actions.
+    JavaRuntimeDownloadDisabled { major: u32, component: String },
     /// ERR_MAVEN_DESCRIPTOR — A Maven descriptor string is malformed or unsafe.
     MavenDescriptor,
     /// ERR_PROCESS_CAPTURE_FAILED — Could not capture OS identity for a just‑spawned
@@ -139,6 +156,10 @@ impl LauncherError {
             }
             LauncherError::ProfileCorrupt(..) => "ERR_PROFILE_CORRUPT".to_string(),
             LauncherError::JavaIncompatible => "ERR_JAVA_INCOMPATIBLE".to_string(),
+            LauncherError::JavaRuntimeMissing { .. } => "ERR_JAVA_RUNTIME_MISSING".to_string(),
+            LauncherError::JavaRuntimeCatalogMissing { .. } => {
+                "ERR_JAVA_RUNTIME_CATALOG_MISSING".to_string()
+            }
             LauncherError::UnresolvedPlaceholder => "ERR_UNRESOLVED_PLACEHOLDER".to_string(),
             LauncherError::DependencyMissing => "ERR_DEPENDENCY_MISSING".to_string(),
             LauncherError::McpTooManyRequests => "ERR_MCP_TOO_MANY_REQUESTS".to_string(),
@@ -156,6 +177,10 @@ impl LauncherError {
             LauncherError::MavenDescriptor => "ERR_MAVEN_DESCRIPTOR".to_string(),
             LauncherError::ProcessCaptureFailed { .. } => "ERR_PROCESS_CAPTURE_FAILED".to_string(),
             LauncherError::ProcessStale { .. } => "ERR_PROCESS_STALE".to_string(),
+            LauncherError::JavaRuntimeCancelled { .. } => "ERR_JAVA_RUNTIME_CANCELLED".to_string(),
+            LauncherError::JavaRuntimeDownloadDisabled { .. } => {
+                "ERR_JAVA_RUNTIME_DOWNLOAD_DISABLED".to_string()
+            }
             LauncherError::Generic { code, .. } => code.clone(),
         }
     }
@@ -297,6 +322,18 @@ impl std::fmt::Display for LauncherError {
                     "The selected Java runtime is older than the version required by this Minecraft version."
                 )
             }
+            LauncherError::JavaRuntimeMissing { major, component } => {
+                write!(
+                    f,
+                    "No Java {major} runtime found (component: {component}). Install a compatible JDK/JRE."
+                )
+            }
+            LauncherError::JavaRuntimeCatalogMissing { major, os, arch } => {
+                write!(
+                    f,
+                    "No catalog entry for Java {major} on {os}/{arch}. This platform is not supported by the curated catalog."
+                )
+            }
             LauncherError::UnresolvedPlaceholder => {
                 write!(
                     f,
@@ -363,6 +400,19 @@ impl std::fmt::Display for LauncherError {
             LauncherError::ProcessStale { pid, detail } => {
                 write!(f, "Process PID {pid} is stale: {detail}")
             }
+            LauncherError::JavaRuntimeCancelled { major, component } => {
+                write!(
+                    f,
+                    "Java {major} runtime provisioning was cancelled (component: {component})."
+                )
+            }
+            LauncherError::JavaRuntimeDownloadDisabled { major, component } => {
+                write!(
+                    f,
+                    "Java {major} runtime download is disabled (component: {component}). \
+                     Enable runtime downloads in Privacy settings or choose a local Java installation."
+                )
+            }
             LauncherError::Generic { message, .. } => write!(f, "{}", message),
         }
     }
@@ -394,6 +444,14 @@ impl serde::Serialize for LauncherError {
             LauncherError::JavaIncompatible => {
                 Some("Install a newer Java runtime or select a compatible one in Settings.")
             }
+            LauncherError::JavaRuntimeMissing { .. } => {
+                None // structured suggested_actions used instead
+            }
+            LauncherError::JavaRuntimeCatalogMissing { .. } => {
+                None  // structured suggested_actions used instead
+            }
+            LauncherError::JavaRuntimeCancelled { .. } => None,
+            LauncherError::JavaRuntimeDownloadDisabled { .. } => None,
             LauncherError::UnresolvedPlaceholder => {
                 Some("This Minecraft version's arguments are not fully supported yet. Update Agora.")
             }
@@ -416,6 +474,50 @@ impl serde::Serialize for LauncherError {
                         "reasons": issue.reasons,
                     },
                     "suggested_actions": issue.suggested_actions(),
+                });
+                map.serialize_entry("details", &details)?;
+            }
+            LauncherError::JavaRuntimeMissing { major, component } => {
+                let details = serde_json::json!({
+                    "major": major,
+                    "component": component,
+                    "suggested_actions": [
+                        "download_runtime",
+                        "choose_java",
+                        "cancel",
+                    ],
+                });
+                map.serialize_entry("details", &details)?;
+            }
+            LauncherError::JavaRuntimeCatalogMissing { major, os, arch } => {
+                let details = serde_json::json!({
+                    "major": major,
+                    "os": os,
+                    "arch": arch,
+                    "suggested_actions": [
+                        "choose_java",
+                        "cancel",
+                    ],
+                });
+                map.serialize_entry("details", &details)?;
+            }
+            LauncherError::JavaRuntimeCancelled { major, component } => {
+                let details = serde_json::json!({
+                    "major": major,
+                    "component": component,
+                    "suggested_actions": ["cancel"],
+                });
+                map.serialize_entry("details", &details)?;
+            }
+            LauncherError::JavaRuntimeDownloadDisabled { major, component } => {
+                let details = serde_json::json!({
+                    "major": major,
+                    "component": component,
+                    "suggested_actions": [
+                        "choose_java",
+                        "open_privacy",
+                        "cancel",
+                    ],
                 });
                 map.serialize_entry("details", &details)?;
             }
@@ -530,6 +632,15 @@ mod tests {
             LauncherError::GameVersionNotFound,
             LauncherError::LoaderProfileNotFound,
             LauncherError::JavaIncompatible,
+            LauncherError::JavaRuntimeMissing {
+                major: 21,
+                component: "client".into(),
+            },
+            LauncherError::JavaRuntimeCatalogMissing {
+                major: 21,
+                os: "linux".into(),
+                arch: "x64".into(),
+            },
             LauncherError::UnresolvedPlaceholder,
             LauncherError::DependencyMissing,
             LauncherError::McpTooManyRequests,
@@ -540,6 +651,14 @@ mod tests {
             LauncherError::NetworkLoaderDisabled,
             LauncherError::NetworkMsaDisabled,
             LauncherError::NetworkJavaDisabled,
+            LauncherError::JavaRuntimeCancelled {
+                major: 21,
+                component: "client".into(),
+            },
+            LauncherError::JavaRuntimeDownloadDisabled {
+                major: 21,
+                component: "client".into(),
+            },
             LauncherError::MavenDescriptor,
             LauncherError::ProcessCaptureFailed {
                 pid: 42,
@@ -712,6 +831,69 @@ mod tests {
             actions,
             vec!["reinstall_loader", "use_delegated_launch", "dismiss"]
         );
+    }
+
+    #[test]
+    fn test_java_runtime_missing_structured_details() {
+        let err = LauncherError::JavaRuntimeMissing {
+            major: 21,
+            component: "java-runtime-gamma".into(),
+        };
+        let val = serde_json::to_value(err).unwrap();
+        assert_eq!(
+            val.get("code").unwrap().as_str().unwrap(),
+            "ERR_JAVA_RUNTIME_MISSING"
+        );
+        let details = val.get("details").unwrap().as_object().unwrap();
+        assert_eq!(details.get("major").unwrap().as_u64(), Some(21));
+        assert_eq!(
+            details.get("component").unwrap().as_str(),
+            Some("java-runtime-gamma")
+        );
+        let actions = details
+            .get("suggested_actions")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        let action_strs: Vec<&str> = actions.iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(
+            action_strs,
+            vec!["download_runtime", "choose_java", "cancel"]
+        );
+    }
+
+    #[test]
+    fn test_java_runtime_catalog_missing_structured_details() {
+        let err = LauncherError::JavaRuntimeCatalogMissing {
+            major: 21,
+            os: "linux".into(),
+            arch: "x64".into(),
+        };
+        let val = serde_json::to_value(err).unwrap();
+        assert_eq!(
+            val.get("code").unwrap().as_str().unwrap(),
+            "ERR_JAVA_RUNTIME_CATALOG_MISSING"
+        );
+        let details = val.get("details").unwrap().as_object().unwrap();
+        assert_eq!(details.get("major").unwrap().as_u64(), Some(21));
+        assert_eq!(details.get("os").unwrap().as_str(), Some("linux"));
+        let actions = details
+            .get("suggested_actions")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        let action_strs: Vec<&str> = actions.iter().map(|v| v.as_str().unwrap()).collect();
+        assert_eq!(action_strs, vec!["choose_java", "cancel"]);
+    }
+
+    #[test]
+    fn test_java_runtime_missing_suggested_action_is_none() {
+        let err = LauncherError::JavaRuntimeMissing {
+            major: 17,
+            component: "client".into(),
+        };
+        let val = serde_json::to_value(err).unwrap();
+        assert_eq!(val.get("suggested_action"), Some(&serde_json::Value::Null));
     }
 
     #[test]

@@ -19,7 +19,7 @@ pub enum NetworkCategory {
     MojangContent,
     /// Loader metadata and content: pinned profile JSONs, Maven libraries/sidecars.
     LoaderMetadataAndContent,
-    /// Java runtime auto-provisioning (not yet implemented).
+    /// Java runtime auto-provisioning (Adoptium Temurin JRE downloads).
     JavaRuntime,
 }
 

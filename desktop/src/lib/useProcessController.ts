@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import {
+  cancelJavaRuntime,
   checkInstanceHealth,
+  ensureJavaRuntime,
+  formatError,
+  inspectJavaExecutable,
   killProcess,
   launchInstance,
   launchInstanceDirect,
+  parseLauncherError,
+  pickOpenFile,
   queryLaunchState,
   repairInstanceLoader,
-  formatError,
-  parseLauncherError,
+  updateInstanceJava,
   type HealthReport,
-  type RecoverableProfileIssue,
   type LauncherAction,
+  type JavaRuntimeProgressEvent,
+  type RecoverableJavaIssue,
+  type RecoverableProfileIssue,
 } from './tauri';
 
 // ---------------------------------------------------------------------------
@@ -43,6 +50,10 @@ export interface ProcessState {
   exitedAt: string | null;
   /** Structured recoverable profile issue (populated on direct-launch profile adoption failures). */
   recoverableIssue: RecoverableProfileIssue | null;
+  /** Structured recoverable Java issue (populated on Java runtime missing/catalog errors). */
+  recoverableJavaIssue: RecoverableJavaIssue | null;
+  /** Progress of Java runtime provisioning. */
+  runtimeProgress: JavaRuntimeProgressEvent | null;
   /** Available user actions for the current recoverable issue. */
   availableActions: LauncherAction[];
 }
@@ -81,6 +92,25 @@ export interface ProcessController {
    * Rejects with an error string if no instance is set.
    */
   useDelegatedLaunch: () => Promise<void>;
+  /**
+   * Download a Java runtime for the required major version and retry launch.
+   * Calls ensureJavaRuntime(major) then re-launches.
+   */
+  downloadRuntimeAndRetry: () => Promise<void>;
+  /**
+   * Open file picker, inspect the selected Java executable, update the instance
+   * Java path, and retry launch. Optionally allows incompatible major override.
+   */
+  chooseJavaAndRetry: () => Promise<void>;
+  /**
+   * Clear the Java recovery issue without launching.
+   */
+  cancelJavaRecovery: () => void;
+  /**
+   * Cancel an in-progress Java runtime provisioning for the tracked instance.
+   * Sets phase to 'failed' with a cancelled message on success.
+   */
+  cancelJavaRuntimeForInstance: () => Promise<void>;
 }
 
 const INITIAL_STATE: ProcessState = {
@@ -95,6 +125,8 @@ const INITIAL_STATE: ProcessState = {
   snapshotId: null,
   exitedAt: null,
   recoverableIssue: null,
+  recoverableJavaIssue: null,
+  runtimeProgress: null,
   availableActions: [],
 };
 
@@ -132,6 +164,8 @@ export function useProcessController(): ProcessController {
             snapshotId: null,
             exitedAt: null,
             recoverableIssue: null,
+            recoverableJavaIssue: null,
+            runtimeProgress: null,
             availableActions: [],
           });
         }
@@ -165,6 +199,8 @@ export function useProcessController(): ProcessController {
             error: null,
             healthReport: null,
             recoverableIssue: null,
+            recoverableJavaIssue: null,
+            runtimeProgress: null,
             availableActions: [],
             exitCode: event.payload.exit_code,
             outcome: event.payload.outcome,
@@ -205,15 +241,152 @@ export function useProcessController(): ProcessController {
     };
   }, []);
 
+  // Listen for java-runtime-progress events.
+  useEffect(() => {
+    const unlisten = listen<JavaRuntimeProgressEvent>(
+      'java-runtime-progress',
+      (event) => {
+        const current = stateRef.current;
+        // Only track progress for the monitored instance.
+        if (current.instanceId && current.instanceId !== event.payload.instance_id) return;
+        setState((prev) => ({
+          ...prev,
+          runtimeProgress: event.payload,
+        }));
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   const clearError = useCallback(() => {
     setState((prev) => ({
       ...prev,
       error: null,
       phase: 'idle',
       recoverableIssue: null,
+      recoverableJavaIssue: null,
+      runtimeProgress: null,
       availableActions: [],
     }));
   }, []);
+
+  // ---- Java recovery helpers ----
+
+  const downloadRuntimeAndRetry = useCallback(async () => {
+    const current = stateRef.current;
+    if (!current.instanceId) return;
+    const javaIssue = current.recoverableJavaIssue;
+    if (!javaIssue) return;
+
+    setState((prev) => ({
+      ...prev,
+      phase: 'launching',
+      error: null,
+      recoverableIssue: null,
+      recoverableJavaIssue: null,
+      availableActions: [],
+    }));
+
+    try {
+      // Provision the runtime
+      await ensureJavaRuntime(javaIssue.major);
+
+      // Retry direct launch
+      const newState = await executeLaunch(current.instanceId, true);
+      setState(newState);
+    } catch (e) {
+      const parsed = parseLauncherError(e);
+      setState((prev) => ({
+        ...prev,
+        phase: 'failed',
+        error: parsed.message,
+        recoverableIssue: parsed.recoverableIssue,
+        recoverableJavaIssue: parsed.recoverableJavaIssue,
+        availableActions: parsed.availableActions,
+      }));
+    }
+  }, []);
+
+  const chooseJavaAndRetry = useCallback(async () => {
+    const current = stateRef.current;
+    if (!current.instanceId) return;
+    const javaIssue = current.recoverableJavaIssue;
+    if (!javaIssue) return;
+
+    setState((prev) => ({
+      ...prev,
+      phase: 'launching',
+      error: null,
+    }));
+
+    try {
+      // Open file picker for Java executable
+      const chosen = await pickOpenFile('Select Java executable', ['exe', 'bat', 'sh', 'java']);
+      if (!chosen) {
+        // User cancelled the picker — go back to failed state
+        setState((prev) => ({
+          ...prev,
+          phase: 'failed',
+          recoverableJavaIssue: javaIssue,
+          availableActions: ['download_runtime', 'choose_java', 'cancel'],
+        }));
+        return;
+      }
+
+      // Inspect the selected executable
+      await inspectJavaExecutable(chosen);
+
+      // Save as per-instance Java path
+      await updateInstanceJava(current.instanceId, chosen, false);
+
+      // Retry direct launch
+      const newState = await executeLaunch(current.instanceId, true);
+      setState(newState);
+    } catch (e) {
+      const parsed = parseLauncherError(e);
+      setState((prev) => ({
+        ...prev,
+        phase: 'failed',
+        error: parsed.message,
+        recoverableJavaIssue: javaIssue,
+        availableActions: ['download_runtime', 'choose_java', 'cancel'],
+      }));
+    }
+  }, []);
+
+  const cancelJavaRecovery = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      phase: 'idle',
+      error: null,
+      recoverableJavaIssue: null,
+      runtimeProgress: null,
+      availableActions: [],
+    }));
+  }, []);
+
+  const cancelJavaRuntimeForInstance = useCallback(async () => {
+    const current = stateRef.current;
+    if (!current.instanceId) return;
+    const opId = `java-runtime-${current.instanceId}-${current.runtimeProgress?.major ?? 0}`;
+    try {
+      await cancelJavaRuntime(opId);
+      setState((prev) => ({
+        ...prev,
+        phase: 'failed',
+        error: 'Java runtime provisioning was cancelled.',
+        recoverableJavaIssue: prev.recoverableJavaIssue,
+        availableActions: ['cancel'],
+        runtimeProgress: null,
+      }));
+    } catch {
+      // Operation may already be done — nothing to do
+    }
+  }, []);
+
+  // ---- End Java recovery helpers ----
 
   const startLaunch = useCallback(
     async (instanceId: string, directLaunch: boolean) => {
@@ -240,6 +413,8 @@ export function useProcessController(): ProcessController {
         snapshotId: null,
         exitedAt: null,
         recoverableIssue: null,
+        recoverableJavaIssue: null,
+        runtimeProgress: null,
         availableActions: [],
       });
 
@@ -268,6 +443,7 @@ export function useProcessController(): ProcessController {
           phase: 'failed',
           error: parsed.message,
           recoverableIssue: parsed.recoverableIssue,
+          recoverableJavaIssue: parsed.recoverableJavaIssue,
           availableActions: parsed.availableActions,
         }));
         return false;
@@ -296,6 +472,7 @@ export function useProcessController(): ProcessController {
           phase: 'awaiting-decision',
           error: parsed.message,
           recoverableIssue: parsed.recoverableIssue,
+          recoverableJavaIssue: parsed.recoverableJavaIssue,
           availableActions: parsed.availableActions,
         }));
         return parsed.message;
@@ -351,6 +528,8 @@ export function useProcessController(): ProcessController {
       phase: 'launching',
       error: null,
       recoverableIssue: null,
+      recoverableJavaIssue: null,
+      runtimeProgress: null,
       availableActions: [],
     }));
 
@@ -368,6 +547,7 @@ export function useProcessController(): ProcessController {
         phase: 'failed',
         error: parsed.message,
         recoverableIssue: parsed.recoverableIssue,
+        recoverableJavaIssue: parsed.recoverableJavaIssue,
         availableActions: parsed.availableActions,
       }));
     }
@@ -385,6 +565,8 @@ export function useProcessController(): ProcessController {
       phase: 'launching',
       error: null,
       recoverableIssue: null,
+      recoverableJavaIssue: null,
+      runtimeProgress: null,
       availableActions: [],
     }));
 
@@ -403,6 +585,8 @@ export function useProcessController(): ProcessController {
         snapshotId: null,
         exitedAt: null,
         recoverableIssue: null,
+        recoverableJavaIssue: null,
+        runtimeProgress: null,
         availableActions: [],
       });
     } catch (e) {
@@ -412,6 +596,7 @@ export function useProcessController(): ProcessController {
         phase: 'failed',
         error: parsed.message,
         recoverableIssue: parsed.recoverableIssue,
+        recoverableJavaIssue: parsed.recoverableJavaIssue,
         availableActions: parsed.availableActions,
       }));
     }
@@ -427,6 +612,10 @@ export function useProcessController(): ProcessController {
     clearError,
     repairAndRetry,
     useDelegatedLaunch,
+    downloadRuntimeAndRetry,
+    chooseJavaAndRetry,
+    cancelJavaRecovery,
+    cancelJavaRuntimeForInstance,
   };
 }
 
@@ -451,6 +640,8 @@ function launchedState(
     snapshotId: null,
     exitedAt: null,
     recoverableIssue: null,
+    recoverableJavaIssue: null,
+    runtimeProgress: null,
     availableActions: [],
   };
 }

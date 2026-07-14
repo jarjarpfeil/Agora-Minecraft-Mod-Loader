@@ -480,28 +480,61 @@ pub async fn launch_instance_direct(
                 message: e.to_string(),
             })?;
 
-        let java_paths = tokio::task::spawn_blocking(agora_core::java::detect_installed_jres)
-            .await
-            .map_err(|error| LauncherError::Generic {
-                code: "ERR_JAVA_DETECTION".into(),
-                message: format!("Java detection task failed: {error}"),
+        let java_runtime_mode: String = {
+            let conn2 = db::local_state_connection(&app).map_err(|e| LauncherError::Generic {
+                code: "ERR_DB".into(),
+                message: e.to_string(),
             })?;
+            db::get_setting(&conn2, "java_runtime_mode")
+                .ok()
+                .flatten()
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| "automatic".to_string())
+        };
+
+        let app_data_for_java =
+            paths::app_data_dir(&app).map_err(|error| LauncherError::Generic {
+                code: "ERR_APP_DATA".into(),
+                message: error.to_string(),
+            })?;
+        let minecraft_dir_for_java = paths::minecraft_dir();
+        let runtimes_root = app_data_for_java.join("runtimes");
+
+        let java_candidates = tokio::task::spawn_blocking(move || {
+            agora_core::java::detect_java_candidates(
+                Some(&runtimes_root),
+                minecraft_dir_for_java.as_deref(),
+            )
+        })
+        .await
+        .map_err(|error| LauncherError::Generic {
+            code: "ERR_JAVA_DETECTION".into(),
+            message: format!("Java detection task failed: {error}"),
+        })?;
+
+        // Resolve java override: per-instance first, then global setting
         let java_override: Option<PathBuf> = {
             let conn2 = db::local_state_connection(&app).map_err(|e| LauncherError::Generic {
                 code: "ERR_DB".into(),
                 message: e.to_string(),
             })?;
-            let user_override = db::get_setting(&conn2, "java_path")
-                .map_err(|e| LauncherError::Generic {
-                    code: "ERR_DB".into(),
-                    message: e.to_string(),
-                })?
-                .and_then(|v| v.as_str().map(|s| s.to_string()));
-            drop(conn2);
-            if let Some(p) = user_override {
-                Some(PathBuf::from(p))
+            // Per-instance override takes priority
+            let per_instance = row
+                .java_path
+                .as_ref()
+                .filter(|p| !p.trim().is_empty())
+                .map(|p| PathBuf::from(p));
+            if per_instance.is_some() {
+                per_instance
             } else {
-                None
+                let user_override = db::get_setting(&conn2, "java_path")
+                    .map_err(|e| LauncherError::Generic {
+                        code: "ERR_DB".into(),
+                        message: e.to_string(),
+                    })?
+                    .and_then(|v| v.as_str().map(|s| s.to_string()));
+                drop(conn2);
+                user_override.map(PathBuf::from)
             }
         };
         let client = reqwest::Client::new();
@@ -550,7 +583,9 @@ pub async fn launch_instance_direct(
                 version_url: String::new(),
             })
         };
-        let resolved =
+        let allow_incompatible = row.java_incompatible_override;
+
+        let resolve_result =
             agora_core::launch_planner::resolve(agora_core::launch_planner::ResolveRequest {
                 instance_id: sanitized.clone(),
                 base_version_id: row.minecraft_version.clone(),
@@ -559,15 +594,179 @@ pub async fn launch_instance_direct(
                 assets_dir: app_data.join("assets"),
                 cache_dir: app_data.join("launch_cache"),
                 java_override,
-                java_candidates: java_paths,
-                network_policy,
+                java_candidates: java_candidates.clone(),
+                network_policy: network_policy.clone(),
+                allow_incompatible_java_override: allow_incompatible,
                 minecraft_dir: paths::minecraft_dir(),
                 receipts_root: Some(
                     app_data.join(agora_core::installed_profile::RECEIPTS_DIR_NAME),
                 ),
             })
-            .await?;
+            .await;
+
+        let resolved = match resolve_result {
+            Ok(plan) => plan,
+            Err(LauncherError::JavaRuntimeMissing { major, component }) => {
+                // In automatic mode, provision the runtime and retry exactly once.
+                if java_runtime_mode == "automatic" {
+                    let app_data =
+                        paths::app_data_dir(&app).map_err(|error| LauncherError::Generic {
+                            code: "ERR_APP_DATA".into(),
+                            message: error.to_string(),
+                        })?;
+                    let runtimes_root = app_data.join("runtimes");
+                    let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+
+                    // Check network policy — preserve major info on failure
+                    network_policy
+                        .check(agora_core::network::NetworkCategory::JavaRuntime)
+                        .map_err(|_| LauncherError::JavaRuntimeDownloadDisabled {
+                            major,
+                            component: component.clone(),
+                        })?;
+
+                    // Register cancellation flag for auto-launch provisioning.
+                    let auto_op_id = java_runtime_op_id(&sanitized, major);
+                    let (_auto_id, cancel_flag) = register_java_runtime_cancel(&auto_op_id);
+                    let _auto_cancel_guard = CancelGuard::new(&auto_op_id);
+
+                    // Emit progress event (cancel-safe)
+                    let _ = app.emit(
+                        "java-runtime-progress",
+                        serde_json::json!({
+                            "instance_id": sanitized,
+                            "major": major,
+                            "stage": "ensuring",
+                            "message": format!("Provisioning Java {} runtime...", major),
+                            "percent": 0.0,
+                        }),
+                    );
+
+                    // Use channel-based progress with cancellation
+                    let (prog_tx, mut prog_rx) =
+                        tokio::sync::mpsc::unbounded_channel::<(String, Option<f64>)>();
+                    let emit_app = app.clone();
+                    let emit_id = sanitized.clone();
+                    let _prog_task = tokio::spawn(async move {
+                        while let Some((msg, pct)) = prog_rx.recv().await {
+                            let stage = if pct.map_or(false, |p| p >= 100.0) {
+                                "ready"
+                            } else {
+                                "downloading"
+                            };
+                            let _ = emit_app.emit(
+                                "java-runtime-progress",
+                                serde_json::json!({
+                                    "instance_id": emit_id,
+                                    "major": major,
+                                    "stage": stage,
+                                    "message": msg,
+                                    "percent": pct.unwrap_or(0.0),
+                                }),
+                            );
+                        }
+                    });
+
+                    let cancel_for_progress = cancel_flag.clone();
+                    let rt_root = runtimes_root.clone();
+                    let cat = catalog.clone();
+                    let net_pol = network_policy.clone();
+                    let ensured = tokio::task::spawn_blocking(move || {
+                        struct ChannelProgress {
+                            sender: tokio::sync::mpsc::UnboundedSender<(String, Option<f64>)>,
+                            cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+                        }
+                        impl agora_core::runtime_manager::RuntimeProgress for ChannelProgress {
+                            fn on_progress(&self, message: &str, percent: Option<f64>) {
+                                let _ = self.sender.send((message.to_string(), percent));
+                            }
+                            fn is_cancelled(&self) -> bool {
+                                self.cancel.load(std::sync::atomic::Ordering::SeqCst)
+                            }
+                        }
+                        let progress = ChannelProgress {
+                            sender: prog_tx,
+                            cancel: cancel_for_progress,
+                        };
+                        agora_core::runtime_manager::ensure_runtime(
+                            &rt_root,
+                            major,
+                            &cat,
+                            &net_pol,
+                            Some(&progress),
+                        )
+                    })
+                    .await
+                    .map_err(|_| LauncherError::JavaRuntimeMissing {
+                        major,
+                        component: component.clone(),
+                    })??;
+
+                    let _ = app.emit(
+                        "java-runtime-progress",
+                        serde_json::json!({
+                            "instance_id": sanitized,
+                            "major": major,
+                            "stage": "ready",
+                            "message": format!("Java {} runtime provisioned.", major),
+                            "percent": 100.0,
+                        }),
+                    );
+
+                    // Refresh candidates and retry resolve exactly once
+                    let fresh_candidates = tokio::task::spawn_blocking(move || {
+                        let mut cands = java_candidates;
+                        cands.push(agora_core::java::JavaInstallation {
+                            path: ensured.path,
+                            version: ensured.version,
+                            version_string: ensured.version_string,
+                            source: agora_core::java::JavaSource::Managed,
+                            arch: ensured.arch,
+                        });
+                        cands
+                    })
+                    .await
+                    .map_err(|_| LauncherError::JavaRuntimeMissing {
+                        major,
+                        component: component.clone(),
+                    })?;
+
+                    agora_core::launch_planner::resolve(
+                        agora_core::launch_planner::ResolveRequest {
+                            instance_id: sanitized.clone(),
+                            base_version_id: row.minecraft_version.clone(),
+                            loader: if matches!(row.loader.as_str(), "" | "vanilla") {
+                                None
+                            } else {
+                                Some(agora_core::launch::LoaderInfo {
+                                    loader_type: row.loader.clone(),
+                                    version: row.loader_version.clone(),
+                                    version_url: String::new(),
+                                })
+                            },
+                            game_dir: instance_dir.clone(),
+                            assets_dir: app_data.join("assets"),
+                            cache_dir: app_data.join("launch_cache"),
+                            java_override: None,
+                            java_candidates: fresh_candidates,
+                            network_policy: network_policy.clone(),
+                            allow_incompatible_java_override: false,
+                            minecraft_dir: paths::minecraft_dir(),
+                            receipts_root: Some(
+                                app_data.join(agora_core::installed_profile::RECEIPTS_DIR_NAME),
+                            ),
+                        },
+                    )
+                    .await?
+                } else {
+                    // prompt/manual mode: return structured missing error
+                    return Err(LauncherError::JavaRuntimeMissing { major, component });
+                }
+            }
+            Err(e) => return Err(e),
+        };
         let selected_java_major = resolved.java.major_version;
+        let java_path_for_receipt = resolved.java.path.clone();
         let materialized = agora_core::launch_planner::materialize(resolved).await?;
         let gc = agora_core::gc::compute_gc(
             selected_java_major,
@@ -768,6 +967,9 @@ pub async fn launch_instance_direct(
             let lkg_outcome = outcome.clone();
             let lkg_dir = launch_instance_dir.clone();
             let lkg_snap = pre_launch_snapshot_id.clone();
+            let lkg_java_path = java_path_for_receipt.clone();
+            let lkg_runtimes_root = app_data.join("runtimes");
+            let lkg_was_success = matches!(lkg_outcome, agora_core::lkg::LaunchOutcome::Success);
             let lkg_lock = {
                 let mut shared = state_on_exit.lock().await;
                 shared
@@ -790,6 +992,21 @@ pub async fn launch_instance_direct(
                     crate::auth::log_line(&format!(
                         "snapshot retention failed after launch: {error}"
                     ));
+                }
+                // Mark the managed runtime as successfully used after a
+                // success outcome. This supports the future patch-update
+                // retention policy: old builds are kept until successful use.
+                if lkg_was_success {
+                    if let Err(error) =
+                        agora_core::runtime_manager::mark_successful_use(
+                            &lkg_runtimes_root,
+                            &lkg_java_path,
+                        )
+                    {
+                        crate::auth::log_line(&format!(
+                            "failed to mark runtime successful use: {error}"
+                        ));
+                    }
                 }
             })
             .await;
@@ -2729,7 +2946,7 @@ pub async fn ai_chat(
 /// Get an AI explanation for a detected crash.
 #[tauri::command]
 pub async fn explain_crash(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     _state: tauri::State<'_, LauncherState>,
     instance_id: String,
     crash_log: String,
@@ -5007,6 +5224,333 @@ pub fn test_launcher_path(
         }
     }
     Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// Java runtime management commands (Stage 3)
+// ---------------------------------------------------------------------------
+
+/// Process-wide per-major mutex to prevent duplicate runtime downloads for
+/// the same Java major version.
+static JAVA_RUNTIME_MUTEXES: LazyLock<
+    std::sync::Mutex<std::collections::HashMap<u32, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+> = LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Get or create a per-major download mutex.
+fn java_runtime_mutex(major: u32) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    let mut map = JAVA_RUNTIME_MUTEXES.lock().unwrap();
+    map.entry(major)
+        .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
+/// Process-wide map of operation ID → cancellation flag for Java runtime provisioning.
+/// Operations register an `Arc<AtomicBool>` before starting and remove it on completion.
+static JAVA_RUNTIME_CANCELLATIONS: LazyLock<
+    std::sync::Mutex<
+        std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    >,
+> = LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Generate a stable operation ID for a java runtime provisioning operation.
+fn java_runtime_op_id(instance_id: &str, major: u32) -> String {
+    format!("java-runtime-{}-{}", instance_id, major)
+}
+
+/// Register a cancellation flag for a java runtime operation.
+/// Returns the key and the shared flag.
+fn register_java_runtime_cancel(
+    operation_id: &str,
+) -> (String, std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut map = JAVA_RUNTIME_CANCELLATIONS.lock().unwrap();
+    map.insert(operation_id.to_string(), flag.clone());
+    (operation_id.to_string(), flag)
+}
+
+/// RAII guard that unregisters a Java runtime cancellation flag on drop.
+/// Ensures cleanup on all return paths, panics, and join errors.
+struct CancelGuard {
+    operation_id: String,
+}
+
+impl CancelGuard {
+    fn new(operation_id: &str) -> Self {
+        // register_java_runtime_cancel is called separately to get the flag;
+        // this guard only handles unregistration on drop.
+        Self {
+            operation_id: operation_id.to_string(),
+        }
+    }
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        let mut map = JAVA_RUNTIME_CANCELLATIONS.lock().unwrap();
+        map.remove(&self.operation_id);
+    }
+}
+
+/// Cancel a Java runtime provisioning operation by operation ID.
+#[tauri::command]
+pub async fn cancel_java_runtime(operation_id: String) -> LauncherResult<()> {
+    let map = JAVA_RUNTIME_CANCELLATIONS.lock().unwrap();
+    if let Some(flag) = map.get(&operation_id) {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    } else {
+        Err(LauncherError::Generic {
+            code: "ERR_CANCEL_NOT_FOUND".into(),
+            message: format!("No active java runtime operation with id '{operation_id}'"),
+        })
+    }
+}
+
+/// Summary of a detected or managed Java runtime.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct JavaRuntimeSummary {
+    pub path: String,
+    pub version: u32,
+    pub version_string: String,
+    pub source: String,
+    pub arch: Option<String>,
+}
+
+impl From<agora_core::java::JavaInstallation> for JavaRuntimeSummary {
+    fn from(j: agora_core::java::JavaInstallation) -> Self {
+        Self {
+            path: j.path.to_string_lossy().to_string(),
+            version: j.version,
+            version_string: j.version_string,
+            source: format!("{:?}", j.source),
+            arch: j.arch,
+        }
+    }
+}
+
+/// List all discovered Java runtimes (managed + Mojang + system).
+#[tauri::command]
+pub async fn list_java_runtimes(app: tauri::AppHandle) -> LauncherResult<Vec<JavaRuntimeSummary>> {
+    let app_data = paths::app_data_dir(&app).map_err(|_| LauncherError::LocalStateFailed)?;
+    let runtimes_root = app_data.join("runtimes");
+    let minecraft_dir = paths::minecraft_dir();
+
+    // Read global java_path setting to prepend as Override source.
+    let global_java = db::local_state_connection(&app)
+        .ok()
+        .and_then(|conn| db::get_setting(&conn, "java_path").ok().flatten())
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .filter(|s| !s.trim().is_empty());
+
+    let summaries = tokio::task::spawn_blocking(move || {
+        let candidates = agora_core::java::detect_java_candidates(
+            Some(&runtimes_root),
+            minecraft_dir.as_deref(),
+        );
+        let mut results: Vec<JavaRuntimeSummary> = candidates
+            .into_iter()
+            .map(JavaRuntimeSummary::from)
+            .collect();
+
+        // Prepend global java_path if valid and not a duplicate.
+        if let Some(ref java_path) = global_java {
+            let java_path = java_path.trim().to_string();
+            if !java_path.is_empty()
+                && !results.iter().any(|r| r.path == java_path)
+                && std::path::Path::new(&java_path).is_file()
+            {
+                if let Some(inst) = agora_core::java::inspect_java(std::path::Path::new(&java_path))
+                {
+                    results.insert(
+                        0,
+                        JavaRuntimeSummary {
+                            path: inst.path.to_string_lossy().to_string(),
+                            version: inst.version,
+                            version_string: inst.version_string,
+                            source: "Override".to_string(),
+                            arch: inst.arch,
+                        },
+                    );
+                }
+            }
+        }
+
+        results
+    })
+    .await
+    .map_err(|e| LauncherError::Generic {
+        code: "ERR_JAVA_DETECTION".into(),
+        message: format!("Java detection task failed: {e}"),
+    })?;
+
+    Ok(summaries)
+}
+
+/// Ensure a managed Java runtime for the given major version is installed.
+/// Uses a per-major mutex to prevent duplicate downloads.
+/// Returns a summary of the provisioned runtime.
+///
+/// Accepts an optional `operation_id` for cancellation; if omitted a stable
+/// key `"settings-{major}"` is used.
+#[tauri::command]
+pub async fn ensure_java_runtime(
+    app: tauri::AppHandle,
+    major: u32,
+    operation_id: Option<String>,
+) -> LauncherResult<JavaRuntimeSummary> {
+    use tauri::Emitter;
+
+    // Stable operation ID when caller doesn't provide one.
+    let op_id = operation_id.unwrap_or_else(|| format!("settings-{major}"));
+
+    let app_data = paths::app_data_dir(&app).map_err(|_| LauncherError::LocalStateFailed)?;
+    let runtimes_root = app_data.join("runtimes");
+    let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+
+    let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
+    let policy = agora_core::network::NetworkPolicy::from_db(&conn);
+    drop(conn);
+
+    // Check network policy.
+    policy.check(agora_core::network::NetworkCategory::JavaRuntime)?;
+
+    // Acquire per-major mutex to prevent concurrent download of the same version.
+    let major_mutex = java_runtime_mutex(major);
+    let _major_lock = major_mutex.lock().await;
+
+    // Register cancellation flag and RAII guard for automatic cleanup on return/panic/error.
+    let (_op_id, cancel_flag) = register_java_runtime_cancel(&op_id);
+    let _cancel_guard = CancelGuard::new(&op_id);
+
+    // Use a channel-based progress bridge so the progress impl can be 'static.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(String, Option<f64>)>();
+    let app_clone = app.clone();
+
+    // Spawn a task to forward progress events to Tauri.
+    let _progress_task = tokio::spawn(async move {
+        while let Some((msg, pct)) = rx.recv().await {
+            let stage = if pct.map_or(false, |p| p >= 100.0) {
+                "ready"
+            } else {
+                "downloading"
+            };
+            let _ = app_clone.emit(
+                "java-runtime-progress",
+                serde_json::json!({
+                    "instance_id": "",
+                    "major": major,
+                    "stage": stage,
+                    "message": msg,
+                    "percent": pct.unwrap_or(0.0),
+                }),
+            );
+        }
+    });
+
+    let cancel_for_progress = cancel_flag.clone();
+    let ensured = tokio::task::spawn_blocking(move || {
+        struct ChannelProgress {
+            sender: tokio::sync::mpsc::UnboundedSender<(String, Option<f64>)>,
+            cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        }
+        impl agora_core::runtime_manager::RuntimeProgress for ChannelProgress {
+            fn on_progress(&self, message: &str, percent: Option<f64>) {
+                let _ = self.sender.send((message.to_string(), percent));
+            }
+            fn is_cancelled(&self) -> bool {
+                self.cancel.load(std::sync::atomic::Ordering::SeqCst)
+            }
+        }
+        let progress = ChannelProgress {
+            sender: tx,
+            cancel: cancel_for_progress,
+        };
+        agora_core::runtime_manager::ensure_runtime(
+            &runtimes_root,
+            major,
+            &catalog,
+            &policy,
+            Some(&progress),
+        )
+    })
+    .await
+    .map_err(|_| LauncherError::Generic {
+        code: "ERR_ENSURE_RUNTIME".into(),
+        message: format!("Failed to provision Java {major} runtime."),
+    })??;
+
+    Ok(JavaRuntimeSummary::from(ensured))
+}
+
+/// Remove unused managed Java runtimes (keep newest per major).
+/// Returns the number of runtimes that were removed.
+#[tauri::command]
+pub async fn remove_unused_java_runtimes(app: tauri::AppHandle) -> LauncherResult<usize> {
+    let app_data = paths::app_data_dir(&app).map_err(|_| LauncherError::LocalStateFailed)?;
+    let runtimes_root = app_data.join("runtimes");
+    let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+
+    let removed = tokio::task::spawn_blocking(move || {
+        agora_core::runtime_manager::remove_unused(&runtimes_root, &catalog, &[])
+    })
+    .await
+    .map_err(|e| LauncherError::Generic {
+        code: "ERR_REMOVE_UNUSED".into(),
+        message: format!("Remove unused runtimes task failed: {e}"),
+    })??;
+
+    Ok(removed)
+}
+
+/// Inspect a Java executable at the given path and return its summary.
+/// Used for picker validation before the user saves a custom Java path.
+#[tauri::command]
+pub async fn inspect_java_executable(path: String) -> LauncherResult<JavaRuntimeSummary> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.is_file() {
+        return Err(LauncherError::Generic {
+            code: "ERR_JAVA_PATH_NOT_FILE".into(),
+            message: format!("Java executable not found at: {path}"),
+        });
+    }
+    let insp = tokio::task::spawn_blocking(move || agora_core::java::inspect_java(&p))
+        .await
+        .map_err(|_| LauncherError::Generic {
+            code: "ERR_JAVA_INSPECT".into(),
+            message: format!("Failed to inspect Java at: {path}"),
+        })?
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_JAVA_INSPECT_FAILED".into(),
+            message: format!("Could not parse Java version info from: {path}"),
+        })?;
+
+    Ok(JavaRuntimeSummary::from(insp))
+}
+
+/// Update per-instance Java path and incompatible override setting.
+/// Pass `path` as null to clear the per-instance override.
+#[tauri::command]
+pub async fn update_instance_java(
+    app: tauri::AppHandle,
+    instance_id: String,
+    path: Option<String>,
+    allow_incompatible: bool,
+) -> LauncherResult<()> {
+    let sanitized = paths::sanitize_id(&instance_id);
+    let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
+
+    // Verify instance exists.
+    let _row = db::get_instance(&conn, &sanitized)
+        .map_err(|_| LauncherError::LocalStateFailed)?
+        .ok_or_else(|| LauncherError::Generic {
+            code: "ERR_INSTANCE_NOT_FOUND".into(),
+            message: format!("Instance '{instance_id}' not found"),
+        })?;
+
+    db::update_instance_java(&conn, &sanitized, path.as_deref(), allow_incompatible)
+        .map_err(|_| LauncherError::LocalStateFailed)?;
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -16,8 +16,8 @@ test('hanging startup invokes still render a branded shell immediately', async (
     });
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Agora' })).toBeVisible();
-  await expect(page.getByText('Loading…')).toBeVisible();
+  await expect(page.getByText('Agora Launcher')).toBeVisible();
+  await expect(page.getByText('Preparing your library…')).toBeVisible();
 });
 
 test('stored theme and accent apply before optional Windows accent resolves', async ({ page }) => {

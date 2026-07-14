@@ -53,6 +53,8 @@ pub mod paths;
 pub mod process_identity;
 pub mod registry;
 pub mod registry_sync;
+pub mod runtime_catalog;
+pub mod runtime_manager;
 pub mod server_export;
 pub mod snapshot;
 pub mod state;

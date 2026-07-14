@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import {
+  cancelJavaRuntime,
+  ensureJavaRuntime,
   formatError,
   getSetting,
   githubLogin,
   githubLoginPoll,
   setSetting,
   type DeviceFlowResponse,
+  type JavaRuntimeProgressEvent,
 } from '../lib/tauri';
 import { useRegistryState } from '../lib/useRegistryState';
 import { RegistryStatusView } from '../components/registry-status-view';
 import { DeviceFlowPanel } from '../components/DeviceFlowPanel';
 
-type Step = 'welcome' | 'services' | 'github' | 'registry';
+type Step = 'welcome' | 'services' | 'java' | 'github' | 'registry';
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -64,12 +68,15 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               values={services}
               loading={servicesLoading}
               onChange={setServices}
-              onContinue={() => setStep('github')}
+              onContinue={() => setStep('java')}
               onBack={() => setStep('welcome')}
             />
           )}
+          {step === 'java' && (
+            <JavaStep onContinue={() => setStep('github')} onBack={() => setStep('services')} />
+          )}
           {step === 'github' && (
-            <GithubStep onContinue={() => setStep('registry')} onBack={() => setStep('services')} />
+            <GithubStep onContinue={() => setStep('registry')} onBack={() => setStep('java')} />
           )}
           {step === 'registry' && (
             <RegistryStep onFinish={finish} onBack={() => setStep('github')} hasAutoDownloaded={registryAutoDownloaded} />
@@ -88,6 +95,7 @@ function Stepper({ current }: { current: Step }) {
   const steps: { id: Step; label: string }[] = [
     { id: 'welcome', label: 'Welcome' },
     { id: 'services', label: 'Services' },
+    { id: 'java', label: 'Java' },
     { id: 'github', label: 'GitHub' },
     { id: 'registry', label: 'Registry' },
   ];
@@ -263,6 +271,178 @@ function ServiceToggle({
         </button>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+function JavaStep({
+  onContinue,
+  onBack,
+}: {
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  const [checked, setChecked] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [percent, setPercent] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const OPERATION_ID = 'onboarding-java-21';
+
+  // Listen for java-runtime-progress events for onboarding
+  useEffect(() => {
+    const unlisten = listen<JavaRuntimeProgressEvent>(
+      'java-runtime-progress',
+      (event) => {
+        // Only track onboarding progress
+        if (event.payload.instance_id !== '') return;
+        setProgress(event.payload.message || `Java ${event.payload.major}: ${event.payload.stage}`);
+        setPercent(event.payload.percent);
+        if (event.payload.stage === 'ready') {
+          setDone(true);
+          setProgress('Java 21 is ready.');
+        }
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const handleCancelJava = async () => {
+    setCancelling(true);
+    setProgress('Cancelling…');
+    try {
+      await cancelJavaRuntime(OPERATION_ID);
+    } catch {
+      // Operation may already be complete
+    }
+    // Allow continue without Java even if cancel API fails
+    setBusy(false);
+    setCancelling(false);
+    setProgress(null);
+    setPercent(null);
+    onContinue();
+  };
+
+  const handleContinue = async () => {
+    if (!checked) {
+      onContinue();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setProgress('Preparing Java 21 runtime…');
+    setPercent(0);
+    try {
+      await ensureJavaRuntime(21, OPERATION_ID);
+      setProgress('Java 21 is ready.');
+      setPercent(100);
+      setDone(true);
+      setTimeout(() => onContinue(), 800);
+    } catch (e) {
+      setError(formatError(e));
+      setProgress(null);
+      setPercent(null);
+      // Allow Continue anyway
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <Stepper current="java" />
+      <h2 className="text-2xl font-bold mb-2">Prepare Java for Minecraft</h2>
+      <p className="text-muted-foreground mb-6">
+        Modern Minecraft (1.17+) requires Java 17 or higher. Agora can download Java 21 — the
+        latest long-term support version — so your instances work out of the box.
+      </p>
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="font-medium text-sm">Prepare Java 21 for modern Minecraft</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Downloads and manages a private Java 21 runtime in Agora's app data directory.
+              Older exact versions download automatically when needed for specific instances.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            onClick={() => {
+              if (!busy) setChecked(!checked);
+            }}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+              checked ? 'bg-primary' : 'bg-muted'
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                checked ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {busy && progress && !done && (
+        <div className="rounded-lg bg-muted px-3 py-3 mt-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-background rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(percent ?? 0, 100)}%` }}
+              />
+            </div>
+            <button
+              onClick={handleCancelJava}
+              disabled={cancelling}
+              className="rounded-lg border border-border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50 shrink-0"
+            >
+              {cancelling ? 'Cancelling…' : 'Cancel'}
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">{progress}</p>
+        </div>
+      )}
+
+      {done && progress && (
+        <div className="rounded-lg bg-muted px-3 py-2 mt-4">
+          <p className="text-xs text-muted-foreground">{progress}</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg bg-destructive/10 px-3 py-2 mt-4">
+          <p className="text-xs text-destructive">{error}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            You can continue without Java and download it later from Settings.
+          </p>
+        </div>
+      )}
+
+      <div className="mt-8 flex justify-between">
+        <button
+          onClick={onBack}
+          disabled={busy}
+          className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:underline disabled:opacity-50"
+        >
+          Back
+        </button>
+        <button
+          onClick={handleContinue}
+          disabled={busy && !done}
+          className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {busy ? 'Downloading…' : done ? 'Continuing…' : 'Continue'}
+        </button>
+      </div>
     </div>
   );
 }

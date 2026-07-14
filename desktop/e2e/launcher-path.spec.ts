@@ -71,10 +71,10 @@ test.describe('Launcher Path (B3)', () => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Launcher Path' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Browse…' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Auto-detect' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Test' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Browse…' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Auto-detect' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Test' }).first()).toBeVisible();
   });
 
   test('Auto-detect fills path and shows success', async ({ page }) => {
