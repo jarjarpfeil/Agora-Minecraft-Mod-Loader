@@ -1,4 +1,4 @@
-# Agora Minecraft Mod Launcher
+# Agora Minecraft Launcher
 
 > This is not a warehouse. This is a boutique.
 
