@@ -1084,32 +1084,43 @@ fn extract_tar_gz(
             })?;
 
             // Reject symlinks, hardlinks, devices, FIFOs.
-            let header = entry.header();
-            let entry_type = header.entry_type();
-            if !matches!(
-                entry_type,
-                tar::EntryType::Regular | tar::EntryType::Directory | tar::EntryType::Continuous
-            ) {
-                return Err(LauncherError::Generic {
-                    code: "ERR_ARCHIVE_FORBIDDEN_ENTRY".into(),
-                    message: format!("Forbidden entry type {:?} in tar archive", entry_type),
-                });
-            }
-
-            // Reject links.
-            if header
-                .link_name()
-                .map_err(|e| LauncherError::Generic {
-                    code: "ERR_TAR_HEADER".into(),
-                    message: format!("Failed to read tar link name: {e}"),
-                })?
-                .is_some()
+            let entry_type;
+            #[cfg(unix)]
+            let mode;
             {
-                return Err(LauncherError::Generic {
-                    code: "ERR_ARCHIVE_FORBIDDEN_ENTRY".into(),
-                    message: "Hardlinks are not permitted.".into(),
-                });
-            }
+                let header = entry.header();
+                entry_type = header.entry_type();
+                if !matches!(
+                    entry_type,
+                    tar::EntryType::Regular | tar::EntryType::Directory | tar::EntryType::Continuous
+                ) {
+                    return Err(LauncherError::Generic {
+                        code: "ERR_ARCHIVE_FORBIDDEN_ENTRY".into(),
+                        message: format!("Forbidden entry type {:?} in tar archive", entry_type),
+                    });
+                }
+
+                // Reject links.
+                let has_link = header
+                    .link_name()
+                    .map_err(|e| LauncherError::Generic {
+                        code: "ERR_TAR_HEADER".into(),
+                        message: format!("Failed to read tar link name: {e}"),
+                    })?
+                    .is_some();
+                if has_link {
+                    return Err(LauncherError::Generic {
+                        code: "ERR_ARCHIVE_FORBIDDEN_ENTRY".into(),
+                        message: "Hardlinks are not permitted.".into(),
+                    });
+                }
+
+                // Extract mode for Unix permissions before header goes out of scope.
+                #[cfg(unix)]
+                {
+                    mode = header.mode().unwrap_or(0o644);
+                }
+            } // header dropped here, releasing the immutable borrow on entry
 
             let raw_name = match entry.path() {
                 Ok(p) => p.to_string_lossy().into_owned(),
@@ -1126,7 +1137,7 @@ fn extract_tar_gz(
             let normalized = raw_name.replace('\\', "/");
             let relative = validate_entry_name(&normalized)?;
 
-            if entry.header().entry_type().is_dir() {
+            if entry_type.is_dir() {
                 let target = staging.join(&relative);
                 check_path_collision(&seen_paths, &normalized, &relative)?;
                 seen_paths.push(relative);
@@ -1182,7 +1193,6 @@ fn extract_tar_gz(
             // Preserve executable bit on Unix.
             #[cfg(unix)]
             {
-                let mode = header.mode().unwrap_or(0o644);
                 set_unix_permissions(&target, mode);
             }
         }
