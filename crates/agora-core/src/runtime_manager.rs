@@ -2850,10 +2850,19 @@ mod tests {
         // We'll just verify that the canonical check catches it by testing
         // with an unresolvable path.
         let link_path = dir.path().join("link");
-        // Try to create symlink (may fail on Windows without perms).
-        let _ = std::os::windows::fs::symlink_dir(&entry_path, &link_path);
+        // Try to create a directory symlink using the host OS API. This may
+        // fail on Windows without Developer Mode or administrator privileges.
+        #[cfg(windows)]
+        let link_result = std::os::windows::fs::symlink_dir(&entry_path, &link_path);
+        #[cfg(unix)]
+        let link_result = std::os::unix::fs::symlink(&entry_path, &link_path);
+        #[cfg(not(any(windows, unix)))]
+        let link_result: std::io::Result<()> = Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "directory symlinks are unsupported on this platform",
+        ));
 
-        if link_path.exists() {
+        if link_result.is_ok() && link_path.exists() {
             let result = remove_runtime(&real_dir, &link_path);
             assert!(result.is_err(), "symlink should be rejected");
         }

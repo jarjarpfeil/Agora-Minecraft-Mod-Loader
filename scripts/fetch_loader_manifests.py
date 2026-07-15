@@ -433,7 +433,7 @@ def _stable_json_sha256(data: bytes, drop: set[str] | None = None) -> str:
     return _sha256_hex(canonical.encode("utf-8"))
 
 
-def _fetch_bytes(url: str) -> bytes:
+def _fetch_bytes(url: str, timeout: float = 60) -> bytes:
     headers = {
         "User-Agent": (
             "AgoraLoaderManifestBot/1.0 "
@@ -441,15 +441,25 @@ def _fetch_bytes(url: str) -> bytes:
         ),
     }
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except urllib.error.URLError:
+        raise
+    except TimeoutError as exc:
+        # urllib wraps connection-time timeouts in URLError, but a timeout
+        # raised while reading the response body escapes as TimeoutError.
+        # Normalize both phases so loader-specific skip logic can handle them.
+        raise urllib.error.URLError(f"timeout reading {url}: {exc}") from exc
 
 
 def _fetch_json(url: str) -> Any:
     return json.loads(_fetch_bytes(url).decode("utf-8"))
 
 
-def _download_to_cache(url: str, cache_name: str) -> Path:
+def _download_to_cache(
+    url: str, cache_name: str, timeout: float = 60
+) -> Path:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = CACHE_DIR / cache_name
     if cache_path.exists():
@@ -457,7 +467,7 @@ def _download_to_cache(url: str, cache_name: str) -> Path:
         return cache_path
 
     logger.info("Downloading %s", url)
-    data = _fetch_bytes(url)
+    data = _fetch_bytes(url, timeout=timeout)
     cache_path.write_bytes(data)
     return cache_path
 
@@ -866,7 +876,7 @@ def _fetch_forge(
         )
         cache_name = f"forge-{version}-installer.jar"
         try:
-            jar_path = _download_to_cache(source_url, cache_name)
+            jar_path = _download_to_cache(source_url, cache_name, timeout=1)
         except urllib.error.URLError as exc:
             logger.error("Failed to download Forge installer %s: %s", version, exc)
             continue

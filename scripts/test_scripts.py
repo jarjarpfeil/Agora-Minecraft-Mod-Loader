@@ -7,13 +7,53 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 import fetch_loader_manifests
 import fetch_registry_db
 import refresh_loader_manifests
+
+
+class TestFetchBytes(unittest.TestCase):
+    """Tests for network error normalization in _fetch_bytes."""
+
+    @mock.patch("fetch_loader_manifests.urllib.request.urlopen")
+    def test_read_timeout_is_normalized_to_url_error(self, urlopen):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.side_effect = TimeoutError("timed out")
+        urlopen.return_value = response
+
+        with self.assertRaises(urllib.error.URLError) as raised:
+            fetch_loader_manifests._fetch_bytes("https://example.test/file.jar")
+
+        self.assertIsInstance(raised.exception.__cause__, TimeoutError)
+
+    @mock.patch("fetch_loader_manifests.urllib.request.urlopen")
+    def test_url_error_is_not_wrapped_again(self, urlopen):
+        original = urllib.error.URLError("not found")
+        urlopen.side_effect = original
+
+        with self.assertRaises(urllib.error.URLError) as raised:
+            fetch_loader_manifests._fetch_bytes("https://example.test/file.jar")
+
+        self.assertIs(raised.exception, original)
+
+    @mock.patch("fetch_loader_manifests.urllib.request.urlopen")
+    def test_custom_timeout_is_passed_to_urlopen(self, urlopen):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = b"data"
+        urlopen.return_value = response
+
+        fetch_loader_manifests._fetch_bytes(
+            "https://example.test/file.jar", timeout=1
+        )
+
+        _, kwargs = urlopen.call_args
+        self.assertEqual(kwargs["timeout"], 1)
 
 
 class TestIsStandardRelease(unittest.TestCase):

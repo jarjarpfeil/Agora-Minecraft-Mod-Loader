@@ -3976,7 +3976,8 @@
         "sha256": "4d5d6989358d3b6a8212860f8f088ac7c428ed503ea8a4df1988f7c946918827",
         "file_name": "neoforge-20.2.89-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8c1354e1ebfd7d6c0ecb55cf91c08a9b35955209a5133bcc1a5f90a90611ad82"
+        "version_json_sha256": "8c1354e1ebfd7d6c0ecb55cf91c08a9b35955209a5133bcc1a5f90a90611ad82",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -3985,7 +3986,8 @@
         "sha256": "e49956d62e919d760a5290febaea2b1d2d165e0c11fe1221eb27e52c532fdf29",
         "file_name": "neoforge-20.2.90-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c2fb2422a1d91369a5464bb30980b5341f1ecc301d60705a1a7393e825c9f062"
+        "version_json_sha256": "c2fb2422a1d91369a5464bb30980b5341f1ecc301d60705a1a7393e825c9f062",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -3994,7 +3996,8 @@
         "sha256": "a83a722bd65ee56ab0a37014d3921c5d4e76a015b2f03ee1fe621b34b52d9f42",
         "file_name": "neoforge-20.2.91-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "45cf97607a80674ce7469dd43b0d625f9c1a2b8a1c42e6741022d80ecbba2591"
+        "version_json_sha256": "45cf97607a80674ce7469dd43b0d625f9c1a2b8a1c42e6741022d80ecbba2591",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -4003,7 +4006,8 @@
         "sha256": "f1da5e245d67c7c03e1be0d92bdc332e3921ef14ca85e7fe9f8f25b720c78098",
         "file_name": "neoforge-20.2.92-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "f1c3ac5c71890e56b7f3dae9b9de493c0f551d24324b6dd10e5eef816de27d1e"
+        "version_json_sha256": "f1c3ac5c71890e56b7f3dae9b9de493c0f551d24324b6dd10e5eef816de27d1e",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -4012,7 +4016,8 @@
         "sha256": "f2badd12f9e5d0cef4d2c9143d1ae2e008345fa7438e89cee629c13e33de00c7",
         "file_name": "neoforge-20.2.93-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a9e24d37fe889da567cad6af4bfcb76a79a4bf7bfdf6d08f5147ff95aafa2d47"
+        "version_json_sha256": "a9e24d37fe889da567cad6af4bfcb76a79a4bf7bfdf6d08f5147ff95aafa2d47",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.3",
@@ -4021,7 +4026,8 @@
         "sha256": "62b5e399f9049fddcd609069390b9e38f12591331449c76c42f402c8e8f2b0f5",
         "file_name": "neoforge-20.3.3-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "687b5cc452722cd23e8a7c91267341db51927b25b07247dba3800d4cd46e5cec"
+        "version_json_sha256": "687b5cc452722cd23e8a7c91267341db51927b25b07247dba3800d4cd46e5cec",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.3",
@@ -4030,7 +4036,8 @@
         "sha256": "c0300b0e888852ef7e9885cd07a372c527ec44be374dbb6dbcc01fecbf0eb3b8",
         "file_name": "neoforge-20.3.4-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "391e71f449eaf425973ca9baa34c23f3951c27267a38801e04e335fd8af6ac45"
+        "version_json_sha256": "391e71f449eaf425973ca9baa34c23f3951c27267a38801e04e335fd8af6ac45",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.3",
@@ -4039,7 +4046,8 @@
         "sha256": "86f4cd671ee7cf62a122dd72c4e997675eb1e078be91b83e3fc52a5225af19b4",
         "file_name": "neoforge-20.3.6-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c644df2bbe543541b08a6eced1d797c8cad6e15062c2cabfb19b24a2dc036624"
+        "version_json_sha256": "c644df2bbe543541b08a6eced1d797c8cad6e15062c2cabfb19b24a2dc036624",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.3",
@@ -4048,7 +4056,8 @@
         "sha256": "4628656019533b2748d5d010a3e2536d118fe033c8d704934d46ab8a8a77488f",
         "file_name": "neoforge-20.3.7-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "dd4dc873c30d395aae7e42981b9ed9bb9bb51541efe87adac3c28b1f6720bee6"
+        "version_json_sha256": "dd4dc873c30d395aae7e42981b9ed9bb9bb51541efe87adac3c28b1f6720bee6",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.3",
@@ -4057,7 +4066,8 @@
         "sha256": "d59ba6f0c867ddaafe0247ba7ddf527389897806795b9bd543a2c4313695f9d7",
         "file_name": "neoforge-20.3.8-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8825efe335f862d2a64836f1b5214ab8082c50d45dd87615239f8f6e30e36d33"
+        "version_json_sha256": "8825efe335f862d2a64836f1b5214ab8082c50d45dd87615239f8f6e30e36d33",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -4066,7 +4076,8 @@
         "sha256": "0f92581f298b0dddc31d8b63c8b6c2ac140cef42f4f41f2390266453aa64c117",
         "file_name": "neoforge-20.4.247-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "357ba89723af42c69914bf527311b52062c34213ee6fb6ca2be0808117664da9"
+        "version_json_sha256": "357ba89723af42c69914bf527311b52062c34213ee6fb6ca2be0808117664da9",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -4075,7 +4086,8 @@
         "sha256": "c8732641572cc128fb8c27926a994eea40a53e6e686dee2c3b050801d169575a",
         "file_name": "neoforge-20.4.248-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "46d0706780df29de787663d410fb0ecaa2e0aa44f7a40ff9ba2dc94c08325f05"
+        "version_json_sha256": "46d0706780df29de787663d410fb0ecaa2e0aa44f7a40ff9ba2dc94c08325f05",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -4084,7 +4096,8 @@
         "sha256": "3a2bb8d5f848c5a50ca2cfa9d73396714d66260ba5f77f80d29531b03d36d6d4",
         "file_name": "neoforge-20.4.249-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "5ded377724b9b9b95bacffcc8f12068410b57fbaa8b02a57466ee106c4ddbb0d"
+        "version_json_sha256": "5ded377724b9b9b95bacffcc8f12068410b57fbaa8b02a57466ee106c4ddbb0d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -4093,7 +4106,8 @@
         "sha256": "649e243c58ee6ae9d9afe29382619cc1cdb1c183d1324a83b22fe079f278ee21",
         "file_name": "neoforge-20.4.250-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9a163a34c387912cb7c1493b645d0493118c93d227b628b99a31ff0023adbdcb"
+        "version_json_sha256": "9a163a34c387912cb7c1493b645d0493118c93d227b628b99a31ff0023adbdcb",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -4102,7 +4116,8 @@
         "sha256": "ba50598a03d733d7483fdcefd49e3acf4667210fd84ca9531f90cba68897fe44",
         "file_name": "neoforge-20.4.251-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "f8a3700b16b987a72e38128c4f243545246f441355a98a1c4bacfd3f9f4ff97a"
+        "version_json_sha256": "f8a3700b16b987a72e38128c4f243545246f441355a98a1c4bacfd3f9f4ff97a",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.5",
@@ -4111,7 +4126,8 @@
         "sha256": "cfeb74416d235b5b384fdc8328b5c3eda90326526eb47a74ae2ad4367ddbfa10",
         "file_name": "neoforge-20.5.17-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c76ead69415ff2ab3ed30b62af3b4ebd8a092f6eaa1594fe4802fbf7258e27ac"
+        "version_json_sha256": "c76ead69415ff2ab3ed30b62af3b4ebd8a092f6eaa1594fe4802fbf7258e27ac",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.5",
@@ -4120,7 +4136,8 @@
         "sha256": "2678a2232988f093e326f9ef66e339be63f9ed2f19318da2a77d9ba42a1bf659",
         "file_name": "neoforge-20.5.18-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6327331cd9ba9cecce3b84e83cb341b81b65f0216b8b6510639ad4f007ae38ea"
+        "version_json_sha256": "6327331cd9ba9cecce3b84e83cb341b81b65f0216b8b6510639ad4f007ae38ea",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.5",
@@ -4129,7 +4146,8 @@
         "sha256": "71d6e44348a6d5f35661f7c3815b691439fe63f4a09904ca818abb26db9dbc7b",
         "file_name": "neoforge-20.5.19-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0e0561c1ca1348da1ad99841948d92da34a3d1da156f9396f1997176a507e0ca"
+        "version_json_sha256": "0e0561c1ca1348da1ad99841948d92da34a3d1da156f9396f1997176a507e0ca",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.5",
@@ -4138,7 +4156,8 @@
         "sha256": "651f6a0727847fe28db6d7273a552fedbd283992ed3bbe61e85b88f6e23c2e34",
         "file_name": "neoforge-20.5.20-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b3fbe2e9a935371a4522ab2f10a5d7c9fdd986eb6bfe6f035d6c844df1c77f76"
+        "version_json_sha256": "b3fbe2e9a935371a4522ab2f10a5d7c9fdd986eb6bfe6f035d6c844df1c77f76",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.5",
@@ -4147,7 +4166,8 @@
         "sha256": "a7161d984a5f72395c53557e546e555290f1e2f4a7e4b3b701a0f9a21509b66e",
         "file_name": "neoforge-20.5.21-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "3e8d053ea77d1aac39640a5c359b317b6c424e1895cfc10c2fa9464fd7b84cb0"
+        "version_json_sha256": "3e8d053ea77d1aac39640a5c359b317b6c424e1895cfc10c2fa9464fd7b84cb0",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -4156,7 +4176,8 @@
         "sha256": "f7fba4ed1826dd5226b360149ad3431349b869cd7a1167cb96dec4ee7dea8412",
         "file_name": "neoforge-20.6.135-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "cda362bf3635edca43657e628af32ca96393314f22abda041526668ce855082b"
+        "version_json_sha256": "cda362bf3635edca43657e628af32ca96393314f22abda041526668ce855082b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -4165,7 +4186,8 @@
         "sha256": "094ae8ab0749cbab023e638927ea956fe1434ecae90c82a1d7d312c769546143",
         "file_name": "neoforge-20.6.136-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "44c73026ab97db85f3829712c18d21996229827c576f91ad35492c6937378966"
+        "version_json_sha256": "44c73026ab97db85f3829712c18d21996229827c576f91ad35492c6937378966",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -4174,7 +4196,8 @@
         "sha256": "511cd3da3feb66742f618763819510f1ba2a48c91cf61946fcdf4542fb4e3e05",
         "file_name": "neoforge-20.6.137-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1a3c7bdee8ea544d88594f30f5b0f98c35153a88f8f35fde0d5b35a019e1e498"
+        "version_json_sha256": "1a3c7bdee8ea544d88594f30f5b0f98c35153a88f8f35fde0d5b35a019e1e498",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -4183,7 +4206,8 @@
         "sha256": "8edc858063f7cdc9f5db8e199469f110ed8d2711f780f40d0cbb0476a80fc9d9",
         "file_name": "neoforge-20.6.138-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "2df3939d9300477c470f2bf8ec907e2bb262241505070402f86360822d2b082c"
+        "version_json_sha256": "2df3939d9300477c470f2bf8ec907e2bb262241505070402f86360822d2b082c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -4192,7 +4216,8 @@
         "sha256": "c0e94d21f90dff9b3ae2df5b893874a95b12450d241f8d9e39870fa30a15af8b",
         "file_name": "neoforge-20.6.139-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9dfdb0372eeb4ce5bc9975711bd9511032b7dcffa3af42d1d1c9bfdb7c5cd4d8"
+        "version_json_sha256": "9dfdb0372eeb4ce5bc9975711bd9511032b7dcffa3af42d1d1c9bfdb7c5cd4d8",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21",
@@ -4246,30 +4271,13 @@
       },
       {
         "mc_version": "1.21.1",
-        "loader_version": "21.1.231",
-        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.231/neoforge-21.1.231-installer.jar",
-        "sha256": "2fb67dc1948f563fb36d5d7d8c169e11da3cd90e30213acaf844e50e83ee150f",
-        "file_name": "neoforge-21.1.231-installer.jar",
-        "file_type": "installer_jar",
-        "version_json_sha256": "3c314cafdc13c56ad8362386c280a2ee34121d8d573cb8adcd71e8b7daee3ca0"
-      },
-      {
-        "mc_version": "1.21.1",
-        "loader_version": "21.1.232",
-        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.232/neoforge-21.1.232-installer.jar",
-        "sha256": "0dd4fde7b5b98072666de01a89bd721e2dc6f7b08b2123b1d91346d064f3b691",
-        "file_name": "neoforge-21.1.232-installer.jar",
-        "file_type": "installer_jar",
-        "version_json_sha256": "2ce9c2ba8a467a91008f25eb9fda3aaf6835a8b28a98af1a36dfc4ced9587402"
-      },
-      {
-        "mc_version": "1.21.1",
         "loader_version": "21.1.233",
         "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.233/neoforge-21.1.233-installer.jar",
         "sha256": "311475c8315ed0be6b5f1dbbf5a377b6c0976457c0bd5aa6d19b0fe25fd77148",
         "file_name": "neoforge-21.1.233-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "3e5d47caf23c8288853894b5624b817bfbfad47568dbd1c2a48614d59450e9fa"
+        "version_json_sha256": "3e5d47caf23c8288853894b5624b817bfbfad47568dbd1c2a48614d59450e9fa",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.1",
@@ -4278,7 +4286,8 @@
         "sha256": "4b8d1632c6bc188faa2f4d6dc53a53f43f8b188c3f208e5102fe2ee82dfaf8e9",
         "file_name": "neoforge-21.1.234-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "5937f721e2d32a35209d2e96f853b10b98ea72ca76b11247a99da2542ca7a43f"
+        "version_json_sha256": "5937f721e2d32a35209d2e96f853b10b98ea72ca76b11247a99da2542ca7a43f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.1",
@@ -4287,7 +4296,28 @@
         "sha256": "58edd322dc3cbbcd5c75d9a44f93d01211fda2953665483077ddd41fbecf942c",
         "file_name": "neoforge-21.1.235-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d2e8c2652cb984b42ae0faa1ce444ae643d1b8b1cfae79bcbaa5e272bfd6755e"
+        "version_json_sha256": "d2e8c2652cb984b42ae0faa1ce444ae643d1b8b1cfae79bcbaa5e272bfd6755e",
+        "installer_spec": 1
+      },
+      {
+        "mc_version": "1.21.1",
+        "loader_version": "21.1.236",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.236/neoforge-21.1.236-installer.jar",
+        "sha256": "d28391536577dac1613a617216fec6f5c6b7fa6d439e27ca55e833b027f5a5cf",
+        "file_name": "neoforge-21.1.236-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "def5715a31bfa586a39658b5fc1230b0c1d3f79e493c45a37972b55d4858e3b9",
+        "installer_spec": 1
+      },
+      {
+        "mc_version": "1.21.1",
+        "loader_version": "21.1.238",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.238/neoforge-21.1.238-installer.jar",
+        "sha256": "36668db4592e5e518edea477db9fa209a57f3bfaad3c2d29d78f043d9017d143",
+        "file_name": "neoforge-21.1.238-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "cc81ee0268059b257dbc8ca75e0fdee5ad6ff284772071bb3af625ff447124c9",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.2",
@@ -4296,7 +4326,8 @@
         "sha256": "6e01c9c724522a5c61e8eff47a5d5f5f52fff2e79c5b81ee5caf183be72959b5",
         "file_name": "neoforge-21.2.0-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "22ba09d5a616fe5bff2c1840226702a76078698940fa070274df840a929e162f"
+        "version_json_sha256": "22ba09d5a616fe5bff2c1840226702a76078698940fa070274df840a929e162f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.2",
@@ -4305,16 +4336,8 @@
         "sha256": "e4b6e64c9192e3baacb6223bfaa65ce2d677b4f4ad74ac051335681fd6a70e34",
         "file_name": "neoforge-21.2.1-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "351c0101d47bd63819d1ecdf6ecf584b986f6ffb632e6aa57519bc0ef28e13ec"
-      },
-      {
-        "mc_version": "1.21.3",
-        "loader_version": "21.3.92",
-        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.3.92/neoforge-21.3.92-installer.jar",
-        "sha256": "503b10ccbdd661d52e6022e0497c1f964c13a0d2f0dd97b7fcc5d2565b01d386",
-        "file_name": "neoforge-21.3.92-installer.jar",
-        "file_type": "installer_jar",
-        "version_json_sha256": "4aaabf2f2dec6c851061059077786c048a5f41519b7934fbca70ba935fd71166"
+        "version_json_sha256": "351c0101d47bd63819d1ecdf6ecf584b986f6ffb632e6aa57519bc0ef28e13ec",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -4323,7 +4346,8 @@
         "sha256": "5c3f4ac26f52ab68d3cfa3a8ae8fcf8867a0c96d91a10ae781d3cb6837f39baa",
         "file_name": "neoforge-21.3.93-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c05302f18b62f90098158f2167305842f70388ba477e8148a8a4bbb914811d27"
+        "version_json_sha256": "c05302f18b62f90098158f2167305842f70388ba477e8148a8a4bbb914811d27",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -4332,7 +4356,8 @@
         "sha256": "c2a48e300a796a0c13a91119a7168b06e337705285f511f53b50f8b755d22c09",
         "file_name": "neoforge-21.3.94-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9e43e6d7a1b2bb50ed5009a3779847d59768690b69027d84795ab462b0fb8c5c"
+        "version_json_sha256": "9e43e6d7a1b2bb50ed5009a3779847d59768690b69027d84795ab462b0fb8c5c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -4341,7 +4366,8 @@
         "sha256": "e3d809610c7219bb42d4c7f066a1f61921cc4efe23049bd0b443418b005cf5f4",
         "file_name": "neoforge-21.3.95-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4ef186d0a997f7125d0c006a443f9f1e3a05e3c71a94df57ebaf8e4e24d0bd7b"
+        "version_json_sha256": "4ef186d0a997f7125d0c006a443f9f1e3a05e3c71a94df57ebaf8e4e24d0bd7b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -4350,7 +4376,18 @@
         "sha256": "6bbf12a91390b2d41b98d27e1bb813064df9434c8772942f07ef2b1a0c5f757d",
         "file_name": "neoforge-21.3.96-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6b873e8d6fe9bce267dd9aa582684ae1e6a10d2f24a52a0d778cff96e715bd2d"
+        "version_json_sha256": "6b873e8d6fe9bce267dd9aa582684ae1e6a10d2f24a52a0d778cff96e715bd2d",
+        "installer_spec": 1
+      },
+      {
+        "mc_version": "1.21.3",
+        "loader_version": "21.3.97",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.3.97/neoforge-21.3.97-installer.jar",
+        "sha256": "86bac20916c03344848ee42f18e4beaa99c113f358d90f9e4731abeea5fad6eb",
+        "file_name": "neoforge-21.3.97-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "d8b6298835e37bb26c24cbfc16d1899db48d87c5e11b2919913b71aa3a79df55",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -4359,7 +4396,8 @@
         "sha256": "7134af150f88b9205f96722809fc7b4ffbab11faf8f2078defbf5496215f13e5",
         "file_name": "neoforge-21.4.153-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ad601a4924441c56d31d5eb9e85e50803450ea295a4083a54a50651c9a95abb3"
+        "version_json_sha256": "ad601a4924441c56d31d5eb9e85e50803450ea295a4083a54a50651c9a95abb3",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -4368,7 +4406,8 @@
         "sha256": "24102756bfdc1ae9f572535f53058db3adab7ee60cedd32b4c74a3d60d389904",
         "file_name": "neoforge-21.4.154-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9e518b11d441e5ca3d6da6101e2c255a1e333b8659fa00019f81d5ef5ec690b0"
+        "version_json_sha256": "9e518b11d441e5ca3d6da6101e2c255a1e333b8659fa00019f81d5ef5ec690b0",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -4377,7 +4416,8 @@
         "sha256": "4a0e338c3f875866480bc0e8970dd972824cbc074ad7470cd265b932d3c7f8b7",
         "file_name": "neoforge-21.4.155-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d7ea9e61c081022fa401a23ccd632d0917ced56caec2c2cafd4511abfd8da0b0"
+        "version_json_sha256": "d7ea9e61c081022fa401a23ccd632d0917ced56caec2c2cafd4511abfd8da0b0",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -4386,7 +4426,8 @@
         "sha256": "8652fdb5dd95774b5a1d1b141e4b852e8405ce929d2dd49adc0dfbbab1914158",
         "file_name": "neoforge-21.4.156-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6a53b06e362aed2fae35a13a11530f8cd44ce81d697681a26af508d11134e005"
+        "version_json_sha256": "6a53b06e362aed2fae35a13a11530f8cd44ce81d697681a26af508d11134e005",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -4395,16 +4436,8 @@
         "sha256": "a17bacb5d6ef902da2f64a8e98a461a57e2564392d9dac46687cdbe543a59a76",
         "file_name": "neoforge-21.4.157-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "338b9192db39d393bf3adf470d836af066150909369891f7a53d7116f0dbc230"
-      },
-      {
-        "mc_version": "1.21.5",
-        "loader_version": "21.5.93",
-        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.5.93/neoforge-21.5.93-installer.jar",
-        "sha256": "27bd16e29343ed6cc5bab8752e2c7f1d689c28833ef7d9a5f75003b65774162c",
-        "file_name": "neoforge-21.5.93-installer.jar",
-        "file_type": "installer_jar",
-        "version_json_sha256": "38b8c6ab8ae806b56da4ebda8a734293eff47ab90d944dd6df78aeb49fa6bc90"
+        "version_json_sha256": "338b9192db39d393bf3adf470d836af066150909369891f7a53d7116f0dbc230",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -4413,7 +4446,8 @@
         "sha256": "e036671d774ea8d99c8c5048f1f8e047acdacd54029561a0b60b7ef5e809992b",
         "file_name": "neoforge-21.5.94-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a297da029b1fa02bca0a1a50a371125cd985849e18dbe2a1623b0fcfeb384a5b"
+        "version_json_sha256": "a297da029b1fa02bca0a1a50a371125cd985849e18dbe2a1623b0fcfeb384a5b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -4422,7 +4456,8 @@
         "sha256": "721b8b81e2e2a142552fe1d8be1596720e70d661d485d268efb12ffdcd41b9ad",
         "file_name": "neoforge-21.5.95-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "006bbdda77829c1d9118515f8901e0bfdf55708b7fd6a18fc754f03fd983642b"
+        "version_json_sha256": "006bbdda77829c1d9118515f8901e0bfdf55708b7fd6a18fc754f03fd983642b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -4431,7 +4466,8 @@
         "sha256": "b30dc0d5cdcf2eaa558fe530e0e5e56012c62afe2a5ebd3dcc42004ed29a3c8f",
         "file_name": "neoforge-21.5.96-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e7579366819dabe758fdf6205f913d41e916e2d241bf75dd6c79182f1686eca8"
+        "version_json_sha256": "e7579366819dabe758fdf6205f913d41e916e2d241bf75dd6c79182f1686eca8",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -4440,7 +4476,18 @@
         "sha256": "84f30c4e98d2721b9d1e1645d26d78554b159669ff9196c6dbc60e2a664016ef",
         "file_name": "neoforge-21.5.97-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8454ca26dc3430c4af0ad324a24aceead479fd3d2d51cd2eb83aa7545c7949fd"
+        "version_json_sha256": "8454ca26dc3430c4af0ad324a24aceead479fd3d2d51cd2eb83aa7545c7949fd",
+        "installer_spec": 1
+      },
+      {
+        "mc_version": "1.21.5",
+        "loader_version": "21.5.98",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.5.98/neoforge-21.5.98-installer.jar",
+        "sha256": "da85958099ea79b6f69561c3e3ee1420032e541aa33cef8639416ccf512ec42b",
+        "file_name": "neoforge-21.5.98-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "7612e28b65e95d08ccafa46468c81e6e43aa4364a233c320d8a1b1b1a1b99301",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -4449,7 +4496,8 @@
         "sha256": "f4139722f8190b7c449510b0e5fc50efbb1e044fb52ba7a1614e228aae3e1cb9",
         "file_name": "neoforge-21.6.16-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "dc76f65867af4630bad38296330860061b9ac497782ee5c4884aeb470fae1757"
+        "version_json_sha256": "dc76f65867af4630bad38296330860061b9ac497782ee5c4884aeb470fae1757",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -4458,7 +4506,8 @@
         "sha256": "181f4cdbd6d5c0d70e83652f104c2a6575516a0efd6cfe159f12c1fb99f5ff75",
         "file_name": "neoforge-21.6.17-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1ba8e417538f5c5ba31463c2093f24b2f928d1c77d0bdebe4dc73c8a3b426046"
+        "version_json_sha256": "1ba8e417538f5c5ba31463c2093f24b2f928d1c77d0bdebe4dc73c8a3b426046",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -4467,7 +4516,8 @@
         "sha256": "f1fbec19280333976304c04aec3e17bb3148cec5f2d2bff27c412ac12d2ea80e",
         "file_name": "neoforge-21.6.18-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e6839a8c7b30ede4c0371f81ad1de2b89159706e9bf6166be313305115cc159f"
+        "version_json_sha256": "e6839a8c7b30ede4c0371f81ad1de2b89159706e9bf6166be313305115cc159f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -4476,7 +4526,8 @@
         "sha256": "0e4e29cfac9617f98e1b50acf6670b8d660543c7b6102064aaa9a6316d5a2ca4",
         "file_name": "neoforge-21.6.19-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "3f65163af798d07e7e743a60300956272dcd27a7e96ee7f2f72d78a6087af178"
+        "version_json_sha256": "3f65163af798d07e7e743a60300956272dcd27a7e96ee7f2f72d78a6087af178",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -4485,7 +4536,8 @@
         "sha256": "e85b8ed2614f2ab3f10d2d179064e3e81f5836519a074d22b8a8460f2e91b5d5",
         "file_name": "neoforge-21.6.20-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "fbffef90c167901771b63fae7c47f91ae694a42c181ba281ac6587bf5d2922de"
+        "version_json_sha256": "fbffef90c167901771b63fae7c47f91ae694a42c181ba281ac6587bf5d2922de",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -4494,7 +4546,8 @@
         "sha256": "d7ed6d30826bcf30796d711979f197a95fa970f2dc14af50540416e61f081d0d",
         "file_name": "neoforge-21.7.21-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a7cfd3a2283c1142c4d9073cddf66d6181bcf4bc28e4ce3974a91786d39a714d"
+        "version_json_sha256": "a7cfd3a2283c1142c4d9073cddf66d6181bcf4bc28e4ce3974a91786d39a714d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -4503,7 +4556,8 @@
         "sha256": "d221c85631ddc14f6da099d81480c63c5e83c82d2554427a7a3761c6216f4f49",
         "file_name": "neoforge-21.7.22-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0dbd1e85302991733b99f6fac261ec9e13c80a510b1ab3dd0355454215e23f00"
+        "version_json_sha256": "0dbd1e85302991733b99f6fac261ec9e13c80a510b1ab3dd0355454215e23f00",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -4512,7 +4566,8 @@
         "sha256": "1a9fdb76b8d5d9f08b36ec3a6189f66aaef339c073b6340c5e8e244df3174a0e",
         "file_name": "neoforge-21.7.23-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1a321b6d68d62b1b6926d10a7000594387eb380bcf851004affbb246021b3891"
+        "version_json_sha256": "1a321b6d68d62b1b6926d10a7000594387eb380bcf851004affbb246021b3891",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -4521,7 +4576,8 @@
         "sha256": "b8d3b7a3b2f0ee611e67a28db25bf9c412f41a198c032fb420dcdf493658edeb",
         "file_name": "neoforge-21.7.24-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "629a7488835923993bd951e724c19de431e19121b61a885b5a0b41fb5308def1"
+        "version_json_sha256": "629a7488835923993bd951e724c19de431e19121b61a885b5a0b41fb5308def1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -4530,16 +4586,8 @@
         "sha256": "1ceecf4fad699ec5ff1f02dbfd9b08b49069ac158adb1f1b9133f9db524f0fe1",
         "file_name": "neoforge-21.7.25-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6e09ebca754e565cdaa4d2d71b718b7c36f140ccabe900169fd758b39f851d6c"
-      },
-      {
-        "mc_version": "1.21.8",
-        "loader_version": "21.8.49",
-        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.8.49/neoforge-21.8.49-installer.jar",
-        "sha256": "e90a4b1a91eed2a01e9b49bc1c6d1524e3cd9dd588a5fec029de38382153199a",
-        "file_name": "neoforge-21.8.49-installer.jar",
-        "file_type": "installer_jar",
-        "version_json_sha256": "3492f98d1eb6c473e58177b4924c1afcbc9d54c574c9387dfd843371a610a123"
+        "version_json_sha256": "6e09ebca754e565cdaa4d2d71b718b7c36f140ccabe900169fd758b39f851d6c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -4548,7 +4596,8 @@
         "sha256": "21d5568063ba362642b80aae51992aa2ac1b0a9f5f9eaf78121f049112d119c9",
         "file_name": "neoforge-21.8.50-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "af8e77ba9558429841072c952db24dae7d0c308a47326a25e205c9c4f64e4dcd"
+        "version_json_sha256": "af8e77ba9558429841072c952db24dae7d0c308a47326a25e205c9c4f64e4dcd",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -4557,7 +4606,8 @@
         "sha256": "808653ccc6f6c9de75972f0fe97e9271a4827641dab3f8830d77daba22e2cd39",
         "file_name": "neoforge-21.8.51-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "467a112a8aa8c5fa3ad2a5d56e7c2f7c3756bd1f8affbaa4912596f54be4c74c"
+        "version_json_sha256": "467a112a8aa8c5fa3ad2a5d56e7c2f7c3756bd1f8affbaa4912596f54be4c74c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -4566,7 +4616,8 @@
         "sha256": "5143db4f3ea53b7f58f92cc32271f9ecdfc773b1e04ac1681836f7a0e471f839",
         "file_name": "neoforge-21.8.52-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b44bd0e9cbe34f7cd80e155f675d2e0e43903e36151ccc6335a2b5a1e5091374"
+        "version_json_sha256": "b44bd0e9cbe34f7cd80e155f675d2e0e43903e36151ccc6335a2b5a1e5091374",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -4575,7 +4626,18 @@
         "sha256": "457f94c8bfb6f6daf608ea77263f868105cab6c38698b99a511baec65d664f9d",
         "file_name": "neoforge-21.8.53-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "76f420e8d13899e2b1267360ba2a844cc230b6d429aaa9321a90f5fff5290a36"
+        "version_json_sha256": "76f420e8d13899e2b1267360ba2a844cc230b6d429aaa9321a90f5fff5290a36",
+        "installer_spec": 1
+      },
+      {
+        "mc_version": "1.21.8",
+        "loader_version": "21.8.54",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.8.54/neoforge-21.8.54-installer.jar",
+        "sha256": "8771de3b3df9d5382103245dcdcf6cd6ebe84a8c3b26a2b21d43153613ff191b",
+        "file_name": "neoforge-21.8.54-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "0d4e633a9f535a1e5b1212a4735835f19284c062e514985e24fa7446254d2ba3",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -4584,7 +4646,8 @@
         "sha256": "0e8ec0e4c9aeabb769f8d6bf4ef74ee3b5f15b3286689def722f1da50131778f",
         "file_name": "neoforge-21.9.12-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1e27f94f6a3ed80981467e6a6d866b433183afd2ad745d5aa3dffce690e74acc"
+        "version_json_sha256": "1e27f94f6a3ed80981467e6a6d866b433183afd2ad745d5aa3dffce690e74acc",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -4593,7 +4656,8 @@
         "sha256": "7c86248588ac055289d90468bd5da4807d3b63dd3fdff2fbfd2b6c6590346538",
         "file_name": "neoforge-21.9.13-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "715641483010304297ddbb27df825a3103e2dac4081c060bb41342fd239c409f"
+        "version_json_sha256": "715641483010304297ddbb27df825a3103e2dac4081c060bb41342fd239c409f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -4602,7 +4666,8 @@
         "sha256": "303cd3c2bc6163a6e80e4d2f5ade05a8a22cd65a2b70c09adcc7d20369ace654",
         "file_name": "neoforge-21.9.14-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "11af5904502e826329a79e66367f446d710bd17420050c5e0419744acaaeb9a1"
+        "version_json_sha256": "11af5904502e826329a79e66367f446d710bd17420050c5e0419744acaaeb9a1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -4611,7 +4676,8 @@
         "sha256": "845f8d0561f699e81ab556ffa20ab835dcf24e2595c1bcd314ffca73c0481bc6",
         "file_name": "neoforge-21.9.15-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "aaaa5f7a0f32ea027fc18c7428655eaacb0f997306cd0adcf25fb0f2a47df213"
+        "version_json_sha256": "aaaa5f7a0f32ea027fc18c7428655eaacb0f997306cd0adcf25fb0f2a47df213",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -4620,7 +4686,8 @@
         "sha256": "fde025c65f042a39308e5313b6023db9f17f3d77c35a27c66d9065115759a78e",
         "file_name": "neoforge-21.9.16-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0988c31e4b2466d59998d587bb3d87308f0014579200deead688c6ec795164b4"
+        "version_json_sha256": "0988c31e4b2466d59998d587bb3d87308f0014579200deead688c6ec795164b4",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -4629,7 +4696,8 @@
         "sha256": "ba3feb5c687cb557570192112827fc9c482fd7b8d30ffd68a6023282fe334b34",
         "file_name": "neoforge-21.10.60-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "19eb3d0b2e4556bc77c640b566eff100dd669f392822560aaee0db46f48e8da5"
+        "version_json_sha256": "19eb3d0b2e4556bc77c640b566eff100dd669f392822560aaee0db46f48e8da5",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -4638,7 +4706,8 @@
         "sha256": "71937ec6aa067a3ac5f2854773ca6180d339d333972e1a3bf5af1bf41a7b9d79",
         "file_name": "neoforge-21.10.61-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "667db4ebce838a830270e3899c15f9c5ebec478fd70b7eb100ce73c8b067a5ff"
+        "version_json_sha256": "667db4ebce838a830270e3899c15f9c5ebec478fd70b7eb100ce73c8b067a5ff",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -4647,7 +4716,8 @@
         "sha256": "a265a942a33552acf46d20710c8d76d1788c32e44aa590b2c2c1733f9acbf4ad",
         "file_name": "neoforge-21.10.62-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "74e88c9f69c64a88728a6822b8b402de2674f0e8ba348ba9bc7231eefd7f4e9b"
+        "version_json_sha256": "74e88c9f69c64a88728a6822b8b402de2674f0e8ba348ba9bc7231eefd7f4e9b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -4656,7 +4726,8 @@
         "sha256": "f935d0bba4a3f34cbacc0a36f638c0422a1750855af2b7a2362a9bedadec6bd6",
         "file_name": "neoforge-21.10.63-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "50e2361bb3453519b6e4c1a4db7a2ed6f8f1d6ff55286a4b47cd1df07fb0770d"
+        "version_json_sha256": "50e2361bb3453519b6e4c1a4db7a2ed6f8f1d6ff55286a4b47cd1df07fb0770d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -4665,16 +4736,8 @@
         "sha256": "6adb1f063358b22b050834323a4f68df47c93d082bc49a8a0a97aec22b789427",
         "file_name": "neoforge-21.10.64-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "da6b84f5b61209a9e0a60767b8c1f047d53b745f5a60b50d25a41ab6c9ede197"
-      },
-      {
-        "mc_version": "1.21.11",
-        "loader_version": "21.11.38-beta",
-        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.11.38-beta/neoforge-21.11.38-beta-installer.jar",
-        "sha256": "305eb5c8185dd1ace6484b97db4e79011cc1529aeb4b0d2e2cb3903623b84e72",
-        "file_name": "neoforge-21.11.38-beta-installer.jar",
-        "file_type": "installer_jar",
-        "version_json_sha256": "5a81327a96b1ac68a826d707ea4ecce90ab12e697584423c50024e5f31e89454"
+        "version_json_sha256": "da6b84f5b61209a9e0a60767b8c1f047d53b745f5a60b50d25a41ab6c9ede197",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -4683,7 +4746,8 @@
         "sha256": "8f812d42e12690fa36d240f1fb423c9549007974e3dd2a75c18e695647905c75",
         "file_name": "neoforge-21.11.39-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ebc0da4b063c03f3d0b8d00e0729416bcb018d987c286e6f332a046995cdcb66"
+        "version_json_sha256": "ebc0da4b063c03f3d0b8d00e0729416bcb018d987c286e6f332a046995cdcb66",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -4692,7 +4756,8 @@
         "sha256": "68aed4ad839b0ca5976fddb2bd8d6d61ebf8e69af027aa067330e41834344a07",
         "file_name": "neoforge-21.11.40-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e109afc89e591d9542071ad16c4f45796206d5d11a3dddb69407a42b2cbf72f1"
+        "version_json_sha256": "e109afc89e591d9542071ad16c4f45796206d5d11a3dddb69407a42b2cbf72f1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -4701,7 +4766,8 @@
         "sha256": "a326934f0c821afd7e54196746a599d823a8edbde4850195665f80f3d5006a22",
         "file_name": "neoforge-21.11.41-beta-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4bcaed1afe99ff4882bc1efb0ebcf51babfb1bddc076684ad3644901a7b11eaa"
+        "version_json_sha256": "4bcaed1afe99ff4882bc1efb0ebcf51babfb1bddc076684ad3644901a7b11eaa",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -4710,7 +4776,18 @@
         "sha256": "6917a43438905b6c000fc03d5b0148f67f6b303ce517b2dba1ea962f13050c87",
         "file_name": "neoforge-21.11.42-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1d8318e352239f7e8fadd6973612404bd2f865510af4b7af87651bc31009445f"
+        "version_json_sha256": "1d8318e352239f7e8fadd6973612404bd2f865510af4b7af87651bc31009445f",
+        "installer_spec": 1
+      },
+      {
+        "mc_version": "1.21.11",
+        "loader_version": "21.11.44",
+        "source_url": "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.11.44/neoforge-21.11.44-installer.jar",
+        "sha256": "b8ae291c1ebdf4d92e5f699e2323ec5493f10e7793452256b3682aebab3eb54f",
+        "file_name": "neoforge-21.11.44-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "27d198f5cebeb6d65db26845223a41bfc35369bd4e33a5633fc4b2a39572dabd",
+        "installer_spec": 1
       }
     ],
     "forge": [
@@ -5377,7 +5454,8 @@
         "sha256": "ea7c33ba95e3993a98d0e9e38168c0759ec323a18675a71d938e1f3f70e6e8e7",
         "file_name": "forge-1.12.2-14.23.5.2860-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a47fb2052f708fa9c9f0a9635253ab4bbb9eb071a23fa6cafa3d63f786ed0833"
+        "version_json_sha256": "a47fb2052f708fa9c9f0a9635253ab4bbb9eb071a23fa6cafa3d63f786ed0833",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.12.2",
@@ -5386,7 +5464,8 @@
         "sha256": "3b4ae51309c9a6b84c42f8708751dba0010582184031150f8d454842c8376c0d",
         "file_name": "forge-1.12.2-14.23.5.2861-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c1675abb32cd383dc536c201416698a76cbe28cea086fef1aaa907ee72611b10"
+        "version_json_sha256": "c1675abb32cd383dc536c201416698a76cbe28cea086fef1aaa907ee72611b10",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.12.2",
@@ -5395,7 +5474,8 @@
         "sha256": "f6fcd3337bfc26c4d57509a5f899b6b1448a3ba48fd83557069367f5b5904830",
         "file_name": "forge-1.12.2-14.23.5.2862-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6033576fc6a3ded1c85965b5e1c812343b640ae2646e76b309b3f7c871d8e982"
+        "version_json_sha256": "6033576fc6a3ded1c85965b5e1c812343b640ae2646e76b309b3f7c871d8e982",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.12.2",
@@ -5404,7 +5484,8 @@
         "sha256": "677bc3ac8500a44fa8650ece7e90470648089b9a95ef21608718c1deaefdc6aa",
         "file_name": "forge-1.12.2-14.23.5.2863-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "cd90f3186577e212793277c75f16bb2105c944c1db27fdbf498e72d781aaec66"
+        "version_json_sha256": "cd90f3186577e212793277c75f16bb2105c944c1db27fdbf498e72d781aaec66",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.12.2",
@@ -5413,7 +5494,8 @@
         "sha256": "2c0065938de6df6f3deb4a08a3018940a1cc86111adb34a3be55d657857a11cc",
         "file_name": "forge-1.12.2-14.23.5.2864-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b7f3d7bd8788349b04868430a807bcd094eb8e3b8c278cdf36a6b9c511cc956b"
+        "version_json_sha256": "b7f3d7bd8788349b04868430a807bcd094eb8e3b8c278cdf36a6b9c511cc956b",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.13.2",
@@ -5422,7 +5504,8 @@
         "sha256": "c9f1fbc3bbdabc260d2e96b2f668b56e17826356b995d3f7b56104cfe6a2cfb0",
         "file_name": "forge-1.13.2-25.0.216-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "987ee7922d5dba9502688246e08460f2647d457116c8c57cbb9ad642eb06c140"
+        "version_json_sha256": "987ee7922d5dba9502688246e08460f2647d457116c8c57cbb9ad642eb06c140",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.13.2",
@@ -5431,7 +5514,8 @@
         "sha256": "97868e9ab528e8894a5a47744f2079b9800cc0e254b5eb3000922fee1a1d508b",
         "file_name": "forge-1.13.2-25.0.218-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7a835a8c302f9c738f01be28f79f2086ba5b77992c69a8c05b978d9bf497e8dd"
+        "version_json_sha256": "7a835a8c302f9c738f01be28f79f2086ba5b77992c69a8c05b978d9bf497e8dd",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.13.2",
@@ -5440,7 +5524,8 @@
         "sha256": "b27677480e299c2f5a031da1c7076a6870851565962e30d3773b97fda7d847b5",
         "file_name": "forge-1.13.2-25.0.219-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d4ad4c2081821dba015318d33f427a255784d9fda7e07d61f76b07c1da2ea225"
+        "version_json_sha256": "d4ad4c2081821dba015318d33f427a255784d9fda7e07d61f76b07c1da2ea225",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.13.2",
@@ -5449,7 +5534,8 @@
         "sha256": "3e02f0c699b9e757f6df5338ed4daeab40c6bfaf0915e486f82385c55081fb44",
         "file_name": "forge-1.13.2-25.0.222-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c2497572b73f822638180370b8cd83da52f4686f5ac186f043518ccb8ae5e23a"
+        "version_json_sha256": "c2497572b73f822638180370b8cd83da52f4686f5ac186f043518ccb8ae5e23a",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.13.2",
@@ -5458,7 +5544,8 @@
         "sha256": "d46cb326e7dc32695084090c8169bb57f32f1c23b801ddb35a336f252e381191",
         "file_name": "forge-1.13.2-25.0.223-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0effeddbdc7ad114c6f8bdbc199f014ae40ecdde0104899b0a04927636799a81"
+        "version_json_sha256": "0effeddbdc7ad114c6f8bdbc199f014ae40ecdde0104899b0a04927636799a81",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.2",
@@ -5467,7 +5554,8 @@
         "sha256": "3fd4b9d0060ec644d6261ce55abe1c011d72fee5ba2a48d3486f8766783656e0",
         "file_name": "forge-1.14.2-26.0.57-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "62d91169bad45c2feeb6b66dc7315a81ce79153480a2b9b1beb2eb62926da26d"
+        "version_json_sha256": "62d91169bad45c2feeb6b66dc7315a81ce79153480a2b9b1beb2eb62926da26d",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.2",
@@ -5476,7 +5564,8 @@
         "sha256": "1041d801af6b17b74059d9b59069a0b9a128d61245dcecb2a9069172aa9858f7",
         "file_name": "forge-1.14.2-26.0.60-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "dae359578227bad6ff8f53ee16fb4f7846e6e6d0ab736d0a8f5b329279c30547"
+        "version_json_sha256": "dae359578227bad6ff8f53ee16fb4f7846e6e6d0ab736d0a8f5b329279c30547",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.2",
@@ -5485,7 +5574,8 @@
         "sha256": "7a1c86541a012f45fd902ddf89a27c22dc9d907fafe4a47d9088338457353fa6",
         "file_name": "forge-1.14.2-26.0.61-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9d16ee0889ba0c077209cd3792537a6ba714f9c6ae0f161a3b7c4438975b7b85"
+        "version_json_sha256": "9d16ee0889ba0c077209cd3792537a6ba714f9c6ae0f161a3b7c4438975b7b85",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.2",
@@ -5494,7 +5584,8 @@
         "sha256": "7f505d0c4e550e84dd0d4749cf3866d1e392a39b0ef48cbf211af704e3bc08a9",
         "file_name": "forge-1.14.2-26.0.62-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1e18dc9c3754bec2285b5d7c0bfcade61d66bea66ee1838ee0ca33558f0b6e82"
+        "version_json_sha256": "1e18dc9c3754bec2285b5d7c0bfcade61d66bea66ee1838ee0ca33558f0b6e82",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.2",
@@ -5503,7 +5594,8 @@
         "sha256": "2fb915b59b903cc324a47e1dd02e14aa5cbb7c8b7dd5b23ee8af5f1b85b4b76c",
         "file_name": "forge-1.14.2-26.0.63-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d535ce46fdf5aeff68872cf162dc3a1ca6f9f850d4d072ce88395335e1c6c4a0"
+        "version_json_sha256": "d535ce46fdf5aeff68872cf162dc3a1ca6f9f850d4d072ce88395335e1c6c4a0",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.3",
@@ -5512,7 +5604,8 @@
         "sha256": "bce8113cfa1c1a3cae3b0429cd7526aa492a6e1760d4b9ff08a87368a47280a8",
         "file_name": "forge-1.14.3-27.0.56-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ece44cd4dd3c97ed188a2d3dca7606573066d306c0c72f41f4d7ebad1bfb53b7"
+        "version_json_sha256": "ece44cd4dd3c97ed188a2d3dca7606573066d306c0c72f41f4d7ebad1bfb53b7",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.3",
@@ -5521,7 +5614,8 @@
         "sha256": "c72950e174adf3aa49812c0ba7c148855cb4724df8c3812fd036e89138c83d77",
         "file_name": "forge-1.14.3-27.0.57-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "81ab89bbff754abed5afa9dfeed2ddc4860b6c1f159fa784d1a2b87c74c979e0"
+        "version_json_sha256": "81ab89bbff754abed5afa9dfeed2ddc4860b6c1f159fa784d1a2b87c74c979e0",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.3",
@@ -5530,7 +5624,8 @@
         "sha256": "a00311dff02bff3fccd7a0fbc56d81affff1a08fa17c2c4a0cad28f7c1bb07d3",
         "file_name": "forge-1.14.3-27.0.58-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7b31ffb834e36c0d3a77ffe52cd4da22b92a02c0a2feee904c03c723bc4d8c25"
+        "version_json_sha256": "7b31ffb834e36c0d3a77ffe52cd4da22b92a02c0a2feee904c03c723bc4d8c25",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.3",
@@ -5539,7 +5634,8 @@
         "sha256": "d05e55bee41b67205b0d87a60d7eb80e7222252e98d84f40798a1c09795df2c4",
         "file_name": "forge-1.14.3-27.0.59-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "35ac7cafebe67501cd1415262add5ceef49d814e0c68162ffb15aae4ee97cd91"
+        "version_json_sha256": "35ac7cafebe67501cd1415262add5ceef49d814e0c68162ffb15aae4ee97cd91",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.3",
@@ -5548,7 +5644,8 @@
         "sha256": "5724ae9ab8985395fdc02b2ec1caf6a10e3e13e735a90afffb759429a9b96dd4",
         "file_name": "forge-1.14.3-27.0.60-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "02a7c523d16737b43e8526ef7ab6a54b2eb6c781e0459b1691975d91d25cc873"
+        "version_json_sha256": "02a7c523d16737b43e8526ef7ab6a54b2eb6c781e0459b1691975d91d25cc873",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.4",
@@ -5557,7 +5654,8 @@
         "sha256": "79737d1d76dd20ef38d2c063118612355139f90149d7b09ba879d594162049d6",
         "file_name": "forge-1.14.4-28.2.25-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "88c1bb2dc7db89e61d740f460e5909a485b1e615a121a5f64776eeefb8222823"
+        "version_json_sha256": "88c1bb2dc7db89e61d740f460e5909a485b1e615a121a5f64776eeefb8222823",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.4",
@@ -5566,7 +5664,8 @@
         "sha256": "e68a0e2d589b2954c5d109a04b80747ac8c061acabe074db1607f9c2fd7d2ce1",
         "file_name": "forge-1.14.4-28.2.26-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "00ead8b484cc94722f1abb21e4bb86a12885f625d5189f5997a1aafc4fce573d"
+        "version_json_sha256": "00ead8b484cc94722f1abb21e4bb86a12885f625d5189f5997a1aafc4fce573d",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.4",
@@ -5575,7 +5674,8 @@
         "sha256": "a74c79bb04c077cc4ad3e3011ee89875bfe1495946cc356dc7613940a49eaf74",
         "file_name": "forge-1.14.4-28.2.27-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0b8f8d84cfb5df27f0cf1d82c41680971676d824344e1149c7b67343dd947096"
+        "version_json_sha256": "0b8f8d84cfb5df27f0cf1d82c41680971676d824344e1149c7b67343dd947096",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.4",
@@ -5584,7 +5684,8 @@
         "sha256": "1921b8ae01b56b3ac567d8528d1f32985f05a39e29e0b5cd0b147ae43010bfb3",
         "file_name": "forge-1.14.4-28.2.28-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6e70b1d7f7797f62e775125604507d38c4d109b638663d07e9e9070dacd02b59"
+        "version_json_sha256": "6e70b1d7f7797f62e775125604507d38c4d109b638663d07e9e9070dacd02b59",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.14.4",
@@ -5593,7 +5694,8 @@
         "sha256": "d2eb95e89913eddc259d10a91946f683565064d390822f2a01bfb6e73ac7a95c",
         "file_name": "forge-1.14.4-28.2.30-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "58da8df7d29f4439bf827422bd0f26f2060f5c29f01d7e724cb85636c9e2d1af"
+        "version_json_sha256": "58da8df7d29f4439bf827422bd0f26f2060f5c29f01d7e724cb85636c9e2d1af",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15",
@@ -5602,7 +5704,8 @@
         "sha256": "d75631855e611de20ed2b5587a28bdf28d1cb549b8096260d067b18005f73bcd",
         "file_name": "forge-1.15-29.0.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0da38cd13a0ae52423830fb884d3d7cf81116f9da3058735904ca81ecd8655de"
+        "version_json_sha256": "0da38cd13a0ae52423830fb884d3d7cf81116f9da3058735904ca81ecd8655de",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15",
@@ -5611,7 +5714,8 @@
         "sha256": "cce67d202b227861a7c41958e7d0a049d826441d4205e2436fc7c7c798476d07",
         "file_name": "forge-1.15-29.0.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "833657884c136b0c0e777e833e3e2b302d16094a20d2e7e94a3c499b3314bc68"
+        "version_json_sha256": "833657884c136b0c0e777e833e3e2b302d16094a20d2e7e94a3c499b3314bc68",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15",
@@ -5620,7 +5724,8 @@
         "sha256": "2c8b0dbd313cc5390ab82292a65a27b055a08334cee34af1cc16e045006a633a",
         "file_name": "forge-1.15-29.0.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1a41e6b930ae47d1be19da4d6d3ee1e1c9c319bcab8914ec7597c1fe144c89e7"
+        "version_json_sha256": "1a41e6b930ae47d1be19da4d6d3ee1e1c9c319bcab8914ec7597c1fe144c89e7",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15",
@@ -5629,7 +5734,8 @@
         "sha256": "ea599deda0a2083145ee92511e5da1736af45c19bfbe4435da50e7f9243f592c",
         "file_name": "forge-1.15-29.0.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c381d5d6a8bc7349168e68199041f9148ec146386db9dc78a12f9c0814b4bd89"
+        "version_json_sha256": "c381d5d6a8bc7349168e68199041f9148ec146386db9dc78a12f9c0814b4bd89",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15",
@@ -5638,7 +5744,8 @@
         "sha256": "29b21b71b0db46e3dafe6f79a1e7698db27da49ef00e4c1779aabc529fd57096",
         "file_name": "forge-1.15-29.0.4-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "bcf59e33df67e3c67032eee65360659c44f80366cfe29021015e366f9e69bac2"
+        "version_json_sha256": "bcf59e33df67e3c67032eee65360659c44f80366cfe29021015e366f9e69bac2",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.1",
@@ -5647,7 +5754,8 @@
         "sha256": "75829d04cedf095dcd55d23a5414318d04c1a8c09919cb97b7e377a738770eeb",
         "file_name": "forge-1.15.1-30.0.43-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "34b02a7cccbabc307fead87c56c524ccd901fd2fa832472aa44962d4eef667b4"
+        "version_json_sha256": "34b02a7cccbabc307fead87c56c524ccd901fd2fa832472aa44962d4eef667b4",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.1",
@@ -5656,7 +5764,8 @@
         "sha256": "67030e3217cf2287cfb5ccfd9b9c7b78dfd3336adb2bfc6aabeb9a732f88119c",
         "file_name": "forge-1.15.1-30.0.48-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4134f7abadf5d780f887095f663f774c20cd4a88bb1e67047b76d2ff28a98f3f"
+        "version_json_sha256": "4134f7abadf5d780f887095f663f774c20cd4a88bb1e67047b76d2ff28a98f3f",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.1",
@@ -5665,7 +5774,8 @@
         "sha256": "2eb0b78c94f2ff16ed4fe9a9336f63e16be6c897cdef953c3ecba3bc041740bb",
         "file_name": "forge-1.15.1-30.0.49-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "bf2ac212664f494f9a6d0bb7ae9b0b8bd1510bdcfe515a57cf45552f54c7192c"
+        "version_json_sha256": "bf2ac212664f494f9a6d0bb7ae9b0b8bd1510bdcfe515a57cf45552f54c7192c",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.1",
@@ -5674,7 +5784,8 @@
         "sha256": "fb0a59300a516b52495f05d84f370e37858f5c6846c105f974cb43149ca1e246",
         "file_name": "forge-1.15.1-30.0.50-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8ebccc3df4dd63480ec1261c462739ad31657755ec60bbf87a129d450f1a7d6d"
+        "version_json_sha256": "8ebccc3df4dd63480ec1261c462739ad31657755ec60bbf87a129d450f1a7d6d",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.1",
@@ -5683,7 +5794,8 @@
         "sha256": "6e7032a7f5d7bd95dfe1e6540b11e53512f39356d318f402a583f796bf221564",
         "file_name": "forge-1.15.1-30.0.51-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "3b91f93c051692767f8cf0f16300eb108b4686f4eaf9095fc1eade1e0a5a68b1"
+        "version_json_sha256": "3b91f93c051692767f8cf0f16300eb108b4686f4eaf9095fc1eade1e0a5a68b1",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.2",
@@ -5692,7 +5804,8 @@
         "sha256": "7b4de5937699c09183f5d688445a39ef41b94b42cfc27f2242369b14e44a87ce",
         "file_name": "forge-1.15.2-31.2.55-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "74ac9302f717a980fe10ebae4ffcb0704a7276ac191c2b6adb39b41035eb728c"
+        "version_json_sha256": "74ac9302f717a980fe10ebae4ffcb0704a7276ac191c2b6adb39b41035eb728c",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.2",
@@ -5701,7 +5814,8 @@
         "sha256": "4fd9880f2e9bac5e19978b46c8b42c7c676c9597a91587d480081c0ad1ebd1b2",
         "file_name": "forge-1.15.2-31.2.56-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "f92dd351984843f6e0dd6cfef9e09605a142af5a0af6ea78e7dd66004f7c68a2"
+        "version_json_sha256": "f92dd351984843f6e0dd6cfef9e09605a142af5a0af6ea78e7dd66004f7c68a2",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.2",
@@ -5710,7 +5824,8 @@
         "sha256": "84fd49a743978421b26f62ac78222289fe892a46f996cf11cb5e05b7441a7773",
         "file_name": "forge-1.15.2-31.2.57-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0cae1c703a8b94aefe4bb86aa09e379cda233fe78662fb056d30eb6310f170e0"
+        "version_json_sha256": "0cae1c703a8b94aefe4bb86aa09e379cda233fe78662fb056d30eb6310f170e0",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.2",
@@ -5719,7 +5834,8 @@
         "sha256": "ca87359381eea776e555fd909be38071f3dea657b8540d4cc14ad850648c17a0",
         "file_name": "forge-1.15.2-31.2.60-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c33f151c0f38369d0bfb6cae651af2944db55347c1b76096c78db5ae87df6ffa"
+        "version_json_sha256": "c33f151c0f38369d0bfb6cae651af2944db55347c1b76096c78db5ae87df6ffa",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.15.2",
@@ -5728,7 +5844,8 @@
         "sha256": "06422508fe14f433978851da3e17eac9eeb82a705c806a5eec789245b8cf34cc",
         "file_name": "forge-1.15.2-31.2.62-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "5c3eb18a98b9d72cb22fe10b691ec6f26af2c124febc4adaf1b9fb95b7b2a450"
+        "version_json_sha256": "5c3eb18a98b9d72cb22fe10b691ec6f26af2c124febc4adaf1b9fb95b7b2a450",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.1",
@@ -5737,7 +5854,8 @@
         "sha256": "d20dd8bd51c4fb4387ac9c7bc2ebaed8a55beef43fcddd8839fd289627a5823d",
         "file_name": "forge-1.16.1-32.0.104-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a6c9705a2f2d03fced1c92737d53f4567dbaff84f1e1256ff03ad84de3ece9d9"
+        "version_json_sha256": "a6c9705a2f2d03fced1c92737d53f4567dbaff84f1e1256ff03ad84de3ece9d9",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.1",
@@ -5746,7 +5864,8 @@
         "sha256": "1e1cfb67e9624af821d497c2d24081c1cb0160edbc95b5f639a5c083c2564ba0",
         "file_name": "forge-1.16.1-32.0.105-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1ee263d4491afd2cf74b808fc962c44059067f4f56ceb50082fe098efc24dcb7"
+        "version_json_sha256": "1ee263d4491afd2cf74b808fc962c44059067f4f56ceb50082fe098efc24dcb7",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.1",
@@ -5755,7 +5874,8 @@
         "sha256": "fc08e29151453495269483347d3a92d065c64702e4b8e97eedd28f48d763e913",
         "file_name": "forge-1.16.1-32.0.106-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9f2e7a464db3f338c8cc219ad4c693f253a533c699b03be958f68ac201aa66e9"
+        "version_json_sha256": "9f2e7a464db3f338c8cc219ad4c693f253a533c699b03be958f68ac201aa66e9",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.1",
@@ -5764,7 +5884,8 @@
         "sha256": "15625de2977a0519edcc3b9f12b7e852a8d379f1da36d6ea3f938b851ac5177e",
         "file_name": "forge-1.16.1-32.0.107-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a1eaef7a26d39450c9f74df9bfb4297ef1c85a4003ec27639fbeef9ec1d13a38"
+        "version_json_sha256": "a1eaef7a26d39450c9f74df9bfb4297ef1c85a4003ec27639fbeef9ec1d13a38",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.1",
@@ -5773,7 +5894,8 @@
         "sha256": "2b458ceff2f7d32edff05dfba6d636ecfade6554e1c6b78c7a2e44ac3e001bb5",
         "file_name": "forge-1.16.1-32.0.108-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "aaa6c08cbffa156dcb5f7041bcd4939d7f86dbc3b65b513e36d8155131ffb4c6"
+        "version_json_sha256": "aaa6c08cbffa156dcb5f7041bcd4939d7f86dbc3b65b513e36d8155131ffb4c6",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.2",
@@ -5782,7 +5904,8 @@
         "sha256": "a33aa10078c8dfdeb1c431a473148f9560adc0cd41718bdc6e2570ae859bd1d8",
         "file_name": "forge-1.16.2-33.0.57-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7be79f554a1b1db1c489303b74c952c6be0ac5331a5b12e26611e0950a2abfe4"
+        "version_json_sha256": "7be79f554a1b1db1c489303b74c952c6be0ac5331a5b12e26611e0950a2abfe4",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.2",
@@ -5791,7 +5914,8 @@
         "sha256": "fdb43df0ab17d275fb87183ae86bc671e3c6411c0c0d3c8aa575c9b1a0402c41",
         "file_name": "forge-1.16.2-33.0.58-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "5e779e362d2941c7ccb03013578aa6a79bca7e6e285993485fb88e709a1a4eb0"
+        "version_json_sha256": "5e779e362d2941c7ccb03013578aa6a79bca7e6e285993485fb88e709a1a4eb0",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.2",
@@ -5800,7 +5924,8 @@
         "sha256": "3bb993622833a2e2ea8187cecb273d50ecc5a479322d038e5f86b7869724d1ba",
         "file_name": "forge-1.16.2-33.0.59-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e9ad8c1749508dc3c8ffb438f2b6c9ee1a2368e8294fee8d7f0a651b8c2d29ce"
+        "version_json_sha256": "e9ad8c1749508dc3c8ffb438f2b6c9ee1a2368e8294fee8d7f0a651b8c2d29ce",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.2",
@@ -5809,7 +5934,8 @@
         "sha256": "1194cdad614130750a40987b962c98af94080f133991b326e66b98cf36c701a4",
         "file_name": "forge-1.16.2-33.0.60-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "538feef37c6a1d4ff5637959dc64d1fa6f253c5bb326bd01a6e0ebbffb09cc8c"
+        "version_json_sha256": "538feef37c6a1d4ff5637959dc64d1fa6f253c5bb326bd01a6e0ebbffb09cc8c",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.2",
@@ -5818,7 +5944,8 @@
         "sha256": "961fb78089c638a8a70f178bb6e51880bf5d4c027830c03da27031d1e0ad72b1",
         "file_name": "forge-1.16.2-33.0.61-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6b69f3a51b8ede4f3591671437a5f5662ceaa5c2f852ac5194da97bdb0b633f4"
+        "version_json_sha256": "6b69f3a51b8ede4f3591671437a5f5662ceaa5c2f852ac5194da97bdb0b633f4",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.3",
@@ -5827,7 +5954,8 @@
         "sha256": "c63bd1120e5d23b73977785ec520c25ca00578f57d18d0b0259087bc19cc5a25",
         "file_name": "forge-1.16.3-34.1.35-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "29cf4c3c0b6bbce2dbdf8d44b2ea737d06e9c8e92598356fa256fcfcf5f4fbd7"
+        "version_json_sha256": "29cf4c3c0b6bbce2dbdf8d44b2ea737d06e9c8e92598356fa256fcfcf5f4fbd7",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.3",
@@ -5836,7 +5964,8 @@
         "sha256": "2491ee5c947ebd7767ba1e17c3e50d1f0378615b1a22e2fa9dd0344e8962c036",
         "file_name": "forge-1.16.3-34.1.39-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ef707bb379e64eb78ea796d02ec276278e74a466112385eb5bef8a8f025936c8"
+        "version_json_sha256": "ef707bb379e64eb78ea796d02ec276278e74a466112385eb5bef8a8f025936c8",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.3",
@@ -5845,7 +5974,8 @@
         "sha256": "ddd64f84d0f3454a796f8913dcf3d3de8b86cbee127b3f1e0ffd9124598afc99",
         "file_name": "forge-1.16.3-34.1.40-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6256bf5c79d36a305e2bf12179de21b186699eb0598b77af25d071a50070f893"
+        "version_json_sha256": "6256bf5c79d36a305e2bf12179de21b186699eb0598b77af25d071a50070f893",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.3",
@@ -5854,7 +5984,8 @@
         "sha256": "df875d4972869cce0c7660d9daaadd8b4286b431989600ccd6c6ce3b8049e61e",
         "file_name": "forge-1.16.3-34.1.41-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8b95faad98e72500e2c1bf9944965f4a7a8fb727d66eb19f8a91db931d52b609"
+        "version_json_sha256": "8b95faad98e72500e2c1bf9944965f4a7a8fb727d66eb19f8a91db931d52b609",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.3",
@@ -5863,7 +5994,8 @@
         "sha256": "54996107eea6ead80a11f642161f9fb4c5d7764a996e87187c64da0a9bd6926b",
         "file_name": "forge-1.16.3-34.1.42-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "2299fc41234683da9a64a305f24a61ef4bbb33dd55cd9b179dfff62d61ebcac1"
+        "version_json_sha256": "2299fc41234683da9a64a305f24a61ef4bbb33dd55cd9b179dfff62d61ebcac1",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.4",
@@ -5872,7 +6004,8 @@
         "sha256": "223061491d794d4873059962a09438cc12ff086ae32fd25550c67254ab39142e",
         "file_name": "forge-1.16.4-35.1.33-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "668db060e959a08cf8af0d8beb4377d1eac011b935a8f8f7de632762afbcb195"
+        "version_json_sha256": "668db060e959a08cf8af0d8beb4377d1eac011b935a8f8f7de632762afbcb195",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.4",
@@ -5881,7 +6014,8 @@
         "sha256": "7090a45395dea491b4e34f0bfe61f1a336f4b2afde19e1504371e31787fa0db1",
         "file_name": "forge-1.16.4-35.1.34-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ee0ef8d7eedc3b86bb8a6d0abc5e926011eb3d271f45e6ad9a545159b20b104c"
+        "version_json_sha256": "ee0ef8d7eedc3b86bb8a6d0abc5e926011eb3d271f45e6ad9a545159b20b104c",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.4",
@@ -5890,7 +6024,8 @@
         "sha256": "c62e3a86402c5728e6cc3734cd1283582d558f6405438857703670afcc0541e3",
         "file_name": "forge-1.16.4-35.1.35-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "838a97eaf82d19c28d4ca3d6da75597fb5e37abb481ba205b74b3789da051692"
+        "version_json_sha256": "838a97eaf82d19c28d4ca3d6da75597fb5e37abb481ba205b74b3789da051692",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.4",
@@ -5899,7 +6034,8 @@
         "sha256": "56923bf154a067c43511bbf8ca64d8cc6bb46e197409eba99e732c1cd0308979",
         "file_name": "forge-1.16.4-35.1.36-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4f5fe54b4672ccf0a7e36e385c9c59e7ca9f7435f7386044aa0a34b542d377f8"
+        "version_json_sha256": "4f5fe54b4672ccf0a7e36e385c9c59e7ca9f7435f7386044aa0a34b542d377f8",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.4",
@@ -5908,7 +6044,8 @@
         "sha256": "b8f38e63ef05c513491c3fc1e3d5f82702f4c75d44934fe59dfeb40f213334ed",
         "file_name": "forge-1.16.4-35.1.37-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "694a35d4da17bf7c53ca870e9fd5f2f1d84db78bac040027fc78ccec9bb56056"
+        "version_json_sha256": "694a35d4da17bf7c53ca870e9fd5f2f1d84db78bac040027fc78ccec9bb56056",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.5",
@@ -5917,7 +6054,8 @@
         "sha256": "8a472017583885116182e1f56ba44c8f2d9b80a1dde86c296a52f74d8e9d4cd8",
         "file_name": "forge-1.16.5-36.2.35-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "cf2bef9534fa1168b782103a79311b34d5d30c8daa9ab68a4311371a0d67673d"
+        "version_json_sha256": "cf2bef9534fa1168b782103a79311b34d5d30c8daa9ab68a4311371a0d67673d",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.5",
@@ -5926,7 +6064,8 @@
         "sha256": "bc23bd0e0c6f17a7dfdddbea65f008c8126ad8f9bb84b9a47069a2ba8d02fccd",
         "file_name": "forge-1.16.5-36.2.39-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b04335dbac2804c045c80dc58c9e22c05fcdcf994951125f19c6964efed6da43"
+        "version_json_sha256": "b04335dbac2804c045c80dc58c9e22c05fcdcf994951125f19c6964efed6da43",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.5",
@@ -5935,7 +6074,8 @@
         "sha256": "7a1c0a48622386deba43d2732a681ca29496b763c2ff50b7c53937f6d46f690d",
         "file_name": "forge-1.16.5-36.2.40-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c7c5453ff807444e4cdc349ca7364a435d96b0e15d591c9cb58f1b02dc6979b3"
+        "version_json_sha256": "c7c5453ff807444e4cdc349ca7364a435d96b0e15d591c9cb58f1b02dc6979b3",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.5",
@@ -5944,7 +6084,8 @@
         "sha256": "13e85b147ab0f84e807a0b7d403da8e78218a1856ca401941bbd79ba37aff0c9",
         "file_name": "forge-1.16.5-36.2.41-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "76941a858a121efa6e8572d2ae94bfad02206d5cf0acbf1a3a20b13536c0b070"
+        "version_json_sha256": "76941a858a121efa6e8572d2ae94bfad02206d5cf0acbf1a3a20b13536c0b070",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.16.5",
@@ -5953,7 +6094,8 @@
         "sha256": "dfa90c681f30be2406548b6429bccb68d95af4f64ab19b8c58f6128fd50ff857",
         "file_name": "forge-1.16.5-36.2.42-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "2f5a8996ab3a8341c714eed0fc806f0d1f5850cf17d8cbdd09b11fbacaae7c73"
+        "version_json_sha256": "2f5a8996ab3a8341c714eed0fc806f0d1f5850cf17d8cbdd09b11fbacaae7c73",
+        "installer_spec": 0
       },
       {
         "mc_version": "1.17.1",
@@ -5962,7 +6104,8 @@
         "sha256": "9f9d422d9a3fde4225278598fbc9587402980a0a07578d56d96b798aeefb2052",
         "file_name": "forge-1.17.1-37.0.125-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "070e50c075a0defad3e8e3c05e8f32d4a086d29f86cc91f8d11461afcc004cdd"
+        "version_json_sha256": "070e50c075a0defad3e8e3c05e8f32d4a086d29f86cc91f8d11461afcc004cdd",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.17.1",
@@ -5971,7 +6114,8 @@
         "sha256": "26fddf8924735a8b62429f63f873602a21385b7111b7d6fa28a8dd1f70893466",
         "file_name": "forge-1.17.1-37.0.126-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9060c197d4b953c615f323fedd2db0d5ff21e8d4415da631deef483a24a1ca39"
+        "version_json_sha256": "9060c197d4b953c615f323fedd2db0d5ff21e8d4415da631deef483a24a1ca39",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.17.1",
@@ -5980,7 +6124,8 @@
         "sha256": "e57107f92c742c49b6c91d0434cadb8e7b7d237182b4e738e85cb57092c042b2",
         "file_name": "forge-1.17.1-37.0.127-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "44af21ee7a0aab55f251d46443e34b580d1b3212197724715db284b4e27fb4d3"
+        "version_json_sha256": "44af21ee7a0aab55f251d46443e34b580d1b3212197724715db284b4e27fb4d3",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.17.1",
@@ -5989,7 +6134,8 @@
         "sha256": "d232b23999b4a58394bd0ad22a32832d4d346407ae9146ba4b84fa1e4bcf0584",
         "file_name": "forge-1.17.1-37.1.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "37d0dcfa2d2e3fa142db9cba5746691e809f0e1cc5714b6f9091693c995ded84"
+        "version_json_sha256": "37d0dcfa2d2e3fa142db9cba5746691e809f0e1cc5714b6f9091693c995ded84",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.17.1",
@@ -5998,7 +6144,8 @@
         "sha256": "31f2319b1b9ca491aaccc020887240f8524a4ff2a8e0f8b795e17e889cbc043b",
         "file_name": "forge-1.17.1-37.1.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d9247a02e93229a8a650b217e638c0021b5c075ce49d7166fdc4c3e8b396a1f8"
+        "version_json_sha256": "d9247a02e93229a8a650b217e638c0021b5c075ce49d7166fdc4c3e8b396a1f8",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18",
@@ -6007,7 +6154,8 @@
         "sha256": "70f301e7ec2d0bf2afe3bbb35153d55070ed828247392da0384fb1be0c84b5cd",
         "file_name": "forge-1.18-38.0.13-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6b2ce7bd8f0dcff4dbcff27c9d54e0f3a5cc4b8d8c1aef93d2647dc0ce017ee0"
+        "version_json_sha256": "6b2ce7bd8f0dcff4dbcff27c9d54e0f3a5cc4b8d8c1aef93d2647dc0ce017ee0",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18",
@@ -6016,7 +6164,8 @@
         "sha256": "6227356b302dbdb223b6f45bdc2ca8f63b33d23cfd1554c1429018cefff4a042",
         "file_name": "forge-1.18-38.0.14-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c123e76bfd4fd7c13bd4686c19b9c0028597537b2c885dbaade20f07d09c976d"
+        "version_json_sha256": "c123e76bfd4fd7c13bd4686c19b9c0028597537b2c885dbaade20f07d09c976d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18",
@@ -6025,7 +6174,8 @@
         "sha256": "83c3fd31247d232c2491b80db331531b7c98559cb21a44c4c36429dd06f4418e",
         "file_name": "forge-1.18-38.0.15-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "3fd660a3a0cdf5a3554b0bcca746fd98fc07b74006f2b5e471e848bb00fbe04d"
+        "version_json_sha256": "3fd660a3a0cdf5a3554b0bcca746fd98fc07b74006f2b5e471e848bb00fbe04d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18",
@@ -6034,7 +6184,8 @@
         "sha256": "4b1335ca5c56095d30f200a54d3f1436af2ac195a8f150ba83f9161c884757c8",
         "file_name": "forge-1.18-38.0.16-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "61837c2f32537ba90a13f2affb711ff6d853d9662e30a1473c6e06f7a84e8881"
+        "version_json_sha256": "61837c2f32537ba90a13f2affb711ff6d853d9662e30a1473c6e06f7a84e8881",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18",
@@ -6043,7 +6194,8 @@
         "sha256": "4b6d2a049b167f9e2ef095b45b5a78537e5884f9fcc051bfaabd2b0aa35165d2",
         "file_name": "forge-1.18-38.0.17-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7a81dedda0897dfdea07c6ef4abdc913d024df701fa58a6fea91b0a0af62cb6e"
+        "version_json_sha256": "7a81dedda0897dfdea07c6ef4abdc913d024df701fa58a6fea91b0a0af62cb6e",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.1",
@@ -6052,7 +6204,8 @@
         "sha256": "9d10a50742f0286ef2437439c0a2db1bded5013c90622a322a318be9df53daa5",
         "file_name": "forge-1.18.1-39.0.89-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e8a18cb3eeba0280613096be79075a0080e233bc1e03833889bcea8b0cbbc815"
+        "version_json_sha256": "e8a18cb3eeba0280613096be79075a0080e233bc1e03833889bcea8b0cbbc815",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.1",
@@ -6061,7 +6214,8 @@
         "sha256": "1d9ad0bb5c460eb5af18ba020a41c33f5149572c828adfad4cb6fb2acc8b13a4",
         "file_name": "forge-1.18.1-39.0.90-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c619faf43c09bd49a3a854c0099bf49937164a4a7bceef356dfca5735df6567f"
+        "version_json_sha256": "c619faf43c09bd49a3a854c0099bf49937164a4a7bceef356dfca5735df6567f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.1",
@@ -6070,7 +6224,8 @@
         "sha256": "e88d55e4e50c3f5e3245b58fff638624434a0299e339bc8975883eacd49c04ec",
         "file_name": "forge-1.18.1-39.1.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9b0dcd2874fe3f494cc12b96e747cabe4a293e2cbb4115b08c800a24f74fb094"
+        "version_json_sha256": "9b0dcd2874fe3f494cc12b96e747cabe4a293e2cbb4115b08c800a24f74fb094",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.1",
@@ -6079,7 +6234,8 @@
         "sha256": "0ac5dbf12dc028c7edd3b7b984e3a0abffcca2d3fa47b128204332e575b54b2d",
         "file_name": "forge-1.18.1-39.1.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b7ee4e9bde80e2caa9547f3b38061577d469ac25ce6eeb4879d392917da9ce91"
+        "version_json_sha256": "b7ee4e9bde80e2caa9547f3b38061577d469ac25ce6eeb4879d392917da9ce91",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.1",
@@ -6088,7 +6244,8 @@
         "sha256": "ed75284affe9bd744e6ecc7d5cf6699b66f727fa892a8b591586271a7cf47059",
         "file_name": "forge-1.18.1-39.1.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "97ae4bcec238107daba5647eb80a3186fe557e1262f6fcc29defb20e45428bf7"
+        "version_json_sha256": "97ae4bcec238107daba5647eb80a3186fe557e1262f6fcc29defb20e45428bf7",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.2",
@@ -6097,7 +6254,8 @@
         "sha256": "2974f845b93f3eb5ae2b4af0b6ce04815d16aa4b34bc51cbb894709f536d7618",
         "file_name": "forge-1.18.2-40.3.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "2889adfee5eee2af5f7321a7acc9bd15d5f39ab07ea947d10940a9288cd70f5c"
+        "version_json_sha256": "2889adfee5eee2af5f7321a7acc9bd15d5f39ab07ea947d10940a9288cd70f5c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.2",
@@ -6106,7 +6264,8 @@
         "sha256": "3c2e2e9b5d82054376179d778f31c06b94ad7c502b860d0c7e8cfb4639bcd002",
         "file_name": "forge-1.18.2-40.3.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "bd3f252c94f3cb5d24eab3450b8df6a8a83dd22d6fa94ca7bf076ca3a7ba8f52"
+        "version_json_sha256": "bd3f252c94f3cb5d24eab3450b8df6a8a83dd22d6fa94ca7bf076ca3a7ba8f52",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.2",
@@ -6115,7 +6274,8 @@
         "sha256": "b8c47a90038097ecab3626a52aed3b39d5cfda62c37636ada985ee684b7be8e8",
         "file_name": "forge-1.18.2-40.3.10-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "201a7b94aec5ec9f879e39a2f441f962ed88e6c413b991e3f3e9b5f4525ffcfa"
+        "version_json_sha256": "201a7b94aec5ec9f879e39a2f441f962ed88e6c413b991e3f3e9b5f4525ffcfa",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.2",
@@ -6124,7 +6284,8 @@
         "sha256": "5650f19cf1fba03146a821daa577eb058684722195b2d2a6c6fde57fbf157988",
         "file_name": "forge-1.18.2-40.3.11-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "029eb52bf6a3cc5ac424b9f4f0371f07e4b8562ff334cabff0fbcaffad9c0b49"
+        "version_json_sha256": "029eb52bf6a3cc5ac424b9f4f0371f07e4b8562ff334cabff0fbcaffad9c0b49",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.18.2",
@@ -6133,7 +6294,8 @@
         "sha256": "dcff493f6c2212bdf6ae087f98029cd317a79759ab1009dce23e63e7dba0e216",
         "file_name": "forge-1.18.2-40.3.12-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "03c4ba6a8d4e10084bbbe5adfe1ba85e43b0c8d62b66441525685b839fd894c0"
+        "version_json_sha256": "03c4ba6a8d4e10084bbbe5adfe1ba85e43b0c8d62b66441525685b839fd894c0",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19",
@@ -6142,7 +6304,8 @@
         "sha256": "342f8841b8ee11ef709bd7a15488535ab806ecd11c6df0fc00456451bd0475f2",
         "file_name": "forge-1.19-41.0.110-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7736cc685ed2b51ba59e4337e180e578b2720163e341bcd2318ce32384d54ade"
+        "version_json_sha256": "7736cc685ed2b51ba59e4337e180e578b2720163e341bcd2318ce32384d54ade",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19",
@@ -6151,7 +6314,8 @@
         "sha256": "190dd139c72988819bd94ece2f0f03116e3fc32436357d21f749b74833814df4",
         "file_name": "forge-1.19-41.0.111-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "97ee4cd8639c8e0ed492ce5f0babdff9a7460f22977bf6bef3f155680bcfcbe6"
+        "version_json_sha256": "97ee4cd8639c8e0ed492ce5f0babdff9a7460f22977bf6bef3f155680bcfcbe6",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19",
@@ -6160,7 +6324,8 @@
         "sha256": "0402fc64972c32f25fee421b6ba72820d1d47f7323dc533b78e1c6d0c286dad8",
         "file_name": "forge-1.19-41.0.112-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e40cfe83a69050373fa4e84a2538837b1fcf4efb4fa44814947154f5ffd46e29"
+        "version_json_sha256": "e40cfe83a69050373fa4e84a2538837b1fcf4efb4fa44814947154f5ffd46e29",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19",
@@ -6169,7 +6334,8 @@
         "sha256": "bb7b388e1f049c3f59fbf6898b0e6cf9c67e6145f5f9c5c97447a5b030d5131a",
         "file_name": "forge-1.19-41.0.113-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b81c7a106deeacbece9ed16658b676e64071ba8283f15f363327fa705bd1df3f"
+        "version_json_sha256": "b81c7a106deeacbece9ed16658b676e64071ba8283f15f363327fa705bd1df3f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19",
@@ -6178,7 +6344,8 @@
         "sha256": "4251a8c7f44278ab9756adc98097dc9d9f5900c83908da08ebe6484a31dbaa2a",
         "file_name": "forge-1.19-41.1.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "554d392451a972ecdd26203ef197b5229099321eb59c9916d1a93c8808633fbc"
+        "version_json_sha256": "554d392451a972ecdd26203ef197b5229099321eb59c9916d1a93c8808633fbc",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.1",
@@ -6187,7 +6354,8 @@
         "sha256": "afb97ab23dc4a9c0f1a28fa55a198be0cb6119bd9d97220e96d00b8fbc5c9f7c",
         "file_name": "forge-1.19.1-42.0.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4f94270032197c8825ebba066e9acc76b89edb4e4f67b6ac42f51cdd7e9c2b7d"
+        "version_json_sha256": "4f94270032197c8825ebba066e9acc76b89edb4e4f67b6ac42f51cdd7e9c2b7d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.1",
@@ -6196,7 +6364,8 @@
         "sha256": "f8b6ef06c5a565afbe044b07fa2329daf4987ef354edcf45e3e02e774ac032c9",
         "file_name": "forge-1.19.1-42.0.4-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7465e572471cf0968ec1dac88026bd12b489b700687b5018a8a37b3313420f2c"
+        "version_json_sha256": "7465e572471cf0968ec1dac88026bd12b489b700687b5018a8a37b3313420f2c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.1",
@@ -6205,7 +6374,8 @@
         "sha256": "f60e7eaed2af0162611a81f49d9a83fba24e316a30ff70bc0deea6173efa63e4",
         "file_name": "forge-1.19.1-42.0.5-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d1218acbeb4833d36b5474b6b34cc7ee4892d6b0d7d9b6f2992fa8e065accd0c"
+        "version_json_sha256": "d1218acbeb4833d36b5474b6b34cc7ee4892d6b0d7d9b6f2992fa8e065accd0c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.1",
@@ -6214,7 +6384,8 @@
         "sha256": "3e1fb2d3c1e198014c68bb068612297d9021de70b793d8db9c0aedd7ea01d46c",
         "file_name": "forge-1.19.1-42.0.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "f976af97c28161008d860db5ffce8eca85e4e2a4e92231d4f6e3c20f7204bc03"
+        "version_json_sha256": "f976af97c28161008d860db5ffce8eca85e4e2a4e92231d4f6e3c20f7204bc03",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.1",
@@ -6223,7 +6394,8 @@
         "sha256": "0ad719a832b71c3cf1381f1413a28fb99c6a61109fd17d131c443bb2634cfc87",
         "file_name": "forge-1.19.1-42.0.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e2e2cb6bb9bc7d4784308f3279da5af4d781a320e9158e23d4554c2df9f2656a"
+        "version_json_sha256": "e2e2cb6bb9bc7d4784308f3279da5af4d781a320e9158e23d4554c2df9f2656a",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.2",
@@ -6232,7 +6404,8 @@
         "sha256": "bd47327718757c96919a17b91e99ec7cbbb2098493b254b054fed400e86769f0",
         "file_name": "forge-1.19.2-43.4.22-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "91e631d07e63dc06195487dbab10ea699301a6c7ea9777cac966b3d4bd152f89"
+        "version_json_sha256": "91e631d07e63dc06195487dbab10ea699301a6c7ea9777cac966b3d4bd152f89",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.2",
@@ -6241,7 +6414,8 @@
         "sha256": "5e801fb105951a4cea7d9b57edaea4a5d22b83107822f099167c95179a7e93a1",
         "file_name": "forge-1.19.2-43.4.23-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7c9994f6b9041daaf028b17232fb4299b791cacdc9aecab433b6cb2f5d07ed25"
+        "version_json_sha256": "7c9994f6b9041daaf028b17232fb4299b791cacdc9aecab433b6cb2f5d07ed25",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.2",
@@ -6250,7 +6424,8 @@
         "sha256": "4869e60456321e99eb5120ae39171c382c27a05858cdfd4b90ff123e3750e681",
         "file_name": "forge-1.19.2-43.5.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9084d69aa867f676e2907703b2da9a3a5d600085cc4570c20db032233c07e12a"
+        "version_json_sha256": "9084d69aa867f676e2907703b2da9a3a5d600085cc4570c20db032233c07e12a",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.2",
@@ -6259,7 +6434,8 @@
         "sha256": "8de3be02b74b0cc582c539a338e04d1cb89a29e358bf7980ac66473043414fcd",
         "file_name": "forge-1.19.2-43.5.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "dc6d7fdfc77ca713aed910665fb7cd570151007bf418e84987789e3287aae21a"
+        "version_json_sha256": "dc6d7fdfc77ca713aed910665fb7cd570151007bf418e84987789e3287aae21a",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.2",
@@ -6268,7 +6444,8 @@
         "sha256": "cee6837e368a579e10b6c9677a29e789b5a7e424ea6143996e1c8794d0b01cf1",
         "file_name": "forge-1.19.2-43.5.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "951ae27bb1411220e6c16ba4097b13b0c6ef2ae22c2f1cb4a8c5354ce91c56a5"
+        "version_json_sha256": "951ae27bb1411220e6c16ba4097b13b0c6ef2ae22c2f1cb4a8c5354ce91c56a5",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.3",
@@ -6277,7 +6454,8 @@
         "sha256": "fbbcea85cfc24cd07c5f95beca252e52e0dd5b0ba7dc2b3e4ffb542c2d867fca",
         "file_name": "forge-1.19.3-44.1.18-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "60d307e70acd50df1936fc0ebec29b51b78ececa7b38ef0c5aaffac9d97622f9"
+        "version_json_sha256": "60d307e70acd50df1936fc0ebec29b51b78ececa7b38ef0c5aaffac9d97622f9",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.3",
@@ -6286,7 +6464,8 @@
         "sha256": "1d7f68bf77dc9b106964813092f8068e5a63b2e8b4cbe2522632ceb9fe6b1b95",
         "file_name": "forge-1.19.3-44.1.20-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e38d3772ca8ef6c66c388a0c7a9c20ada02c881a8cddb4ec6cfd5a26e7991cd6"
+        "version_json_sha256": "e38d3772ca8ef6c66c388a0c7a9c20ada02c881a8cddb4ec6cfd5a26e7991cd6",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.3",
@@ -6295,7 +6474,8 @@
         "sha256": "9f5e417801b80ea793181909ecd0a079edf9310c79f14062ff64f1740fe34e34",
         "file_name": "forge-1.19.3-44.1.21-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4615ed844b553940d9b2de357b5d29e527f9b6964848c525b95e0dd27f829ec7"
+        "version_json_sha256": "4615ed844b553940d9b2de357b5d29e527f9b6964848c525b95e0dd27f829ec7",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.3",
@@ -6304,7 +6484,8 @@
         "sha256": "14cdcc9cf55adba964736b2177b530ea578a884bcab3dedfc5ab1d049a9e40e6",
         "file_name": "forge-1.19.3-44.1.22-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8de6fa1275f62de0305cccd475a99be6ced01045a0b92634fea882fbde1dfde1"
+        "version_json_sha256": "8de6fa1275f62de0305cccd475a99be6ced01045a0b92634fea882fbde1dfde1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.3",
@@ -6313,7 +6494,8 @@
         "sha256": "3d9df7302958414b8bd52af8f52f486652e3f5be877e4a881d7c0ea6f968ae56",
         "file_name": "forge-1.19.3-44.1.23-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b39ed0cc223e002d87abf9faaebc97e3f610fbb0754c4dd74d6df68a1121baa1"
+        "version_json_sha256": "b39ed0cc223e002d87abf9faaebc97e3f610fbb0754c4dd74d6df68a1121baa1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.4",
@@ -6322,7 +6504,8 @@
         "sha256": "2343f79de8d4cd3ce8366cb0bab735110eed3bf09ab12bb7dcce34b0433d3575",
         "file_name": "forge-1.19.4-45.3.27-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "bcb957f7e520631f0d64348f215667cae80c744c5e74134639a36bcd772039be"
+        "version_json_sha256": "bcb957f7e520631f0d64348f215667cae80c744c5e74134639a36bcd772039be",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.4",
@@ -6331,7 +6514,8 @@
         "sha256": "6643bb8c21f409cc528ff656daf60c206d304cc77bf529bbbab4b336004dfc53",
         "file_name": "forge-1.19.4-45.4.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c6b6e0376a287a746d1f1ae50667515d8cd5e8c49d67e2938f904c8733e39aef"
+        "version_json_sha256": "c6b6e0376a287a746d1f1ae50667515d8cd5e8c49d67e2938f904c8733e39aef",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.4",
@@ -6340,7 +6524,8 @@
         "sha256": "9cc81da8f5ee2640c125a2ff3fd99ad59cd6d6f0047488f69f9443c5853be42c",
         "file_name": "forge-1.19.4-45.4.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "55288a02a6d9893910ea8fe30152f680f45bd8ae046283c878ff6f4e752a77e7"
+        "version_json_sha256": "55288a02a6d9893910ea8fe30152f680f45bd8ae046283c878ff6f4e752a77e7",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.4",
@@ -6349,7 +6534,8 @@
         "sha256": "8c7f7f077bff13a61bf5d0fe0f7b22f81bc9b46076c415bb80b6b24133cd0e1c",
         "file_name": "forge-1.19.4-45.4.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "03f1e67780c0003aae1ad0f239f185c6523adf0b5dcad1de9437bd8200c0ca94"
+        "version_json_sha256": "03f1e67780c0003aae1ad0f239f185c6523adf0b5dcad1de9437bd8200c0ca94",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.19.4",
@@ -6358,7 +6544,8 @@
         "sha256": "5c43f532eeee2edacd74cc5d0e069975f267f49950740e8a1a893c9ccc74a53a",
         "file_name": "forge-1.19.4-45.4.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "9db287b8ab52e209b3ba2c95f91f23c11ffdf28b82686b80c710552af5520a47"
+        "version_json_sha256": "9db287b8ab52e209b3ba2c95f91f23c11ffdf28b82686b80c710552af5520a47",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20",
@@ -6367,7 +6554,8 @@
         "sha256": "e94cf05d3fe16b772372848e3fb66892789731a96781b652f76598bc25f2fb39",
         "file_name": "forge-1.20-46.0.10-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4f67a883ac1d4cdadcfd7b84ed4f205cf9639ad2ff6a604bdba7a04e71fad9c7"
+        "version_json_sha256": "4f67a883ac1d4cdadcfd7b84ed4f205cf9639ad2ff6a604bdba7a04e71fad9c7",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20",
@@ -6376,7 +6564,8 @@
         "sha256": "120aed5d6808613c3e45679dce363d64cf29842b38d796425d065290530d0f7c",
         "file_name": "forge-1.20-46.0.11-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "3c17ef00237d91b7143f222a4f152a00b7d952ddd6de250487c428591df6cef8"
+        "version_json_sha256": "3c17ef00237d91b7143f222a4f152a00b7d952ddd6de250487c428591df6cef8",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20",
@@ -6385,7 +6574,8 @@
         "sha256": "84962129713b19700c37636f2c0532177ad6e8f1598410bf34b94f70ef7f2949",
         "file_name": "forge-1.20-46.0.12-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6e64e6ba576ec08952b279cf1551a9e76a836f13c4eae6b3a72aeab9dc345a97"
+        "version_json_sha256": "6e64e6ba576ec08952b279cf1551a9e76a836f13c4eae6b3a72aeab9dc345a97",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20",
@@ -6394,7 +6584,8 @@
         "sha256": "64ca6ce54e0dea9e90684ec2c24903a83be659d7765a496ccf74dab93bf22f22",
         "file_name": "forge-1.20-46.0.13-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "f4f3dd1306c55b85e470790ebf87be2d4581f53ea86ecce51d570ccfbeeee3c6"
+        "version_json_sha256": "f4f3dd1306c55b85e470790ebf87be2d4581f53ea86ecce51d570ccfbeeee3c6",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20",
@@ -6403,7 +6594,8 @@
         "sha256": "9357a3ebdc113e39a535d47c5300dbcca943261a12ddda4861949e1e88d785d6",
         "file_name": "forge-1.20-46.0.14-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "bbf1fc6bdf5a2d3de24b84e66d5c90004af1a2e21aeb5bac371c9ed1d10ebd60"
+        "version_json_sha256": "bbf1fc6bdf5a2d3de24b84e66d5c90004af1a2e21aeb5bac371c9ed1d10ebd60",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.1",
@@ -6462,7 +6654,8 @@
         "sha256": "a3f291eb44487cbbcfd2affd2d72a7901b233828724b4a9de4b4f85b235c5fd7",
         "file_name": "forge-1.20.2-48.0.45-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "750b24c73d38e4730472aa4c5b811ab7651dfedca6b59b94789589113707eb50"
+        "version_json_sha256": "750b24c73d38e4730472aa4c5b811ab7651dfedca6b59b94789589113707eb50",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -6471,7 +6664,8 @@
         "sha256": "dd87bd3457e481a79ecac5161f12945373b40dcf3f34399f9109cf68f15e9cdc",
         "file_name": "forge-1.20.2-48.0.47-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e4dff1de09507b9985814056c568b91c9fa231465bf0e8635e71ccd798e539e1"
+        "version_json_sha256": "e4dff1de09507b9985814056c568b91c9fa231465bf0e8635e71ccd798e539e1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -6480,7 +6674,8 @@
         "sha256": "fd91b8feb644ecabe89d1ea874248c124f1ee041cc49af8cfca91eb93399f02e",
         "file_name": "forge-1.20.2-48.0.48-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "845f7dc3fb22795a9b8196f574696aaaa6a45354b5badb5222460a22e54372ab"
+        "version_json_sha256": "845f7dc3fb22795a9b8196f574696aaaa6a45354b5badb5222460a22e54372ab",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -6489,7 +6684,8 @@
         "sha256": "8c06a0d16ac7e130bf07085944698378d21e3fadaf551e66185116c2e49af7c0",
         "file_name": "forge-1.20.2-48.0.49-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "074da9bdf838efc3a10309105fc8f2f20ce1d8082acce54f5bb053fca1cd6afc"
+        "version_json_sha256": "074da9bdf838efc3a10309105fc8f2f20ce1d8082acce54f5bb053fca1cd6afc",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.2",
@@ -6498,7 +6694,8 @@
         "sha256": "10c3f124c8c6b9c2550e0003ebf014c8d24f8ef6b4b9d76fd4619cdc6013eef6",
         "file_name": "forge-1.20.2-48.1.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "120e68cd61351bbc5e9c071121c8e8ca5f80ab68f880f04340ecb61e591800ee"
+        "version_json_sha256": "120e68cd61351bbc5e9c071121c8e8ca5f80ab68f880f04340ecb61e591800ee",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.3",
@@ -6507,7 +6704,8 @@
         "sha256": "9c028dfc58727bbe22412cfc16adbe8021133edcce2db48be9baaf974d295e6c",
         "file_name": "forge-1.20.3-49.0.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "67a0572d749fb872c748201d3c81df5534c64f21311ee6d2214521624f8ae770"
+        "version_json_sha256": "67a0572d749fb872c748201d3c81df5534c64f21311ee6d2214521624f8ae770",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.3",
@@ -6516,7 +6714,8 @@
         "sha256": "8c6e5fcb9181259d0354bc555a13e09b212df0a5f33b2c06eb73a4cad74e6d9f",
         "file_name": "forge-1.20.3-49.0.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ae5920e60cdf1a240de1d0441c528e02c8e112e4527622305b0078b954dc198a"
+        "version_json_sha256": "ae5920e60cdf1a240de1d0441c528e02c8e112e4527622305b0078b954dc198a",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -6525,7 +6724,8 @@
         "sha256": "3c4ebf6f23c9d980a367d1d8898419b9058060bc530dc47b227f0198652d856c",
         "file_name": "forge-1.20.4-49.2.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "cf50b6fc2b3d2d0b8732527dadd5449c773d364bed03f34b1b768c476f9f73c5"
+        "version_json_sha256": "cf50b6fc2b3d2d0b8732527dadd5449c773d364bed03f34b1b768c476f9f73c5",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -6534,7 +6734,8 @@
         "sha256": "608cdd1056eb6f6b235d04e8b9e56e85044993bd4e1ee9de7fba429abf8aa42f",
         "file_name": "forge-1.20.4-49.2.4-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b00c1d42650ec349295e030492b9b127d947baba7b7c1a482bcf8ec8dd2b5089"
+        "version_json_sha256": "b00c1d42650ec349295e030492b9b127d947baba7b7c1a482bcf8ec8dd2b5089",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -6543,7 +6744,8 @@
         "sha256": "20b3e00acb4c682ed0c6bc010bc6c5dd7f6b1b0a57ca1d98217a6c5627df4769",
         "file_name": "forge-1.20.4-49.2.6-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "93c2e42728508524f499fd1ffcbe6aa2e0d308c71ead8d294a27ee0fab2b35dc"
+        "version_json_sha256": "93c2e42728508524f499fd1ffcbe6aa2e0d308c71ead8d294a27ee0fab2b35dc",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -6552,7 +6754,8 @@
         "sha256": "3591b20c21ff8aec6edad889e570490486ec0df12811adfba02627dc5dc19fb5",
         "file_name": "forge-1.20.4-49.2.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "4cdf35dbe55241a474d6cc65990af3b19153960d85ba61443dd865388fb418b1"
+        "version_json_sha256": "4cdf35dbe55241a474d6cc65990af3b19153960d85ba61443dd865388fb418b1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.4",
@@ -6561,7 +6764,8 @@
         "sha256": "417ac84329568d2d18d13a6fbf3933c10126ec297582e66c5d6923c4519f168b",
         "file_name": "forge-1.20.4-49.2.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e36b47d4b89fbc296b1131f3b4221af42638fa8a96553ffcfa501abc4e67fee5"
+        "version_json_sha256": "e36b47d4b89fbc296b1131f3b4221af42638fa8a96553ffcfa501abc4e67fee5",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -6570,7 +6774,8 @@
         "sha256": "762f820a687b33a14e4515512ae8dcd71007690e3b3b5097e3d8008854815a90",
         "file_name": "forge-1.20.6-50.2.4-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c14de735b8e373f75b1b39213dbdf11236dbff8b757e52cff4d6692af9e1c063"
+        "version_json_sha256": "c14de735b8e373f75b1b39213dbdf11236dbff8b757e52cff4d6692af9e1c063",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -6579,7 +6784,8 @@
         "sha256": "a6ec0001df97069d014e4fe26809c0a3d5da13a2b5ffa78f206cde00f7fe4603",
         "file_name": "forge-1.20.6-50.2.6-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "593f18a83edec715e8985b1f66c34e123af66065d3656f1782df5f90e8038ba7"
+        "version_json_sha256": "593f18a83edec715e8985b1f66c34e123af66065d3656f1782df5f90e8038ba7",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -6588,7 +6794,8 @@
         "sha256": "676bcc51432e4a372888ff636810fdd1c5b724b86b447394d64cc1f46a8c4092",
         "file_name": "forge-1.20.6-50.2.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "13206d5f6dd3a35ad9634e74b62b63c103ae3cac42d606c89f125062c1029a1d"
+        "version_json_sha256": "13206d5f6dd3a35ad9634e74b62b63c103ae3cac42d606c89f125062c1029a1d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -6597,7 +6804,8 @@
         "sha256": "67e4d0015f31bd84f1bede2ec4b78c49c5359adaf955041324f0aeec18ec9b64",
         "file_name": "forge-1.20.6-50.2.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0eea116731b76081c7fd14e4bfd1ee97f1a1df872a2706c02300adee8dca05fd"
+        "version_json_sha256": "0eea116731b76081c7fd14e4bfd1ee97f1a1df872a2706c02300adee8dca05fd",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.20.6",
@@ -6606,7 +6814,8 @@
         "sha256": "23849f9a9babd08e69867e951446bbd07b2ab31540319cbbe431a0e9b904e789",
         "file_name": "forge-1.20.6-50.2.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e7abfed43da1f7d21739f3c58722ddaca31aaee9a43837d380ad5211f9139b25"
+        "version_json_sha256": "e7abfed43da1f7d21739f3c58722ddaca31aaee9a43837d380ad5211f9139b25",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21",
@@ -6665,7 +6874,8 @@
         "sha256": "943d3cecfbaabc0aa7e53b994297f00c10cc5ff5d29637c1cd3ce69d4b135baf",
         "file_name": "forge-1.21.1-52.1.10-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ced40ea0197405f6b27ab31d97c714fd659fc07e6db913e914c467268903c93e"
+        "version_json_sha256": "ced40ea0197405f6b27ab31d97c714fd659fc07e6db913e914c467268903c93e",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.1",
@@ -6674,7 +6884,8 @@
         "sha256": "6eb45efffa51f8f1e3a0c5876978f186a3dfc7db8df8a5833d9b645e774f777d",
         "file_name": "forge-1.21.1-52.1.12-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d84364d10009f45051c8e9858fb0724f7ef77973f3278f74169d4d6effa4bc3a"
+        "version_json_sha256": "d84364d10009f45051c8e9858fb0724f7ef77973f3278f74169d4d6effa4bc3a",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.1",
@@ -6683,7 +6894,8 @@
         "sha256": "c9e4d20c1cae2c3e6e4119d31814dd62b4df76f66932da4880e139fd79b09c39",
         "file_name": "forge-1.21.1-52.1.13-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7248810b5948cf512ba13ae6331f7e9ed2be4d89c932ff1b1018419bb7fb3cac"
+        "version_json_sha256": "7248810b5948cf512ba13ae6331f7e9ed2be4d89c932ff1b1018419bb7fb3cac",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.1",
@@ -6692,7 +6904,8 @@
         "sha256": "4313d306e9c9ac387f535272cbde3eb6779b9f107723bf1e53db0da27e984deb",
         "file_name": "forge-1.21.1-52.1.14-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a3dd70137b00f7c08d51c2aad016e5f3cc65b82e2209b203e547d1d57373ff3c"
+        "version_json_sha256": "a3dd70137b00f7c08d51c2aad016e5f3cc65b82e2209b203e547d1d57373ff3c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.1",
@@ -6701,7 +6914,8 @@
         "sha256": "ac8e4c979dda10ee5406b68956a9050719b56b14650cf315bacf884f5df4c657",
         "file_name": "forge-1.21.1-52.1.15-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e46502881c27985f623b439d60df526083209f45560afbfc67cf23df78789768"
+        "version_json_sha256": "e46502881c27985f623b439d60df526083209f45560afbfc67cf23df78789768",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -6710,7 +6924,8 @@
         "sha256": "ede0c7de616f6623cc22db3bb4fbe66ed8234f65259e282c09f9d145d6007d1a",
         "file_name": "forge-1.21.3-53.1.6-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e8cbbd6143f27b4959e4f7f7dd9936e08cdd04f5a3e7e535906da077055038e2"
+        "version_json_sha256": "e8cbbd6143f27b4959e4f7f7dd9936e08cdd04f5a3e7e535906da077055038e2",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -6719,7 +6934,8 @@
         "sha256": "baa6e430cdc1d5d909528834ad2699649874f04a32b2c75e4a2d12b2f74a4273",
         "file_name": "forge-1.21.3-53.1.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "fabbbca552bcc876baadfa03f02934426c3d42f5fff01c5826d68116e1c3a180"
+        "version_json_sha256": "fabbbca552bcc876baadfa03f02934426c3d42f5fff01c5826d68116e1c3a180",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -6728,7 +6944,8 @@
         "sha256": "fe12ab8f52d10ce4d3d97e1cf886de2ec75054cd2355cf199ebe8143ba91b8ed",
         "file_name": "forge-1.21.3-53.1.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a0db54ce28c5493ebde4accf1d617dfeeef101ed6705933f71d90e88d9b8ea5d"
+        "version_json_sha256": "a0db54ce28c5493ebde4accf1d617dfeeef101ed6705933f71d90e88d9b8ea5d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -6737,7 +6954,8 @@
         "sha256": "a8f97a9f454a99b5098ba68c9fb64a351a10ef9ddbe2170ea330cd40bd708af8",
         "file_name": "forge-1.21.3-53.1.10-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "fdbb9e681ff4d80fcb265e59b8b28909c37bf56c4525826ab4253317477d29dc"
+        "version_json_sha256": "fdbb9e681ff4d80fcb265e59b8b28909c37bf56c4525826ab4253317477d29dc",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.3",
@@ -6746,7 +6964,8 @@
         "sha256": "ac84674127aa94c3c1f8080bc9939b275d7fcd0f6d484ad0968e255a0e3ec8c1",
         "file_name": "forge-1.21.3-53.1.11-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6258361e02252be3ffafd1464cd3d8cd00705808d0511acd14453d7ce122651f"
+        "version_json_sha256": "6258361e02252be3ffafd1464cd3d8cd00705808d0511acd14453d7ce122651f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -6755,7 +6974,8 @@
         "sha256": "d3f327210f5a0f887c061050d1495f030fe63c91ddad8dd9f55eab05c5a22dd5",
         "file_name": "forge-1.21.4-54.1.13-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ab6235a3f2236ff537cf2a63332d9c7fb44d65d5d9c37ccafef54a496e3fc46c"
+        "version_json_sha256": "ab6235a3f2236ff537cf2a63332d9c7fb44d65d5d9c37ccafef54a496e3fc46c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -6764,7 +6984,8 @@
         "sha256": "960355f0ed2f8f869c051c011cec9c269ab42a05a347bb93dc548174417c8f0f",
         "file_name": "forge-1.21.4-54.1.14-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "02884875d149f887b55ee72f0a912a51dcb4bfcd148a0efacadef842a6264406"
+        "version_json_sha256": "02884875d149f887b55ee72f0a912a51dcb4bfcd148a0efacadef842a6264406",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -6773,7 +6994,8 @@
         "sha256": "e21800da6933283364f157a9488c2598c8ac2268e178963907ffb71d38e7d105",
         "file_name": "forge-1.21.4-54.1.15-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "cc0d0b0d9f765a39a492e4b80a6d2f1a73397e23da65831465824e48babbc29b"
+        "version_json_sha256": "cc0d0b0d9f765a39a492e4b80a6d2f1a73397e23da65831465824e48babbc29b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -6782,7 +7004,8 @@
         "sha256": "47cc48f151ba1073b3ed43d430f20648f17ac671c89b6612afcda3ab4295e081",
         "file_name": "forge-1.21.4-54.1.16-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "fe885a26edd9ff61c6c94957c9222d0003aa688fec65d1a2559688aea02a4863"
+        "version_json_sha256": "fe885a26edd9ff61c6c94957c9222d0003aa688fec65d1a2559688aea02a4863",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.4",
@@ -6791,7 +7014,8 @@
         "sha256": "fdfca474ca1d567b825d2ceebdb3144b3f954f116698117fef5f56310d832fc0",
         "file_name": "forge-1.21.4-54.1.17-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "18a35e6056af3257ddd65e344dd923c5b8f7ca25313f46e3489515a9fc9d5f01"
+        "version_json_sha256": "18a35e6056af3257ddd65e344dd923c5b8f7ca25313f46e3489515a9fc9d5f01",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -6800,7 +7024,8 @@
         "sha256": "5420ba6aed6a25297992e43dc71e51ede1946d117eb973ea84513afc0fe633d5",
         "file_name": "forge-1.21.5-55.1.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d3c346b5341f1fc225dec8ac20664b3cc71c5525ef8f575e67a41c29cf9cdd15"
+        "version_json_sha256": "d3c346b5341f1fc225dec8ac20664b3cc71c5525ef8f575e67a41c29cf9cdd15",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -6809,7 +7034,8 @@
         "sha256": "8ff5124e5fb7a65fcf6e6d0b0b5625356feba7c1317bdb22f1e56e864c4b23fc",
         "file_name": "forge-1.21.5-55.1.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0f37be5789caf2873477b1af6a9d0e1b9a154784b2569ff78f46d69003a2c315"
+        "version_json_sha256": "0f37be5789caf2873477b1af6a9d0e1b9a154784b2569ff78f46d69003a2c315",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -6818,7 +7044,8 @@
         "sha256": "793c72c618dd9190d833984bd05c362ef19446202af86423796f9ea4930f1e35",
         "file_name": "forge-1.21.5-55.1.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "19496d60723f197432c5114adb4e7d8a3f6be2acf2a93f6b89898a8ebe013dcd"
+        "version_json_sha256": "19496d60723f197432c5114adb4e7d8a3f6be2acf2a93f6b89898a8ebe013dcd",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -6827,7 +7054,8 @@
         "sha256": "fb6ffc7d13a5720c0872deea7dc2430ffaa32953948e1558229a3f3acd51f983",
         "file_name": "forge-1.21.5-55.1.10-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "1f9a2f12cd761dad8dfada41dff379823b39194dd50a436eba461bab14318086"
+        "version_json_sha256": "1f9a2f12cd761dad8dfada41dff379823b39194dd50a436eba461bab14318086",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.5",
@@ -6836,7 +7064,8 @@
         "sha256": "5886f01833629a32f0261f57129bb14e20a48490d7728229477079e2b9d62b3c",
         "file_name": "forge-1.21.5-55.1.11-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a86ba5bd52666b531a5121f06b2b85981c5b473629d6d518bc09e7699332a2b0"
+        "version_json_sha256": "a86ba5bd52666b531a5121f06b2b85981c5b473629d6d518bc09e7699332a2b0",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -6845,7 +7074,8 @@
         "sha256": "66ff9b8053f9f4ef6564019bd1e9d2862ff0d061e5c38d1143f979856f5a048b",
         "file_name": "forge-1.21.6-56.0.5-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c92b644a719f8ee814e6f2a798946f687bc6825fff3f240d93446d0535c2917c"
+        "version_json_sha256": "c92b644a719f8ee814e6f2a798946f687bc6825fff3f240d93446d0535c2917c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -6854,7 +7084,8 @@
         "sha256": "6ca950b52f477c2345ce0067ff523f52b742bb64bfcabffef2b7a0431c615a5a",
         "file_name": "forge-1.21.6-56.0.6-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "5b743c28ee9f4b679184305dc99c66187937fea95de10be0922480da37bc7cd8"
+        "version_json_sha256": "5b743c28ee9f4b679184305dc99c66187937fea95de10be0922480da37bc7cd8",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -6863,7 +7094,8 @@
         "sha256": "edeefa3aee979508cdfa67e43802dd35a8a1027c350a67501fcb0266693e575c",
         "file_name": "forge-1.21.6-56.0.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8199ea042cf061e4183e9351335ddbff5af9781bfa25dacd2570796c0d96d63b"
+        "version_json_sha256": "8199ea042cf061e4183e9351335ddbff5af9781bfa25dacd2570796c0d96d63b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -6872,7 +7104,8 @@
         "sha256": "301ebe847b7cc73c301d0238fd4693f557c2d5bf42a7e2fd6d96aa22d3bfb8cc",
         "file_name": "forge-1.21.6-56.0.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a7ddd24f9a41df92f5afa2ef7f3f3e360390dbc20b00aee6477c0c7c95881114"
+        "version_json_sha256": "a7ddd24f9a41df92f5afa2ef7f3f3e360390dbc20b00aee6477c0c7c95881114",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.6",
@@ -6881,7 +7114,8 @@
         "sha256": "1d79255c2d19773ade4cf6d6830eb058a8d5001dc88d23b4b4e1d94b148c5775",
         "file_name": "forge-1.21.6-56.0.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7ebbe3810dc602095a3ae61ae82ed35e7bc89abe988141f25e5236ddcb3e479c"
+        "version_json_sha256": "7ebbe3810dc602095a3ae61ae82ed35e7bc89abe988141f25e5236ddcb3e479c",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -6890,7 +7124,8 @@
         "sha256": "449441149080791d36a89226191d92fb54ee5954461ed8d545fb98c82fd54ed6",
         "file_name": "forge-1.21.7-57.0.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8c8a983da19fab0b8a127aa0396a8080bc0b520836f81748483baecb68177dfb"
+        "version_json_sha256": "8c8a983da19fab0b8a127aa0396a8080bc0b520836f81748483baecb68177dfb",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -6899,7 +7134,8 @@
         "sha256": "5cae7271672c030dc434af82ffab570c23aa49d1d42a4b35d2bd993f0eac0822",
         "file_name": "forge-1.21.7-57.0.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "887d840c5828f26266fcf012e7590cedd7d1dbb70b7d460e50d2188aacd4ca86"
+        "version_json_sha256": "887d840c5828f26266fcf012e7590cedd7d1dbb70b7d460e50d2188aacd4ca86",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -6908,7 +7144,8 @@
         "sha256": "9805cebda44698ed1bd5d35d94dd795445fa277fd3ec18a6c718e149c8608afd",
         "file_name": "forge-1.21.7-57.0.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "c55d2f832e7da0060eeff02e5f56a30b681a93b2536cc02aa7b776cd4b344f95"
+        "version_json_sha256": "c55d2f832e7da0060eeff02e5f56a30b681a93b2536cc02aa7b776cd4b344f95",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.7",
@@ -6917,7 +7154,8 @@
         "sha256": "1ec5c4ed8a5d5fdaab187bf21ccc28c516e1e5982480b169e73c09fece87f8f0",
         "file_name": "forge-1.21.7-57.0.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "31871e81da1e6293510bf147c98619cdb5c18c8e8e37af6d78dbd010aed2f71f"
+        "version_json_sha256": "31871e81da1e6293510bf147c98619cdb5c18c8e8e37af6d78dbd010aed2f71f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -6926,7 +7164,8 @@
         "sha256": "2943f7821334fa8f87690efbd5d47622482555395e8ada821ff1380b5ade9d43",
         "file_name": "forge-1.21.8-58.1.14-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b2b83070df37d4dd16ec295ca0572a64531fc0c19ec5c91c4a270f503fc37b5d"
+        "version_json_sha256": "b2b83070df37d4dd16ec295ca0572a64531fc0c19ec5c91c4a270f503fc37b5d",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -6935,7 +7174,8 @@
         "sha256": "95825de6f1bc080ee6da49b6a54e2122288b81e53229a1d52b5775b26290cfb4",
         "file_name": "forge-1.21.8-58.1.16-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ffb2b3d57256c13041c34c0c2122db34031f821c01debcd5cd3a2f549ffe7e05"
+        "version_json_sha256": "ffb2b3d57256c13041c34c0c2122db34031f821c01debcd5cd3a2f549ffe7e05",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -6944,7 +7184,8 @@
         "sha256": "d0c38ce90edb45e01d4fd15402576ba77f0a258809d9ce6c4813c557d03aed00",
         "file_name": "forge-1.21.8-58.1.17-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "fd662c626774c7e28c4be7091035f04bacd8c2ae55ede6f442ab04ff5c3e30dc"
+        "version_json_sha256": "fd662c626774c7e28c4be7091035f04bacd8c2ae55ede6f442ab04ff5c3e30dc",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -6953,7 +7194,8 @@
         "sha256": "c694d12a6ddeb4c02b724a614ebc6effe798be36068d16258820d73991308bc0",
         "file_name": "forge-1.21.8-58.1.18-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "f439ed76ffc1a60d44b225d6be5a5edaa9080a920c60e9575a3f6560262528c1"
+        "version_json_sha256": "f439ed76ffc1a60d44b225d6be5a5edaa9080a920c60e9575a3f6560262528c1",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.8",
@@ -6962,7 +7204,8 @@
         "sha256": "20e711d36a9974bec75ab609ec3291fce4aa1d7ce67dfe9acee42dd77e9b7398",
         "file_name": "forge-1.21.8-58.1.19-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "d217edbc750664c0c79f2151b25f74b3a6ecc3b356eed3083ee2a1de8f1766e3"
+        "version_json_sha256": "d217edbc750664c0c79f2151b25f74b3a6ecc3b356eed3083ee2a1de8f1766e3",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -6971,7 +7214,8 @@
         "sha256": "8318d35ed62178d523bc7f96f18a20e0a78a167e7dac3340defaa306414e687c",
         "file_name": "forge-1.21.9-59.0.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "aba3907314234c9d563af02079041fb738322deedda85981be354bb4a9355351"
+        "version_json_sha256": "aba3907314234c9d563af02079041fb738322deedda85981be354bb4a9355351",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -6980,7 +7224,8 @@
         "sha256": "a6d626ef4ed168f3fa06e22112abc5c328c57b841ddedeaecdeccd8e71fd6376",
         "file_name": "forge-1.21.9-59.0.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "57ca904addffab0260c7001daf8e241d008cc4d38f6d7dab3855602801c6e751"
+        "version_json_sha256": "57ca904addffab0260c7001daf8e241d008cc4d38f6d7dab3855602801c6e751",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -6989,7 +7234,8 @@
         "sha256": "8bc59cda5bea783e2d87ede888211ca55e54b58362771402aa80166fa2889181",
         "file_name": "forge-1.21.9-59.0.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b83caa706abb51cf7887294d302c8a386e81ae28bfdbb486d72ea2d8f287597e"
+        "version_json_sha256": "b83caa706abb51cf7887294d302c8a386e81ae28bfdbb486d72ea2d8f287597e",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -6998,7 +7244,8 @@
         "sha256": "cdab5d150d1c354b8ca1748f11f73dd92255eef6f7fe6d89fc367d0c6ea268a6",
         "file_name": "forge-1.21.9-59.0.4-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e5047c4466f2907bdd403cb76ae585bd580dfc664a7f8052adc0ff2803c30ea3"
+        "version_json_sha256": "e5047c4466f2907bdd403cb76ae585bd580dfc664a7f8052adc0ff2803c30ea3",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.9",
@@ -7007,7 +7254,8 @@
         "sha256": "ba5d667c645d6de1f6b53a6d9cc9d2c07de6a84e2bc25110828fe50440cd2899",
         "file_name": "forge-1.21.9-59.0.5-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8682aae0e82ef03c3c7e514db5842e27782d9c0e2edc95e395feb571303b3a88"
+        "version_json_sha256": "8682aae0e82ef03c3c7e514db5842e27782d9c0e2edc95e395feb571303b3a88",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -7016,7 +7264,8 @@
         "sha256": "8fd785ae17fd47fa5172792d59bf2931ace1c8ff7d8871f652dd9205fc6fb094",
         "file_name": "forge-1.21.10-60.1.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "a89b6837b57e170b4aa4285f57ac12d0caa25089a492248e2620c6b3264880cd"
+        "version_json_sha256": "a89b6837b57e170b4aa4285f57ac12d0caa25089a492248e2620c6b3264880cd",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -7025,7 +7274,8 @@
         "sha256": "07caa0a561ff0109a27ea97a50662be0a6ae2b2234358e34129c8aa91c92cf08",
         "file_name": "forge-1.21.10-60.1.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "5f54ff71179c6e3a80c3bcbe1eeee9c8141ed4902d4d90dd4c0fe26a96077c9e"
+        "version_json_sha256": "5f54ff71179c6e3a80c3bcbe1eeee9c8141ed4902d4d90dd4c0fe26a96077c9e",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -7034,7 +7284,8 @@
         "sha256": "cda75c8812a9ba1214d832716961ea2e8b5aa53daa83dc50b9b42fb8f0a6ac7d",
         "file_name": "forge-1.21.10-60.1.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "e306935c90f26cacf93aa85f69e0f70e4f6c13a33e45919cf4c7e125c3ca9b01"
+        "version_json_sha256": "e306935c90f26cacf93aa85f69e0f70e4f6c13a33e45919cf4c7e125c3ca9b01",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -7043,7 +7294,8 @@
         "sha256": "3eb4ec36823c9685699c9fee0301fdc939c60ff3014ea3a14fea0a972afdbe05",
         "file_name": "forge-1.21.10-60.1.10-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "0a725199e99f9c5081baccc96fb0f10734845cfac81ac0f396f8af951f51649b"
+        "version_json_sha256": "0a725199e99f9c5081baccc96fb0f10734845cfac81ac0f396f8af951f51649b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.10",
@@ -7052,7 +7304,8 @@
         "sha256": "49b4b8a054120b0723b5e6ca76bfb878e773a659e796a0352b62bf4ca7c719e6",
         "file_name": "forge-1.21.10-60.1.11-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "fb78e5933b136c258f52e96988fc44d6c3d9762942d4fa01b538f4c5ee18810b"
+        "version_json_sha256": "fb78e5933b136c258f52e96988fc44d6c3d9762942d4fa01b538f4c5ee18810b",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -7061,7 +7314,8 @@
         "sha256": "ea24ad020d60532bc7b0cd1da78e36dcf6b782203c4081653ecb41ccfb877709",
         "file_name": "forge-1.21.11-61.1.4-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "5594e9a3c2dad5054d922efb834b03091fcefb828c5e913201130bdd993bf550"
+        "version_json_sha256": "5594e9a3c2dad5054d922efb834b03091fcefb828c5e913201130bdd993bf550",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -7070,7 +7324,8 @@
         "sha256": "98b545b71d40308be0585da12f8d16c54dec0a001d7f889f4e93178606198d07",
         "file_name": "forge-1.21.11-61.1.5-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b7c98f77e3587d2d959c584fc5cfc054f38e9a0abb456b3d0bdfd160f80fab64"
+        "version_json_sha256": "b7c98f77e3587d2d959c584fc5cfc054f38e9a0abb456b3d0bdfd160f80fab64",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -7079,7 +7334,8 @@
         "sha256": "0666f25bc077d1df212ed21bf1ff0c8b23146079cbf80d2ef84dff04ecafa0bf",
         "file_name": "forge-1.21.11-61.1.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "45a057220610c867aab7839d4b08094b47217401bd6ee3164418a12fa882897f"
+        "version_json_sha256": "45a057220610c867aab7839d4b08094b47217401bd6ee3164418a12fa882897f",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -7088,7 +7344,8 @@
         "sha256": "6afb8ab977c666d619538780b8574610a38cf59dea30508eaf9d3a99e3548af1",
         "file_name": "forge-1.21.11-61.1.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "2d9017f455c9c2ffb2b9dc5717a8eef7d5da75dd282b9edf6a17207327c56e95"
+        "version_json_sha256": "2d9017f455c9c2ffb2b9dc5717a8eef7d5da75dd282b9edf6a17207327c56e95",
+        "installer_spec": 1
       },
       {
         "mc_version": "1.21.11",
@@ -7097,7 +7354,8 @@
         "sha256": "5e0de8b9e328ce8f0454be0752574975aaa0238a8f9dec3ee67895e6026a1700",
         "file_name": "forge-1.21.11-61.1.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6334099d0c48dd50f0c7f07b7c279b84c62eba369c35ae0d310018ec54e5964c"
+        "version_json_sha256": "6334099d0c48dd50f0c7f07b7c279b84c62eba369c35ae0d310018ec54e5964c",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1",
@@ -7106,7 +7364,8 @@
         "sha256": "32fce52be0ffcf4b6d16f10a04399ed4583bb57c4499268843ffba7e11297f5e",
         "file_name": "forge-26.1-62.0.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7ab4611fff3c3911133def778f2599ef1272091cd64e70e5f075f819a1094b07"
+        "version_json_sha256": "7ab4611fff3c3911133def778f2599ef1272091cd64e70e5f075f819a1094b07",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1",
@@ -7115,7 +7374,8 @@
         "sha256": "6ca89704a4efd8f1c59dfb33729b638c6a7f369fe98315c5ba0af2cc1022adfc",
         "file_name": "forge-26.1-62.0.4-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "2318dac85d956f475475addd2d052deeb5d419d5152439b24dd6fc627ee6c05b"
+        "version_json_sha256": "2318dac85d956f475475addd2d052deeb5d419d5152439b24dd6fc627ee6c05b",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1",
@@ -7124,7 +7384,8 @@
         "sha256": "426df76a72bd288c70fa9308e6f6448c4c8b044adb7c043971c50e9a94a597d2",
         "file_name": "forge-26.1-62.0.5-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "7686c1811ed135965be4dc6cfd4ae414c37fef07028b89f7d2428569c0d27af4"
+        "version_json_sha256": "7686c1811ed135965be4dc6cfd4ae414c37fef07028b89f7d2428569c0d27af4",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1",
@@ -7133,7 +7394,8 @@
         "sha256": "7760bc6a213be9e52948a4ae79926c9c9df2e7b566c3c47d752671d77de7fc5e",
         "file_name": "forge-26.1-62.0.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "60974a556b689b901c633e3aef9eb96575216b1fe17e7c65bd4cc1f7b58d8558"
+        "version_json_sha256": "60974a556b689b901c633e3aef9eb96575216b1fe17e7c65bd4cc1f7b58d8558",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1",
@@ -7142,7 +7404,8 @@
         "sha256": "b18b0fd7a28d2b20a6f623c0bc904a811d7def110b3aa81676e533c3b66c05af",
         "file_name": "forge-26.1-62.0.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "08aefcb50bfd6ded37aee1016012e7eee0c4da5adac3e6930d88be8eca56aad2"
+        "version_json_sha256": "08aefcb50bfd6ded37aee1016012e7eee0c4da5adac3e6930d88be8eca56aad2",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.1",
@@ -7151,7 +7414,8 @@
         "sha256": "2ed09bf048c4ad57672f3e657ec23dcdf68f1519c873afd4b602c6f00827e79c",
         "file_name": "forge-26.1.1-63.0.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "ae5f38ac9b51c38d03454c2ef5748f962ae74f6628f02cfa1d2458c9f6a518db"
+        "version_json_sha256": "ae5f38ac9b51c38d03454c2ef5748f962ae74f6628f02cfa1d2458c9f6a518db",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.1",
@@ -7160,7 +7424,8 @@
         "sha256": "b79c4874a90ac25804a4cfbed9536d62bce43c255f8f6c6f97758f3cf6e9366b",
         "file_name": "forge-26.1.1-63.0.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "553a6489b46c7502c44f9f0971d7979761a3a4ac77432ec65cf921be7428d303"
+        "version_json_sha256": "553a6489b46c7502c44f9f0971d7979761a3a4ac77432ec65cf921be7428d303",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.1",
@@ -7169,7 +7434,8 @@
         "sha256": "e45a722454f83c1251dca0f88518a0a8370fac95c1628ff1171519978ee6dabf",
         "file_name": "forge-26.1.1-63.0.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "2ea36a027d855c27b5ebee433f135b68640aa89290f6838574ad564da6ac8e49"
+        "version_json_sha256": "2ea36a027d855c27b5ebee433f135b68640aa89290f6838574ad564da6ac8e49",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.2",
@@ -7178,7 +7444,8 @@
         "sha256": "c1889d9c0bdc7aa4db7ea718561438f45609c61d98c0e89d660808b8aa752102",
         "file_name": "forge-26.1.2-64.0.7-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "508596833633f2d3db8970cd07fa0633e084d8e5b6444855a9791b637419bbb7"
+        "version_json_sha256": "508596833633f2d3db8970cd07fa0633e084d8e5b6444855a9791b637419bbb7",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.2",
@@ -7187,7 +7454,8 @@
         "sha256": "7fe8d0a7dbe72480b68df04f4df4d5099e6383b33200f577f24bc05b4cf908f6",
         "file_name": "forge-26.1.2-64.0.8-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "50f0ca3adff439e29d31f46a3613715beb7d09ddbaf46c01d60f86f21167c842"
+        "version_json_sha256": "50f0ca3adff439e29d31f46a3613715beb7d09ddbaf46c01d60f86f21167c842",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.2",
@@ -7196,7 +7464,8 @@
         "sha256": "608bc9f028a0ef8dcd1a49c6eb85ddfcfa3b3bcd8ae27fc1b2ae02888ed8cb0a",
         "file_name": "forge-26.1.2-64.0.9-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "8a65dc721b78244b38211e357e035db5017e65119e43fd59d6a210a76466ef25"
+        "version_json_sha256": "8a65dc721b78244b38211e357e035db5017e65119e43fd59d6a210a76466ef25",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.2",
@@ -7205,7 +7474,8 @@
         "sha256": "8d534761f76639017d21279ba52616083f13de7cd620cd18ec445504cad795d2",
         "file_name": "forge-26.1.2-64.0.10-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "dc7bd6f030e1d3ffefd02b387d03780c78580c1dfda1571922a49de1cf3e0511"
+        "version_json_sha256": "dc7bd6f030e1d3ffefd02b387d03780c78580c1dfda1571922a49de1cf3e0511",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.1.2",
@@ -7214,7 +7484,8 @@
         "sha256": "565fea13a76ae11ec484dc7ae41452cc7983b1dea0771958bd20eaebe4699aa5",
         "file_name": "forge-26.1.2-64.0.11-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "487568edf8e498ad7bd403e9dd224ee61a9a452e8f95fc2bad0c16aa699e9632"
+        "version_json_sha256": "487568edf8e498ad7bd403e9dd224ee61a9a452e8f95fc2bad0c16aa699e9632",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.2",
@@ -7223,7 +7494,8 @@
         "sha256": "683076136410174509e97c055086145f2bb7f41709bab8f3e1faf317d78e61dd",
         "file_name": "forge-26.2-65.0.0-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "cde77759c594c5694e25f99714f012bab98a23d64d86dc244ad796c6d7acca12"
+        "version_json_sha256": "cde77759c594c5694e25f99714f012bab98a23d64d86dc244ad796c6d7acca12",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.2",
@@ -7232,7 +7504,8 @@
         "sha256": "e618ea131f99a670d4b27742f4aa8932fce31d7fe44ad4c39c4148126dc426d7",
         "file_name": "forge-26.2-65.0.1-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "6921be77048ca8dd1a949c3d59c04ef9fa627719271833be9b2c62ef141dc603"
+        "version_json_sha256": "6921be77048ca8dd1a949c3d59c04ef9fa627719271833be9b2c62ef141dc603",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.2",
@@ -7241,7 +7514,8 @@
         "sha256": "4abb61f9e11a9df7c275ef21eeb61e6e4714b8cd576b14f995f68ad737810cac",
         "file_name": "forge-26.2-65.0.2-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "fa01f499b6e54153259367baaf38ddbf41c505e536bb586f622034fb2b6e67b9"
+        "version_json_sha256": "fa01f499b6e54153259367baaf38ddbf41c505e536bb586f622034fb2b6e67b9",
+        "installer_spec": 1
       },
       {
         "mc_version": "26.2",
@@ -7250,7 +7524,8 @@
         "sha256": "f055305cfd53b159e8a1e8cb670199f2e1a649fe5edf31c2f50eb0a66590591e",
         "file_name": "forge-26.2-65.0.3-installer.jar",
         "file_type": "installer_jar",
-        "version_json_sha256": "b2006df67ec2a83884e705e0a1a849cb0b7163c932e8801400ceecd5577606aa"
+        "version_json_sha256": "b2006df67ec2a83884e705e0a1a849cb0b7163c932e8801400ceecd5577606aa",
+        "installer_spec": 1
       }
     ]
   },
