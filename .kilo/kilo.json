@@ -22,7 +22,7 @@
     "read": "allow",
     "skill": "allow",
     "task": "allow",
-    "external_directory": "deny"
+    "external_directory": "allow"
   },
   "skills": {
     "paths": ["./.kilo/skills"]

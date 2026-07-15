@@ -963,8 +963,9 @@ fn extract_zip(
 
         if entry_zip.is_dir() {
             let target = staging.join(&relative);
-            check_path_collision(&seen_paths, &normalized, &relative)?;
-            seen_paths.push(relative);
+            // Directory entries are structural and may legitimately be
+            // ancestors of later file entries. Only files are tracked for
+            // duplicate and file-vs-directory collision checks.
             std::fs::create_dir_all(&target).map_err(|e| LauncherError::Generic {
                 code: "ERR_ARCHIVE_EXTRACT".into(),
                 message: format!("Failed to create directory {}: {e}", target.display()),
@@ -1127,8 +1128,9 @@ fn extract_tar_gz(
 
             if entry_type.is_dir() {
                 let target = staging.join(&relative);
-                check_path_collision(&seen_paths, &normalized, &relative)?;
-                seen_paths.push(relative);
+                // Real Temurin tarballs contain explicit parent directory
+                // entries before their files. Do not classify those expected
+                // ancestor relationships as path collisions.
                 std::fs::create_dir_all(&target).map_err(|e| LauncherError::Generic {
                     code: "ERR_ARCHIVE_EXTRACT".into(),
                     message: format!("Failed to create directory {}: {e}", target.display()),
@@ -2320,6 +2322,23 @@ mod tests {
             receipt.java_sha256,
             Some(sha256_hex_file(&inst.path).unwrap())
         );
+    }
+
+    #[test]
+    fn test_extract_tar_gz_accepts_explicit_parent_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("runtime.tar.gz");
+        let staging = dir.path().join("staging");
+        std::fs::create_dir_all(&staging).unwrap();
+
+        let entry = make_test_entry("", 0);
+        let archive_data = create_test_tar_gz(&entry.java_relative_path);
+        std::fs::write(&archive_path, archive_data).unwrap();
+
+        extract_tar_gz(&archive_path, &staging, &entry, &NoopProgress, "test")
+            .expect("explicit parent directory entries must be accepted");
+
+        assert!(staging.join(&entry.java_relative_path).is_file());
     }
 
     #[test]
