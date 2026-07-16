@@ -169,6 +169,20 @@ pub fn classify_url(raw: &str) -> Option<NetworkCategory> {
     classify_host(host)
 }
 
+/// Remove credentials, query parameters, and fragments before writing a URL
+/// to diagnostic logs. Paths are retained so rejected artifacts can be
+/// identified without leaking signed URL parameters or tokens.
+pub fn sanitized_url_for_log(raw: &str) -> String {
+    let Ok(mut url) = reqwest::Url::parse(raw) else {
+        return "<invalid-url>".to_string();
+    };
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,6 +301,17 @@ mod tests {
     fn classify_unknown_host_returns_none() {
         assert_eq!(classify_host("example.com"), None);
         assert_eq!(classify_host("127.0.0.1"), None);
+    }
+
+    #[test]
+    fn sanitized_url_for_log_removes_secrets_but_keeps_artifact_path() {
+        assert_eq!(
+            sanitized_url_for_log(
+                "https://user:password@example.com/path/library.jar?token=secret#fragment"
+            ),
+            "https://example.com/path/library.jar"
+        );
+        assert_eq!(sanitized_url_for_log("not a url"), "<invalid-url>");
     }
 
     #[test]

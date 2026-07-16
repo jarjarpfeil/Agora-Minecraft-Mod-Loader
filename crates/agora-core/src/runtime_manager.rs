@@ -740,6 +740,10 @@ fn download_archive_verified(
 
     // Verify final URL is safe.
     if !is_allowed_redirect_target(response.url()) {
+        eprintln!(
+            "[java-runtime-download] rejected stage=final-url url={}",
+            crate::network::sanitized_url_for_log(response.url().as_str())
+        );
         return Err(LauncherError::UntrustedSource);
     }
 
@@ -838,10 +842,23 @@ fn download_archive_verified(
 
 /// Validate that a runtime download URL is on the allowlist.
 fn validate_runtime_url(url: &str) -> LauncherResult<()> {
-    let parsed = reqwest::Url::parse(url).map_err(|_| LauncherError::UntrustedSource)?;
+    let parsed = reqwest::Url::parse(url).map_err(|_| {
+        eprintln!("[java-runtime-download] rejected stage=parse url=<invalid-url>");
+        LauncherError::UntrustedSource
+    })?;
 
-    let host = parsed.host_str().ok_or(LauncherError::UntrustedSource)?;
+    let host = parsed.host_str().ok_or_else(|| {
+        eprintln!(
+            "[java-runtime-download] rejected stage=missing-host url={}",
+            crate::network::sanitized_url_for_log(url)
+        );
+        LauncherError::UntrustedSource
+    })?;
     if parsed.scheme() != "https" || parsed.port_or_known_default() != Some(443) {
+        eprintln!(
+            "[java-runtime-download] rejected stage=scheme-or-port url={}",
+            crate::network::sanitized_url_for_log(url)
+        );
         return Err(LauncherError::UntrustedSource);
     }
 
@@ -859,6 +876,10 @@ fn validate_runtime_url(url: &str) -> LauncherResult<()> {
         return Ok(());
     }
 
+    eprintln!(
+        "[java-runtime-download] rejected stage=initial-allowlist host={host} url={}",
+        crate::network::sanitized_url_for_log(url)
+    );
     Err(LauncherError::UntrustedSource)
 }
 

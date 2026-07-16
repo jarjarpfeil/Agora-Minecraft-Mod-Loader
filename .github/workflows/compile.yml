@@ -27,8 +27,13 @@ jobs:
       - name: Install compiler dependencies
         run: pip install -r compiler/requirements.txt
 
-      - name: Compile registry database
-        run: python compiler/compile.py --out registry.db
+      - name: Refresh loader manifests and compile registry
+        run: |
+          python scripts/refresh_loader_manifests.py \
+            --auto-versions \
+            --latest-per-mc 5 \
+            --keep-others \
+            --out registry.db
         env:
           ED25519_PRIVATE_KEY: ${{ secrets.ED25519_PRIVATE_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

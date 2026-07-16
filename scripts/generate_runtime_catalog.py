@@ -1,15 +1,18 @@
-#!/usr/bin/env python3
-"""Generate the runtime catalog of Adoptium Eclipse Temurin JRE releases.
+﻿#!/usr/bin/env python3
+"""Generate the runtime catalog of Adoptium Eclipse Temurin JRE/JDK releases.
 
-Queries the official Adoptium v3 API for latest portable JRE packages for
+Queries the official Adoptium v3 API for latest portable JRE/JDK packages for
 a fixed matrix of Java major versions and platforms.  Writes
-``runtime-catalog/runtime_catalog.json`` with pinned SHA-256 hashes,
+`runtime-catalog/runtime_catalog.json` with pinned SHA-256 hashes,
 download URLs, and metadata.
 
 Usage:
-    python scripts/generate_runtime_catalog.py          # write catalog
-    python scripts/generate_runtime_catalog.py --check  # validate without network
-    python scripts/generate_runtime_catalog.py --refresh  # force network update
+    python scripts/generate_runtime_catalog.py              # write catalog
+    python scripts/generate_runtime_catalog.py --check      # validate without network
+    python scripts/generate_runtime_catalog.py --refresh    # force network update
+    python scripts/generate_runtime_catalog.py --verify     # verify archive bytes
+    python scripts/generate_runtime_catalog.py --auto-discover  # auto-detect MC majors
+    python scripts/generate_runtime_catalog.py --major 8 --major 21  # specific majors
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,10 +38,10 @@ CATALOG_FILE = CATALOG_DIR / "runtime_catalog.json"
 SCHEMA_VERSION = 1
 
 # ---------------------------------------------------------------------------
-# Fixed matrix: Adoptium Temurin JRE (Hotspot) for these majors/platforms.
+# Fixed matrix: Adoptium Temurin JRE/JDK (Hotspot) for these majors/platforms.
 # ---------------------------------------------------------------------------
 
-REQUESTED_MAJORS = [8, 16, 17, 21]
+REQUESTED_MAJORS = [8, 16, 17, 21, 25]
 
 # Architecture is specified as "x64" or "aarch64" in the API.
 # JRE availability: Adoptium provides JRE for all four majors on all three
@@ -45,6 +49,8 @@ REQUESTED_MAJORS = [8, 16, 17, 21]
 # (mac aarch64 = Apple Silicon) but NOT on windows.
 SUPPORTED_OS = ["windows", "linux", "mac"]
 SUPPORTED_ARCH = ["x64", "aarch64"]
+
+IMAGE_TYPE_PREFERENCE = ["jre", "jdk"]
 
 # Unavailable combinations (deterministically known):
 #   windows + aarch64 → no portable JRE published by Adoptium
@@ -93,8 +99,22 @@ def _fetch_json(url: str) -> Any:
         raise
 
 
+def _download_streaming(url: str, destination: Path) -> None:
+    """Stream a URL to a file with chunked reading."""
+    headers = {"User-Agent": USER_AGENT}
+    req = urllib.request.Request(url, headers=headers)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        with destination.open("wb") as fh:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                fh.write(chunk)
+
+
 def _fetch_assets_latest(
-    major: int, os_name: str, arch: str
+    major: int, os_name: str, arch: str, image_type: str = "jre"
 ) -> dict[str, Any] | None:
     """Query the Adoptium v3 assets/latest endpoint.
 
@@ -103,7 +123,7 @@ def _fetch_assets_latest(
     """
     url = (
         f"{API_BASE}/assets/latest/{major}/hotspot"
-        f"?architecture={arch}&image_type=jre&os={os_name}&vendor=eclipse"
+        f"?architecture={arch}&image_type={image_type}&os={os_name}&vendor=eclipse"
     )
     data = _fetch_json(url)
     if data is None or not isinstance(data, list) or len(data) == 0:
@@ -112,7 +132,7 @@ def _fetch_assets_latest(
 
 
 def _validate_and_extract(
-    release: dict[str, Any], major: int, os_name: str, arch: str
+    release: dict[str, Any], major: int, os_name: str, arch: str, image_type: str = "jre"
 ) -> dict[str, Any] | str:
     """Validate the API response and extract catalog entry fields.
 
@@ -133,10 +153,10 @@ def _validate_and_extract(
         return "missing binary entry"
 
     # Validate image_type and jvm_impl
-    if binary.get("image_type") != IMAGE_TYPE:
+    if binary.get("image_type") != image_type:
         return (
             f"image_type mismatch: {binary.get('image_type')!r}"
-            f" != {IMAGE_TYPE!r}"
+            f" != {image_type!r}"
         )
     if binary.get("jvm_impl") != JVM_IMPL:
         return (
@@ -225,12 +245,6 @@ def _validate_and_extract(
         return f"unknown archive extension: {name}"
 
     # java_relative_path: path to java executable RELATIVE TO extraction root
-    # Adoptium JRE archives extract to a top-level directory like
-    #   jdk-11.0.26+9-jre/  (Linux/Windows)
-    #   jdk-11.0.26+9-jre.jdk/Contents/Home/  (macOS)
-    #
-    # The java_relative_path accounts for this via executable suffix so
-    # consumers can find the java binary.
     if os_name == "windows":
         java_relative_path = "bin/java.exe"
     elif os_name == "mac":
@@ -241,7 +255,7 @@ def _validate_and_extract(
     # Source API URL
     source_api_url = (
         f"{API_BASE}/assets/latest/{major}/hotspot"
-        f"?architecture={arch}&image_type=jre&os={os_name}&vendor=eclipse"
+        f"?architecture={arch}&image_type={image_type}&os={os_name}&vendor=eclipse"
     )
 
     entry: dict[str, Any] = {
@@ -251,7 +265,7 @@ def _validate_and_extract(
         "openjdk_version": openjdk_version,
         "os": canonical_os,
         "arch": canonical_arch,
-        "image_type": IMAGE_TYPE,
+        "image_type": image_type,
         "jvm_impl": JVM_IMPL,
         "archive_type": archive_type,
         "url": link,
@@ -271,27 +285,92 @@ def _validate_and_extract(
 
 
 # ---------------------------------------------------------------------------
+# Verification helpers
+# ---------------------------------------------------------------------------
+
+
+def verify_archive_bytes(entry: dict[str, Any], cache_dir: Path) -> None:
+    """Download (if missing) and verify an archive's size and SHA-256."""
+    destination = cache_dir / entry["sha256"]
+    if not destination.exists():
+        _download_streaming(entry["url"], destination)
+    actual_size = destination.stat().st_size
+    if actual_size != entry["size"]:
+        raise RuntimeError(
+            f"size mismatch for {entry['url']}: "
+            f"expected {entry['size']}, got {actual_size}"
+        )
+    digest = hashlib.sha256()
+    with destination.open("rb") as archive:
+        for chunk in iter(lambda: archive.read(1024 * 1024), b""):
+            digest.update(chunk)
+    actual_hash = digest.hexdigest()
+    if actual_hash != entry["sha256"]:
+        raise RuntimeError(
+            f"SHA-256 mismatch for {entry['url']}: "
+            f"expected {entry['sha256']}, got {actual_hash}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# MC version auto-discovery
+# ---------------------------------------------------------------------------
+
+MOJANG_VERSION_MANIFEST_URL = (
+    "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
+)
+
+BASELINE_MAJORS = {8, 16, 17, 21}
+
+
+def discover_minecraft_java_majors(
+    version_documents: list[dict[str, Any]],
+) -> set[int]:
+    majors = set(BASELINE_MAJORS)
+    for version in version_documents:
+        java_version = version.get("javaVersion")
+        if not isinstance(java_version, dict):
+            majors.add(8)
+            continue
+        major = java_version.get("majorVersion")
+        if isinstance(major, int) and major > 0:
+            majors.add(major)
+    return majors
+
+
+# ---------------------------------------------------------------------------
 # Catalog generation
 # ---------------------------------------------------------------------------
 
 
-def generate_catalog() -> dict[str, Any]:
-    """Query Adoptium API and build the catalog dict."""
+def generate_catalog(
+    requested_majors: Iterable[int] | None = None,
+) -> dict[str, Any]:
+    """Query Adoptium API and build the catalog dict.
+
+    Args:
+        requested_majors: Java major versions to include. Defaults to
+                          `REQUESTED_MAJORS`.
+    """
+    if requested_majors is None:
+        requested_majors_list = list(REQUESTED_MAJORS)
+    else:
+        requested_majors_list = list(requested_majors)
+
     entries: list[dict[str, Any]] = []
     warnings: list[str] = []
 
-    # Build the full matrix of (major, os_name, arch, canonical_os, canonical_arch)
-    # where os_name is the API parameter and canonical_os is the catalog OS name.
-    os_name_to_canonical = {
-        "windows": "windows",
-        "linux": "linux",
-        "mac": "macos",
-    }
-    unavailable_set = set(UNAVAILABLE_COMBOS)
+    # Build unavailable combos for the requested majors
+    unavailable_set: set[tuple[int, str, str]] = set()
+    for m in requested_majors_list:
+        for os_name in SUPPORTED_OS:
+            for arch in SUPPORTED_ARCH:
+                if os_name == "windows" and arch == "aarch64":
+                    unavailable_set.add((m, os_name, arch))
 
-    for major in REQUESTED_MAJORS:
-        for os_name in ["windows", "linux", "mac"]:
-            for arch in ["x64", "aarch64"]:
+    for major in requested_majors_list:
+        for os_name in SUPPORTED_OS:
+            for arch in SUPPORTED_ARCH:
                 key = (major, os_name, arch)
                 if key in unavailable_set:
                     warnings.append(
@@ -300,26 +379,38 @@ def generate_catalog() -> dict[str, Any]:
                     )
                     continue
 
-                logger.info(
-                    "Querying Java %d %s/%s ...", major, os_name, arch
-                )
-                release = _fetch_assets_latest(major, os_name, arch)
-                if release is None:
+                # Try image types in preference order (JRE first, then JDK)
+                entry = None
+                for img_type in IMAGE_TYPE_PREFERENCE:
+                    logger.info(
+                        "Querying Java %d %s/%s (%s) ...",
+                        major, os_name, arch, img_type,
+                    )
+                    release = _fetch_assets_latest(
+                        major, os_name, arch, image_type=img_type
+                    )
+                    if release is None:
+                        continue
+                    result = _validate_and_extract(
+                        release, major, os_name, arch, image_type=img_type
+                    )
+                    if isinstance(result, str):
+                        warnings.append(
+                            f"SKIP (validation): Java {major} "
+                            f"{os_name}/{arch} ({img_type}) — {result}"
+                        )
+                        continue
+                    entry = result
+                    break
+
+                if entry is None:
                     warnings.append(
                         f"SKIP (404): Java {major} "
                         f"{os_name}/{arch} — no release found"
                     )
                     continue
 
-                result = _validate_and_extract(release, major, os_name, arch)
-                if isinstance(result, str):
-                    warnings.append(
-                        f"SKIP (validation): Java {major} "
-                        f"{os_name}/{arch} — {result}"
-                    )
-                    continue
-
-                entries.append(result)
+                entries.append(entry)
 
     # Sort deterministically: major ASC, os ASC, arch ASC
     os_sort = {"linux": 0, "macos": 1, "windows": 2}
@@ -333,10 +424,11 @@ def generate_catalog() -> dict[str, Any]:
 
     generated_at = datetime.now(timezone.utc).isoformat()
 
+    majors_str = ", ".join(str(m) for m in sorted(requested_majors_list))
     catalog: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at,
-        "source": "Adoptium API v3 — Eclipse Temurin JRE Hotspot",
+        "source": f"Adoptium API v3 — Eclipse Temurin JRE/JDK Hotspot (Java {majors_str})",
         "entries": entries,
         "warnings": warnings,
     }
@@ -416,11 +508,11 @@ def check_catalog(catalog: dict[str, Any]) -> list[str]:
                 f"{idx}: license '{entry.get('license')}' != '{LICENSE_SPDX}'"
             )
 
-        # Validate image_type
-        if entry.get("image_type") != IMAGE_TYPE:
+        # Validate image_type (accept JRE or JDK)
+        if entry.get("image_type") not in {"jre", "jdk"}:
             errors.append(
                 f"{idx}: image_type '{entry.get('image_type')}'"
-                f" != '{IMAGE_TYPE}'"
+                f" not in {{'jre', 'jdk'}}"
             )
 
         # Validate jvm_impl
@@ -508,7 +600,7 @@ logger = logging.getLogger("generate_runtime_catalog")
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate or validate the runtime catalog of"
-                    " Adoptium Eclipse Temurin JRE releases."
+                    " Adoptium Eclipse Temurin JRE/JDK releases."
     )
     parser.add_argument(
         "--check",
@@ -519,6 +611,29 @@ def main() -> int:
         "--refresh",
         action="store_true",
         help="Force a network update even if the catalog exists.",
+    )
+    parser.add_argument(
+        "--major",
+        type=int,
+        action="append",
+        dest="majors",
+        help="Java major to include; may be specified multiple times.",
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Download all archives (cached by SHA-256) and verify their size and hash.",
+    )
+    parser.add_argument(
+        "--verify-cache",
+        type=Path,
+        default=REPO_ROOT / ".archive_cache",
+        help="Cache directory for --verify (default: .archive_cache).",
+    )
+    parser.add_argument(
+        "--auto-discover",
+        action="store_true",
+        help="Auto-discover Java majors from Mojang version manifest.",
     )
     args = parser.parse_args()
 
@@ -545,7 +660,66 @@ def main() -> int:
             )
             return 0
 
-    # Generate mode
+    # Verify mode (download and verify archive bytes)
+    if args.verify:
+        if not CATALOG_FILE.exists():
+            logger.error("Catalog file not found: %s", CATALOG_FILE)
+            return 1
+
+        with CATALOG_FILE.open("r", encoding="utf-8") as fh:
+            catalog = json.load(fh)
+
+        entries = catalog.get("entries", [])
+        cache_dir = args.verify_cache
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        failures = 0
+        for i, entry in enumerate(entries):
+            entry_id = f"entry[{i}] (Java {entry.get('major')} {entry.get('os')}/{entry.get('arch')})"
+            logger.info("Verifying %s ...", entry_id)
+            try:
+                verify_archive_bytes(entry, cache_dir)
+                logger.info("  PASS: %s", entry.get("sha256", "?"))
+            except RuntimeError as exc:
+                logger.error("  FAIL: %s", exc)
+                failures += 1
+
+        if failures:
+            logger.error("Verification FAILED: %d of %d entries failed.", failures, len(entries))
+            return 1
+        else:
+            logger.info("Verification PASSED: all %d entries verified.", len(entries))
+            return 0
+
+    # Auto-discover mode
+    if args.auto_discover:
+        logger.info("Fetching Mojang version manifest ...")
+        manifest = _fetch_json(MOJANG_VERSION_MANIFEST_URL)
+        if not isinstance(manifest, dict):
+            logger.error("Failed to parse version manifest.")
+            return 1
+
+        versions = manifest.get("versions", [])
+        # Pick up to 10 recent release/snapshot versions
+        recent_versions = [v for v in versions if v.get("type") in ("release", "snapshot")][:10]
+        version_docs: list[dict[str, Any]] = []
+        for v in recent_versions:
+            url = v.get("url")
+            vid = v.get("id", "?")
+            if not url:
+                continue
+            logger.info("  Fetching version JSON for %s ...", vid)
+            doc = _fetch_json(url)
+            if isinstance(doc, dict):
+                version_docs.append(doc)
+
+        discovered = discover_minecraft_java_majors(version_docs)
+        logger.info("Discovered Java majors: %s", sorted(discovered))
+        majors = sorted(discovered)
+    else:
+        majors = args.majors if args.majors is not None else REQUESTED_MAJORS
+
+    # Generate mode (unless --check or --verify already returned)
     if CATALOG_FILE.exists() and not args.refresh:
         logger.info(
             "Catalog already exists at %s (use --refresh to overwrite).",
@@ -553,7 +727,7 @@ def main() -> int:
         )
         return 0
 
-    catalog = generate_catalog()
+    catalog = generate_catalog(requested_majors=majors)
 
     # Validate what we just generated
     errors = check_catalog(catalog)

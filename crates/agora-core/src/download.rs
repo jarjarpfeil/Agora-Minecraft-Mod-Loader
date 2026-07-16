@@ -136,7 +136,13 @@ pub fn compute_loader_hash(loader: &str, _file_name: &str, file_type: &str, data
 /// Redirects are only followed when the target host is on the embedded loader
 /// domain allowlist, preventing SSRF via compromised/malicious pinned hosts.
 pub async fn download_bytes(url: &str) -> LauncherResult<Vec<u8>> {
-    loader_manifests::ensure_allowed_domain(url)?;
+    loader_manifests::ensure_allowed_domain(url).map_err(|error| {
+        eprintln!(
+            "[loader-download] rejected stage=initial-allowlist url={}",
+            crate::network::sanitized_url_for_log(url)
+        );
+        error
+    })?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             let url = attempt.url();
@@ -147,6 +153,10 @@ pub async fn download_bytes(url: &str) -> LauncherResult<Vec<u8>> {
                     }
                 }
             }
+            eprintln!(
+                "[loader-download] rejected stage=redirect url={}",
+                crate::network::sanitized_url_for_log(url.as_str())
+            );
             attempt.stop()
         }))
         .user_agent("AgoraLoaderManifestBot/1.0")
@@ -169,7 +179,13 @@ pub async fn download_bytes(url: &str) -> LauncherResult<Vec<u8>> {
         });
     }
 
-    loader_manifests::ensure_allowed_domain(resp.url().as_str())?;
+    loader_manifests::ensure_allowed_domain(resp.url().as_str()).map_err(|error| {
+        eprintln!(
+            "[loader-download] rejected stage=final-url url={}",
+            crate::network::sanitized_url_for_log(resp.url().as_str())
+        );
+        error
+    })?;
 
     resp.bytes()
         .await
@@ -185,7 +201,13 @@ pub async fn download_verified(
     url: &str,
     expected_sha: &str,
 ) -> LauncherResult<Vec<u8>> {
-    loader_manifests::ensure_allowed_domain(url)?;
+    loader_manifests::ensure_allowed_domain(url).map_err(|error| {
+        eprintln!(
+            "[loader-download] rejected stage=verified-initial loader={loader} file={file_name} url={}",
+            crate::network::sanitized_url_for_log(url)
+        );
+        error
+    })?;
     let data = download_bytes(url).await?;
     let actual = compute_loader_hash(loader, file_name, file_type, &data);
 

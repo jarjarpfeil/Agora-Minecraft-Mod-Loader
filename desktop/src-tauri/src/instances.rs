@@ -7,6 +7,7 @@ use crate::loader_manifests;
 use crate::models::{InstanceManifest, InstanceRow, JvmConfig};
 use crate::mojang;
 use crate::paths;
+use crate::registry;
 use agora_core::installed_profile::{
     self, adopt_installed_profile, derive_profile_id, LoaderTuple,
 };
@@ -1278,7 +1279,9 @@ async fn resolve_installer_java<R: tauri::Runtime>(
         None => {
             if java_runtime_mode == "automatic" {
                 // Provision managed runtime.
-                let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+                let registry_conn = registry::open_registry(app).ok();
+                let catalog =
+                    agora_core::runtime_catalog::RuntimeCatalog::effective(registry_conn.as_ref());
                 let conn2 =
                     db::local_state_connection(app).map_err(|_| LauncherError::LocalStateFailed)?;
                 let policy = agora_core::network::NetworkPolicy::from_db(&conn2);

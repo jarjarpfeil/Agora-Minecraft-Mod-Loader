@@ -95,6 +95,10 @@ impl LaunchHttpClients {
                 if redirect_target_is_safe(attempt.url(), category) {
                     attempt.follow()
                 } else {
+                    eprintln!(
+                        "[launch-download] rejected stage=redirect expected_category={category:?} url={}",
+                        network::sanitized_url_for_log(attempt.url().as_str())
+                    );
                     attempt.stop()
                 }
             }))
@@ -1880,8 +1884,17 @@ fn artifact_matches(bytes: &[u8], expected_sha1: Option<&str>, expected_size: Op
 }
 
 fn ensure_artifact_url(raw: &str) -> LauncherResult<()> {
-    let url = reqwest::Url::parse(raw).map_err(|_| LauncherError::UntrustedSource)?;
-    let host = url.host_str().ok_or(LauncherError::UntrustedSource)?;
+    let url = reqwest::Url::parse(raw).map_err(|_| {
+        eprintln!("[launch-download] rejected stage=parse url=<invalid-url>");
+        LauncherError::UntrustedSource
+    })?;
+    let host = url.host_str().ok_or_else(|| {
+        eprintln!(
+            "[launch-download] rejected stage=missing-host url={}",
+            network::sanitized_url_for_log(raw)
+        );
+        LauncherError::UntrustedSource
+    })?;
     let mojang_host = matches!(
         host,
         "piston-meta.mojang.com"
@@ -1896,6 +1909,11 @@ fn ensure_artifact_url(raw: &str) -> LauncherResult<()> {
     {
         Ok(())
     } else {
+        eprintln!(
+            "[launch-download] rejected stage=initial-allowlist host={host} classified={:?} url={}",
+            network::classify_host(host),
+            network::sanitized_url_for_log(raw)
+        );
         Err(LauncherError::UntrustedSource)
     }
 }
@@ -2678,7 +2696,12 @@ async fn download_verified_inner(
     category: NetworkCategory,
 ) -> LauncherResult<Vec<u8>> {
     ensure_artifact_url(url)?;
-    if network::classify_url(url) != Some(category) {
+    let actual_category = network::classify_url(url);
+    if actual_category != Some(category) {
+        eprintln!(
+            "[launch-download] rejected stage=category expected={category:?} actual={actual_category:?} url={}",
+            network::sanitized_url_for_log(url)
+        );
         return Err(LauncherError::UntrustedSource);
     }
     let response = client
@@ -2690,6 +2713,11 @@ async fn download_verified_inner(
     let final_url = response.url().as_str();
     let parsed = reqwest::Url::parse(final_url).map_err(|_| LauncherError::UntrustedSource)?;
     if !redirect_target_is_safe(&parsed, category) {
+        eprintln!(
+            "[launch-download] rejected stage=final-url expected_category={category:?} actual={:?} url={}",
+            network::classify_url(final_url),
+            network::sanitized_url_for_log(final_url)
+        );
         return Err(LauncherError::UntrustedSource);
     }
     if !response.status().is_success() {

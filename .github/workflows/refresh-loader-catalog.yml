@@ -1,0 +1,57 @@
+name: Refresh Loader Catalog
+
+on:
+  schedule:
+    - cron: "30 1 * * 1,3,5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r compiler/requirements.txt
+
+      - name: Refresh loader catalog
+        run: |
+          python scripts/refresh_loader_manifests.py \
+            --auto-versions \
+            --latest-per-mc 5 \
+            --keep-others \
+            --skip-sign \
+            --no-verify \
+            --out /tmp/registry-validation.db
+
+      - name: Validate scripts
+        run: python scripts/test_scripts.py
+
+      - name: Run loader catalog tests
+        run: cargo test -p agora-core --lib loader_manifests
+
+      - name: Create catalog update pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/loader-catalog
+          delete-branch: true
+          commit-message: "Refresh loader catalog"
+          title: "Refresh loader catalog"
+          body: |
+            Automated loader catalog refresh.
+
+            Sources were redownloaded and hashes were verified.
+          add-paths: |
+            loader-manifests/loader_manifests.json
+            loader-manifests/known_good_hashes.json
+            loader-manifests/minecraft_versions.json

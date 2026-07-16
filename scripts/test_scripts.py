@@ -844,10 +844,11 @@ class TestRuntimeCatalogEntryFields(unittest.TestCase):
         for entry in self.entries:
             self.assertEqual(entry["license"], expected)
 
-    def test_image_type_is_jre(self):
-        """Every entry has image_type 'jre'."""
+    def test_image_type_is_jre_or_jdk(self):
+        """Every entry has image_type 'jre' or 'jdk' (JRE fallback to JDK when no JRE published)."""
         for entry in self.entries:
-            self.assertEqual(entry["image_type"], "jre")
+            self.assertIn(entry["image_type"], ("jre", "jdk"),
+                          f"Unexpected image_type {entry.get('image_type')} for {entry.get('url')}")
 
     def test_jvm_impl_is_hotspot(self):
         """Every entry has jvm_impl 'hotspot'."""

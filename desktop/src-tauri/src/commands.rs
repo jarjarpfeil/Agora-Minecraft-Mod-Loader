@@ -618,7 +618,10 @@ pub async fn launch_instance_direct(
                             message: error.to_string(),
                         })?;
                     let runtimes_root = app_data.join("runtimes");
-                    let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+                    let registry_conn = registry::open_registry(&app).ok();
+                    let catalog = agora_core::runtime_catalog::RuntimeCatalog::effective(
+                        registry_conn.as_ref(),
+                    );
 
                     // Check network policy — preserve major info on failure
                     network_policy
@@ -674,7 +677,7 @@ pub async fn launch_instance_direct(
                     let rt_root = runtimes_root.clone();
                     let cat = catalog.clone();
                     let net_pol = network_policy.clone();
-                    let ensured = tokio::task::spawn_blocking(move || {
+                    let result: LauncherResult<_> = tokio::task::spawn_blocking(move || {
                         struct ChannelProgress {
                             sender: tokio::sync::mpsc::UnboundedSender<(String, Option<f64>)>,
                             cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -703,7 +706,44 @@ pub async fn launch_instance_direct(
                     .map_err(|_| LauncherError::JavaRuntimeMissing {
                         major,
                         component: component.clone(),
-                    })??;
+                    })?;
+
+                    let ensured = match result {
+                        Ok(installation) => installation,
+                        Err(agora_core::error::LauncherError::JavaRuntimeCatalogMissing {
+                            ..
+                        }) => {
+                            // Catalog doesn't have the required major. Force a registry update.
+                            let _ =
+                                crate::registry_sync::check_and_download_update(&app, true).await;
+
+                            let refreshed_conn = registry::open_registry(&app).ok();
+                            let refreshed_catalog =
+                                agora_core::runtime_catalog::RuntimeCatalog::effective(
+                                    refreshed_conn.as_ref(),
+                                );
+
+                            let refreshed_rt_root = runtimes_root.clone();
+                            let refreshed_net_pol = network_policy.clone();
+                            tokio::task::spawn_blocking(move || {
+                                agora_core::runtime_manager::ensure_runtime(
+                                    &refreshed_rt_root,
+                                    major,
+                                    &refreshed_catalog,
+                                    &refreshed_net_pol,
+                                    None,
+                                )
+                            })
+                            .await
+                            .map_err(|_| {
+                                LauncherError::JavaRuntimeMissing {
+                                    major,
+                                    component: "runtime-catalog".to_string(),
+                                }
+                            })??
+                        }
+                        Err(e) => return Err(e),
+                    };
 
                     let _ = app.emit(
                         "java-runtime-progress",
@@ -5409,7 +5449,8 @@ pub async fn ensure_java_runtime(
 
     let app_data = paths::app_data_dir(&app).map_err(|_| LauncherError::LocalStateFailed)?;
     let runtimes_root = app_data.join("runtimes");
-    let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+    let registry_conn = registry::open_registry(&app).ok();
+    let catalog = agora_core::runtime_catalog::RuntimeCatalog::effective(registry_conn.as_ref());
 
     let conn = db::local_state_connection(&app).map_err(|_| LauncherError::LocalStateFailed)?;
     let policy = agora_core::network::NetworkPolicy::from_db(&conn);
@@ -5492,7 +5533,8 @@ pub async fn ensure_java_runtime(
 pub async fn remove_unused_java_runtimes(app: tauri::AppHandle) -> LauncherResult<usize> {
     let app_data = paths::app_data_dir(&app).map_err(|_| LauncherError::LocalStateFailed)?;
     let runtimes_root = app_data.join("runtimes");
-    let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+    let registry_conn = registry::open_registry(&app).ok();
+    let catalog = agora_core::runtime_catalog::RuntimeCatalog::effective(registry_conn.as_ref());
 
     let removed = tokio::task::spawn_blocking(move || {
         agora_core::runtime_manager::remove_unused(&runtimes_root, &catalog, &[])

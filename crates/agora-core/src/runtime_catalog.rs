@@ -8,6 +8,7 @@
 //! and committed to the repository.  Consumers use `lookup()` to find the
 //! best JRE entry for a given Java major version and the current OS/arch.
 
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -293,9 +294,9 @@ impl RuntimeCatalog {
             }
 
             // Image type
-            if entry.image_type != "jre" {
+            if entry.image_type != "jre" && entry.image_type != "jdk" {
                 errors.push(CatalogError::ImageType(format!(
-                    "{}: got '{}', expected 'jre'",
+                    "{}: got '{}', expected 'jre' or 'jdk'",
                     idx, entry.image_type
                 )));
             }
@@ -421,6 +422,40 @@ impl RuntimeCatalog {
         let catalog = Self::from_json(EMBEDDED_CATALOG_BYTES)
             .expect("embedded runtime catalog should be valid");
         catalog
+    }
+
+    /// Load the runtime catalog from the registry database if available.
+    pub fn from_registry_db(
+        connection: &rusqlite::Connection,
+    ) -> Result<Option<Self>, Vec<CatalogError>> {
+        let json: Option<String> = connection
+            .query_row(
+                "SELECT catalog_json FROM runtime_catalog WHERE singleton_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| vec![CatalogError::Parse(error.to_string())])?;
+
+        match json {
+            Some(json) => Self::from_json(json.as_bytes()).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// Load the catalog with priority: signed registry.db > embedded.
+    pub fn effective(registry_connection: Option<&rusqlite::Connection>) -> Self {
+        if let Some(conn) = registry_connection {
+            match Self::from_registry_db(conn) {
+                Ok(Some(catalog)) => return catalog,
+                Ok(None) => {}
+                Err(errors) => {
+                    #[cfg(debug_assertions)]
+                    eprintln!("[runtime-catalog] Registry catalog invalid: {:?}", errors);
+                }
+            }
+        }
+        Self::embedded()
     }
 
     /// Look up the best JRE entry for a given Java major version and the

@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use rusqlite::OpenFlags;
 use std::path::PathBuf;
 
 /// A silent progress reporter for the CLI — no progress events are emitted.
@@ -919,7 +920,20 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
                 Ok(plan) => plan,
                 Err(agora_core::error::LauncherError::JavaRuntimeMissing { major, component }) => {
                     if java_runtime_mode == "automatic" {
-                        let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+                        let catalog = {
+                            let reg_path = agora_core::paths::registry_db_path(data_dir).ok();
+                            let reg_conn = reg_path.as_ref().and_then(|p| {
+                                rusqlite::Connection::open_with_flags(
+                                    p,
+                                    OpenFlags::SQLITE_OPEN_READ_ONLY
+                                        | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                                )
+                                .ok()
+                            });
+                            agora_core::runtime_catalog::RuntimeCatalog::effective(
+                                reg_conn.as_ref(),
+                            )
+                        };
 
                         network_policy
                             .check(agora_core::network::NetworkCategory::JavaRuntime)
@@ -1209,7 +1223,17 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
             }
             RuntimeCmd::Ensure { major } => {
                 let runtimes_root = data_dir.join("runtimes");
-                let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+                let catalog = {
+                    let reg_path = agora_core::paths::registry_db_path(data_dir).ok();
+                    let reg_conn = reg_path.as_ref().and_then(|p| {
+                        rusqlite::Connection::open_with_flags(
+                            p,
+                            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                        )
+                        .ok()
+                    });
+                    agora_core::runtime_catalog::RuntimeCatalog::effective(reg_conn.as_ref())
+                };
 
                 // Read java_runtime_mode from local state
                 let local_state = data_dir.join("local_state.db");
@@ -1272,7 +1296,17 @@ async fn run_command(cli: Cli, data_dir: &PathBuf, client: &reqwest::Client) -> 
             }
             RuntimeCmd::RemoveUnused => {
                 let runtimes_root = data_dir.join("runtimes");
-                let catalog = agora_core::runtime_catalog::RuntimeCatalog::embedded();
+                let catalog = {
+                    let reg_path = agora_core::paths::registry_db_path(data_dir).ok();
+                    let reg_conn = reg_path.as_ref().and_then(|p| {
+                        rusqlite::Connection::open_with_flags(
+                            p,
+                            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                        )
+                        .ok()
+                    });
+                    agora_core::runtime_catalog::RuntimeCatalog::effective(reg_conn.as_ref())
+                };
 
                 let removed = tokio::task::spawn_blocking(move || {
                     agora_core::runtime_manager::remove_unused(&runtimes_root, &catalog, &[])

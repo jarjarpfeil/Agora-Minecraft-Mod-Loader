@@ -1,4 +1,4 @@
-//! Registry database sync — download, verify, and atomically replace the
+//! Registry database sync â€” download, verify, and atomically replace the
 //! signed `registry.db` from GitHub Releases.
 //!
 //! This module is pure (no Tauri types) so it can be consumed by the Tauri
@@ -29,7 +29,7 @@ const REGISTRY_PUBKEY_HEX: &str = match option_env!("AGORA_REGISTRY_PUBKEY") {
 /// fallback when a github_release mod's primary source fails). Compiler and
 /// app ship in lockstep from a single commit, so clients always receive a
 /// matching signed db via the update flow.
-pub const APP_REGISTRY_SCHEMA_VERSION: i64 = 5;
+pub const APP_REGISTRY_SCHEMA_VERSION: i64 = 6;
 
 /// Minimum interval between automatic update checks (1 hour).
 const UPDATE_CHECK_INTERVAL_SECS: i64 = 3600;
@@ -187,6 +187,18 @@ pub async fn check_and_download_update(
     atomic_replace_db(&db_path, &sig_path, &db_bytes, &sig_bytes)?;
     set_cached_tag(local_state_path, &latest.tag_name)?;
 
+    // Initialize the loader catalog runtime override from the freshly
+    // downloaded signed registry.  Silently ignore when the table is
+    // absent (pre-catalog registry releases) or on connection errors
+    // (the embedded fallback remains in effect).
+    if let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        let _ = crate::loader_manifests::LoaderCatalog::init_from_registry(&conn);
+    }
+
     Ok(RegistryStatus {
         has_cached_db: true,
         cached_tag: Some(latest.tag_name.clone()),
@@ -270,6 +282,13 @@ pub fn seed_from_local_build(app_data_dir: &std::path::PathBuf) -> LauncherResul
                                 local_version,
                                 candidate.display()
                             );
+                            if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                                &dest,
+                                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                            ) {
+                                let _ = crate::loader_manifests::LoaderCatalog::init_from_registry(&conn);
+                            }
                             return Ok(true);
                         }
                     }
@@ -301,6 +320,13 @@ pub fn seed_from_local_build(app_data_dir: &std::path::PathBuf) -> LauncherResul
                     "Seeded registry.db from local build at {}",
                     candidate.display()
                 );
+                if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                    &dest,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                        | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                ) {
+                    let _ = crate::loader_manifests::LoaderCatalog::init_from_registry(&conn);
+                }
                 return Ok(true);
             }
             search_dir = dir.parent().map(std::path::Path::to_path_buf);
@@ -313,7 +339,7 @@ pub fn seed_from_local_build(app_data_dir: &std::path::PathBuf) -> LauncherResul
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers — GitHub API
+// Internal helpers â€” GitHub API
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -395,7 +421,7 @@ async fn download_file(url: &str, token: Option<&str>) -> LauncherResult<Vec<u8>
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers — Ed25519 signature verification
+// Internal helpers â€” Ed25519 signature verification
 // ---------------------------------------------------------------------------
 
 fn verify_signature(db_bytes: &[u8], sig_bytes: &[u8]) -> LauncherResult<()> {
@@ -466,7 +492,7 @@ fn verify_signature(db_bytes: &[u8], sig_bytes: &[u8]) -> LauncherResult<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers — schema version reading
+// Internal helpers â€” schema version reading
 // ---------------------------------------------------------------------------
 
 /// Read the schema version from raw database bytes.
@@ -544,7 +570,7 @@ fn read_schema_version_at(path: &std::path::Path) -> Option<i64> {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers — atomic replace
+// Internal helpers â€” atomic replace
 // ---------------------------------------------------------------------------
 
 fn atomic_replace_db(
@@ -569,7 +595,7 @@ fn atomic_replace_db(
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers — local state (cached tag, check time)
+// Internal helpers â€” local state (cached tag, check time)
 // ---------------------------------------------------------------------------
 
 fn get_cached_tag(local_state_path: &std::path::Path) -> LauncherResult<Option<String>> {
