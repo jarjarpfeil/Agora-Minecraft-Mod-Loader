@@ -429,10 +429,7 @@ pub async fn ensure_loader_installed<R: tauri::Runtime>(
 
             // Create a real receipt for this Fabric/Quilt profile.
             let curated_pins: std::collections::BTreeMap<String, String> =
-                agora_core::loader_manifests::library_pins()
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
+                std::collections::BTreeMap::new();
             installed_profile::create_receipt_for_profile_json(
                 minecraft_root,
                 &receipts_root,

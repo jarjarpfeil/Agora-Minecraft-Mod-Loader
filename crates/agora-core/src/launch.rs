@@ -147,6 +147,9 @@ pub struct Library {
     /// library rather than under `downloads.artifact`.
     #[serde(default)]
     pub sha1: Option<String>,
+    /// SHA-256 carried directly in pinned Fabric/Quilt profile metadata.
+    #[serde(default)]
+    pub sha256: Option<String>,
     #[serde(default)]
     pub size: Option<i64>,
     #[serde(default)]
@@ -178,6 +181,9 @@ pub struct LibraryArtifact {
     pub url: String,
     #[serde(default)]
     pub sha1: Option<String>,
+    /// SHA-256 carried directly in pinned Fabric/Quilt profile metadata.
+    #[serde(default)]
+    pub sha256: Option<String>,
     #[serde(default)]
     pub size: Option<i64>,
 }

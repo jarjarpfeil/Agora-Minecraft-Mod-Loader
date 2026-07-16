@@ -43,10 +43,7 @@ pub enum LauncherError {
     RegistryMissing,
     /// ERR_UNSUPPORTED_LOADER — This modloader version is not yet verified.
     UnsupportedLoader,
-    /// ERR_UNPINNED_ARTIFACT — A loader library artifact has no pinned SHA-256
-    /// in the manifest and enforcement is enabled. Run the data refresh script
-    /// to populate `library_pins`, or disable enforcement.
-    UnpinnedArtifact,
+
     /// ERR_VERSION_NOT_FOUND — Requested mod version not found.
     VersionNotFound,
     /// ERR_GAME_VERSION_NOT_FOUND — The Minecraft version is not in the Mojang
@@ -146,7 +143,7 @@ impl LauncherError {
             LauncherError::ProfileWriteFailed => "ERR_PROFILE_WRITE_FAILED".to_string(),
             LauncherError::RegistryMissing => "ERR_REGISTRY_MISSING".to_string(),
             LauncherError::UnsupportedLoader => "ERR_UNSUPPORTED_LOADER".to_string(),
-            LauncherError::UnpinnedArtifact => "ERR_UNPINNED_ARTIFACT".to_string(),
+
             LauncherError::VersionNotFound => "ERR_VERSION_NOT_FOUND".to_string(),
             LauncherError::GameVersionNotFound => "ERR_GAME_VERSION_NOT_FOUND".to_string(),
             LauncherError::LoaderProfileNotFound => "ERR_LOADER_PROFILE_NOT_FOUND".to_string(),
@@ -277,14 +274,7 @@ impl std::fmt::Display for LauncherError {
                     "This modloader version is not yet verified by the curation team."
                 )
             }
-            LauncherError::UnpinnedArtifact => {
-                write!(
-                    f,
-                    "A loader library artifact has no pinned SHA-256 in the manifest. \
-                     Run the data refresh script to populate library_pins, or leave \
-                     enforcement disabled."
-                )
-            }
+
             LauncherError::VersionNotFound => {
                 write!(
                     f,
@@ -627,7 +617,6 @@ mod tests {
             LauncherError::ProfileWriteFailed,
             LauncherError::RegistryMissing,
             LauncherError::UnsupportedLoader,
-            LauncherError::UnpinnedArtifact,
             LauncherError::VersionNotFound,
             LauncherError::GameVersionNotFound,
             LauncherError::LoaderProfileNotFound,

@@ -5,6 +5,7 @@ import {
   checkInstanceHealth,
   ensureJavaRuntime,
   formatError,
+  getSetting,
   inspectJavaExecutable,
   killProcess,
   launchInstance,
@@ -14,12 +15,18 @@ import {
   queryLaunchState,
   repairInstanceLoader,
   updateInstanceJava,
+  type HealthBlocker,
   type HealthReport,
+  type HealthWarning,
   type LauncherAction,
   type JavaRuntimeProgressEvent,
   type RecoverableJavaIssue,
   type RecoverableProfileIssue,
 } from './tauri';
+
+function silenceKey(item: HealthWarning | HealthBlocker): string {
+  return `health_silenced_${item.kind}_${item.mod_id ?? 'global'}`;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -420,10 +427,24 @@ export function useProcessController(): ProcessController {
 
       try {
         const report = await checkInstanceHealth(instanceId);
-        const hasBlockers = report.blockers.length > 0;
-        const hasWarnings = report.warnings.length > 0;
 
-        if (hasBlockers || hasWarnings) {
+        // Check which warnings/blockers the user has muted.
+        const silencedKeys = new Set(
+          (
+            await Promise.all(
+              [...report.warnings, ...report.blockers].map(async (item) => {
+                const key = silenceKey(item);
+                const val = await getSetting(key);
+                return val === 'true' ? key : null;
+              }),
+            )
+          ).filter((k): k is string => k !== null),
+        );
+
+        const activeBlockers = report.blockers.filter(b => !silencedKeys.has(silenceKey(b)));
+        const activeWarnings = report.warnings.filter(w => !silencedKeys.has(silenceKey(w)));
+
+        if (activeBlockers.length > 0 || activeWarnings.length > 0) {
           setState((prev) => ({
             ...prev,
             phase: 'awaiting-decision',

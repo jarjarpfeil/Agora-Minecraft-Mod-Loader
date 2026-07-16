@@ -24,7 +24,6 @@
 
 use crate::error::{LauncherError, LauncherResult};
 use crate::installed_profile::{InstalledProfileReceipt, ProfileIssue};
-use crate::loader_manifests;
 use crate::network::{NetworkCategory, NetworkPolicy};
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::Sha256;
@@ -387,8 +386,7 @@ pub fn adopt_library_artifact(
 ) -> Result<ArtifactAdoptResult, ProfileIssue> {
     // Step 1: Cache hit check
     if cache_path.is_file() {
-        if let Some(pin) = sha256.or_else(|| loader_manifests::get_library_pin(relative_maven_path))
-        {
+        if let Some(pin) = sha256 {
             if verify_sha256(cache_path, pin).is_ok() {
                 return Ok(ArtifactAdoptResult::CacheHit);
             }
@@ -435,7 +433,7 @@ pub fn adopt_library_artifact(
     })?;
 
     // Post-materialization re-verify
-    if let Some(pin) = sha256.or_else(|| loader_manifests::get_library_pin(relative_maven_path)) {
+    if let Some(pin) = sha256 {
         if verify_sha256(cache_path, pin).is_err() {
             let _ = std::fs::remove_file(cache_path);
             return Err(ProfileIssue::corrupt(

@@ -180,7 +180,7 @@ def verify_manifest(path: Path) -> int:
 
 
 def fetch_loader_manifests(
-    mc_versions: list[str], per_mc_limit: int | None, keep_others: bool = False
+    mc_versions: list[str], per_mc_limit: int | None, keep_others: bool = False,
 ) -> None:
     """Run the same logic as fetch_loader_manifests.py from this process."""
     logger.info("Fetching loader manifests for Minecraft versions: %s", mc_versions)
@@ -211,22 +211,34 @@ def fetch_loader_manifests(
     for mc_version in mc_versions:
         logger.info("Fetching Fabric versions for %s", mc_version)
         loaders["fabric"] = fetch._merge_entries(
-            loaders["fabric"], fetch._fetch_fabric(mc_version, per_mc_limit)
+            loaders["fabric"],
+            fetch._fetch_fabric(
+                mc_version,
+                per_mc_limit,
+                refresh_profiles=True,
+            ),
         )
 
         logger.info("Fetching Quilt versions for %s", mc_version)
         loaders["quilt"] = fetch._merge_entries(
-            loaders["quilt"], fetch._fetch_quilt(mc_version, per_mc_limit)
+            loaders["quilt"],
+            fetch._fetch_quilt(
+                mc_version,
+                per_mc_limit,
+                refresh_profiles=True,
+            ),
         )
 
     logger.info("Fetching NeoForge versions for %s", mc_versions)
     loaders["neoforge"] = fetch._merge_entries(
-        loaders["neoforge"], fetch._fetch_neoforge(mc_versions, per_mc_limit)
+        loaders["neoforge"],
+        fetch._fetch_neoforge(mc_versions, per_mc_limit),
     )
 
     logger.info("Fetching Forge versions for %s", mc_versions)
     loaders["forge"] = fetch._merge_entries(
-        loaders["forge"], fetch._fetch_forge(mc_versions, per_mc_limit)
+        loaders["forge"],
+        fetch._fetch_forge(mc_versions, per_mc_limit),
     )
 
     for loader in loaders:

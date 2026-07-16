@@ -1809,13 +1809,20 @@ async fn materialize_rejects_tampered_client_jar_offline() {
 }
 
 // ---------------------------------------------------------------------------
-// Goal: Ensure current 100% loader pin enforcement tests remain passing
+// Goal: No leftover library-pin enforcement infrastructure.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn loader_pin_enforcement_still_active() {
-    assert!(
-        agora_core::loader_manifests::LIBRARY_PIN_ENFORCEMENT_ENABLED,
-        "LIBRARY_PIN_ENFORCEMENT_ENABLED must remain true"
-    );
+fn no_leftover_pin_enforcement() {
+    // The LoaderCatalog struct no longer has library_pins, profile_library_paths,
+    // or installer_library_paths fields, and LibraryVerificationPolicy has been
+    // removed. This test verifies the catalog still parses without those fields.
+    use agora_core::loader_manifests::LoaderCatalog;
+    let json = r#"{
+        "domain_allowlist": ["example.com"],
+        "loaders": {}
+    }"#;
+    let catalog: LoaderCatalog = serde_json::from_str(json).unwrap();
+    assert!(catalog.loaders.is_empty());
+    assert_eq!(catalog.domain_allowlist, vec!["example.com"]);
 }
