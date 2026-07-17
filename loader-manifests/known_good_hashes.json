@@ -837,11 +837,11 @@
       "forge-26.1.2-64.0.9-installer.jar": "sha256:608bc9f028a0ef8dcd1a49c6eb85ddfcfa3b3bcd8ae27fc1b2ae02888ed8cb0a",
       "forge-26.1.2-64.0.10-installer.jar": "sha256:8d534761f76639017d21279ba52616083f13de7cd620cd18ec445504cad795d2",
       "forge-26.1.2-64.0.11-installer.jar": "sha256:565fea13a76ae11ec484dc7ae41452cc7983b1dea0771958bd20eaebe4699aa5",
-      "forge-26.2-65.0.0-installer.jar": "sha256:683076136410174509e97c055086145f2bb7f41709bab8f3e1faf317d78e61dd",
       "forge-26.2-65.0.1-installer.jar": "sha256:e618ea131f99a670d4b27742f4aa8932fce31d7fe44ad4c39c4148126dc426d7",
       "forge-26.2-65.0.2-installer.jar": "sha256:4abb61f9e11a9df7c275ef21eeb61e6e4714b8cd576b14f995f68ad737810cac",
       "forge-26.2-65.0.3-installer.jar": "sha256:f055305cfd53b159e8a1e8cb670199f2e1a649fe5edf31c2f50eb0a66590591e",
-      "forge-26.2-65.0.4-installer.jar": "sha256:1b3a86c88295930f64d09fb9934a706bd52b6341079cb0ee5a3c890ab2c740b0"
+      "forge-26.2-65.0.4-installer.jar": "sha256:1b3a86c88295930f64d09fb9934a706bd52b6341079cb0ee5a3c890ab2c740b0",
+      "forge-26.2-65.0.5-installer.jar": "sha256:95ca4901f98b2e7aac023f1960586a8754d24a7199598c7e03fef356d9ff1d6e"
     }
   },
   "_source": "Generated from loader_manifests.json by scripts/fetch_loader_manifests.py. Do not edit manually."

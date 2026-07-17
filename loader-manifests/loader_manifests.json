@@ -7137,16 +7137,6 @@
       },
       {
         "mc_version": "26.2",
-        "loader_version": "65.0.0",
-        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/26.2-65.0.0/forge-26.2-65.0.0-installer.jar",
-        "sha256": "683076136410174509e97c055086145f2bb7f41709bab8f3e1faf317d78e61dd",
-        "file_name": "forge-26.2-65.0.0-installer.jar",
-        "file_type": "installer_jar",
-        "version_json_sha256": "cde77759c594c5694e25f99714f012bab98a23d64d86dc244ad796c6d7acca12",
-        "installer_spec": 1
-      },
-      {
-        "mc_version": "26.2",
         "loader_version": "65.0.1",
         "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/26.2-65.0.1/forge-26.2-65.0.1-installer.jar",
         "sha256": "e618ea131f99a670d4b27742f4aa8932fce31d7fe44ad4c39c4148126dc426d7",
@@ -7183,6 +7173,16 @@
         "file_name": "forge-26.2-65.0.4-installer.jar",
         "file_type": "installer_jar",
         "version_json_sha256": "98ebbc44a1be6c1243ffa1fbf49c66bee20dda3110409d49035362e5fcb7b592",
+        "installer_spec": 1
+      },
+      {
+        "mc_version": "26.2",
+        "loader_version": "65.0.5",
+        "source_url": "https://maven.minecraftforge.net/net/minecraftforge/forge/26.2-65.0.5/forge-26.2-65.0.5-installer.jar",
+        "sha256": "95ca4901f98b2e7aac023f1960586a8754d24a7199598c7e03fef356d9ff1d6e",
+        "file_name": "forge-26.2-65.0.5-installer.jar",
+        "file_type": "installer_jar",
+        "version_json_sha256": "2a4109b77277a08f7d49c0090bfdf135e2b022ef27c538c7c0408235563f7730",
         "installer_spec": 1
       }
     ]
