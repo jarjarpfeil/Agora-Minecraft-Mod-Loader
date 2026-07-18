@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
@@ -245,7 +245,12 @@ enum InstanceCmd {
 enum LoaderCmd {
     /// List all available mod loaders from the pinned catalog.
     List {
-        #[arg(short = 'm', long, help = "Filter loaders by Minecraft version")]
+        #[arg(
+            short = 'm',
+            long,
+            visible_alias = "minecraft",
+            help = "List loader versions compatible with this Minecraft version"
+        )]
         mc_version: Option<String>,
     },
 }
@@ -270,6 +275,13 @@ enum ModsCmd {
         instance: String,
         #[arg(short, long)]
         version: Option<String>,
+        #[arg(
+            long,
+            value_enum,
+            default_value_t = ModSourceArg::Curated,
+            help = "Artifact source: curated registry strategy or raw Modrinth project"
+        )]
+        source: ModSourceArg,
         #[arg(long, help = "Allow replacing existing files")]
         allow_replace: bool,
         #[arg(long, help = "Skip health scan after install")]
@@ -376,6 +388,12 @@ enum ModsCmd {
         instance: String,
         file: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ModSourceArg {
+    Curated,
+    Modrinth,
 }
 
 #[derive(Subcommand)]
@@ -579,7 +597,7 @@ fn exit_code_from_launcher_error(err: &agora_core::error::LauncherError) -> i32 
         LauncherError::UntrustedSource => 31,
         LauncherError::DiskFull => 34,
         LauncherError::AuthExpired => 40,
-        LauncherError::AuthRequired => 40,
+        LauncherError::AuthRequired | LauncherError::MsaAuthRequired => 40,
         LauncherError::ModrinthDisabled => 50,
         LauncherError::InstanceLocked => 11,
         LauncherError::SandboxUnavailable => 50,
@@ -996,15 +1014,43 @@ async fn run_command(
         },
         Commands::Loader { action } => match action {
             LoaderCmd::List { mc_version } => {
-                let all_loaders = agora_core::loader_manifests::list_loaders();
-                let loaders: Vec<String> = match mc_version {
-                    Some(ref ver) => all_loaders
+                let loaders = agora_core::loader_manifests::list_loaders();
+                if let Some(mc_version) = mc_version {
+                    let entries: Vec<serde_json::Value> = loaders
                         .into_iter()
-                        .filter(|l| !agora_core::loader_manifests::list_versions(l, ver).is_empty())
-                        .collect(),
-                    None => all_loaders,
-                };
-                if json {
+                        .filter_map(|loader| {
+                            let versions: Vec<String> =
+                                agora_core::loader_manifests::list_versions(&loader, &mc_version)
+                                    .into_iter()
+                                    .map(|entry| entry.loader_version)
+                                    .collect();
+                            (!versions.is_empty()).then(|| {
+                                serde_json::json!({
+                                    "loader": loader,
+                                    "minecraftVersion": mc_version,
+                                    "versions": versions,
+                                })
+                            })
+                        })
+                        .collect();
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&entries)?);
+                    } else {
+                        let rows: Vec<Vec<String>> = entries
+                            .iter()
+                            .flat_map(|entry| {
+                                let loader = entry["loader"].as_str().unwrap_or_default();
+                                entry["versions"]
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter_map(serde_json::Value::as_str)
+                                    .map(|version| vec![loader.to_string(), version.to_string()])
+                            })
+                            .collect();
+                        print_table(&["Loader", "Version"], &rows);
+                    }
+                } else if json {
                     println!("{}", serde_json::to_string_pretty(&loaders)?);
                 } else {
                     for loader in &loaders {
@@ -1090,6 +1136,7 @@ async fn run_command(
                 project,
                 instance,
                 version,
+                source,
                 allow_replace,
                 skip_health_scan,
                 include_optional,
@@ -1103,7 +1150,14 @@ async fn run_command(
                 let optional_deps = resolve_optional_deps(include_optional, exclude_optional);
                 let intent = agora_core::install_pipeline::InstallIntent {
                     action: agora_core::install_pipeline::InstallAction::Install {
-                        source_type: agora_core::install_pipeline::SourceType::Modrinth,
+                        source_type: match source {
+                            ModSourceArg::Curated => {
+                                agora_core::install_pipeline::SourceType::Curated
+                            }
+                            ModSourceArg::Modrinth => {
+                                agora_core::install_pipeline::SourceType::Modrinth
+                            }
+                        },
                         item_id: project.clone(),
                         candidate_version: version,
                     },
@@ -2054,8 +2108,9 @@ async fn run_command(
                     println!("Ensuring Java {major} runtime...");
                 }
 
-                let progress = ConsoleRuntimeProgress;
-                let ensured = svc.ensure_runtime(major, &policy, &progress)?;
+                let ensured = svc
+                    .ensure_runtime(major, policy, std::sync::Arc::new(ConsoleRuntimeProgress))
+                    .await?;
 
                 if json {
                     println!("{}", serde_json::to_string_pretty(&ensured)?);
@@ -2920,6 +2975,7 @@ mod tests {
     use super::Commands;
     use super::LoadoutCmd;
     use super::LockfileCmd;
+    use super::ModSourceArg;
     use super::ModsCmd;
     use super::OutputFormat;
     use super::PackCmd;
@@ -3717,6 +3773,38 @@ mod tests {
     }
 
     // --- New policy flag tests ---
+
+    #[test]
+    fn mod_install_defaults_to_curated_source() {
+        let cli = Cli::try_parse_from(["agora", "mod", "install", "lithium", "my-instance"])
+            .expect("should parse");
+        match cli.command {
+            Commands::Mods {
+                action: ModsCmd::Install { source, .. },
+            } => assert_eq!(source, ModSourceArg::Curated),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn mod_install_accepts_raw_modrinth_source() {
+        let cli = Cli::try_parse_from([
+            "agora",
+            "mod",
+            "install",
+            "sodium",
+            "my-instance",
+            "--source",
+            "modrinth",
+        ])
+        .expect("should parse");
+        match cli.command {
+            Commands::Mods {
+                action: ModsCmd::Install { source, .. },
+            } => assert_eq!(source, ModSourceArg::Modrinth),
+            _ => panic!("wrong variant"),
+        }
+    }
 
     #[test]
     fn mod_install_with_include_optional_parses() {

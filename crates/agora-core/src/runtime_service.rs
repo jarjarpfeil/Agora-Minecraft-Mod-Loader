@@ -4,6 +4,7 @@ use crate::java::{self, JavaInstallation};
 use crate::network::{NetworkCategory, NetworkPolicy};
 use crate::runtime_catalog::RuntimeCatalog;
 use crate::runtime_manager::{self, RuntimeProgress};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RuntimeService {
@@ -43,11 +44,11 @@ impl RuntimeService {
         ))
     }
 
-    pub fn ensure_runtime(
+    pub async fn ensure_runtime(
         &self,
         major: u32,
-        policy: &NetworkPolicy,
-        progress: &dyn RuntimeProgress,
+        policy: NetworkPolicy,
+        progress: Arc<dyn RuntimeProgress>,
     ) -> LauncherResult<JavaInstallation> {
         let mode = self.get_java_runtime_mode()?;
         if mode != "automatic" {
@@ -65,14 +66,22 @@ impl RuntimeService {
 
         let runtimes_root = self.ctx.paths.java_runtimes_root();
         let catalog = self.effective_catalog();
-        runtime_manager::ensure_runtime(
-            &runtimes_root,
-            major,
-            &catalog,
-            policy,
-            Some(progress),
-            Some(&self.ctx.lock_manager),
-        )
+        let lock_manager = self.ctx.lock_manager.clone();
+        tokio::task::spawn_blocking(move || {
+            runtime_manager::ensure_runtime(
+                &runtimes_root,
+                major,
+                &catalog,
+                &policy,
+                Some(progress.as_ref()),
+                Some(&lock_manager),
+            )
+        })
+        .await
+        .map_err(|error| LauncherError::Generic {
+            code: "ERR_JAVA_PROVISION".into(),
+            message: format!("Java provisioning task failed: {error}"),
+        })?
     }
 
     pub fn remove_unused(&self) -> LauncherResult<usize> {

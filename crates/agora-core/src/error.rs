@@ -23,6 +23,8 @@ pub enum LauncherError {
     AuthExpired,
     /// ERR_AUTH_REQUIRED — This feature requires GitHub sign-in.
     AuthRequired,
+    /// ERR_MSA_AUTH_REQUIRED — Minecraft launch requires Microsoft sign-in.
+    MsaAuthRequired,
     /// ERR_MODRINTH_DISABLED — Modrinth integration is disabled.
     ModrinthDisabled,
     /// ERR_INSTANCE_LOCKED — This instance is locked.
@@ -142,6 +144,7 @@ impl LauncherError {
             LauncherError::DiskFull => "ERR_DISKFULL".to_string(),
             LauncherError::AuthExpired => "ERR_AUTH_EXPIRED".to_string(),
             LauncherError::AuthRequired => "ERR_AUTH_REQUIRED".to_string(),
+            LauncherError::MsaAuthRequired => "ERR_MSA_AUTH_REQUIRED".to_string(),
             LauncherError::ModrinthDisabled => "ERR_MODRINTH_DISABLED".to_string(),
             LauncherError::InstanceLocked => "ERR_INSTANCE_LOCKED".to_string(),
             LauncherError::SandboxUnavailable => "ERR_SANDBOX_UNAVAILABLE".to_string(),
@@ -247,6 +250,12 @@ impl std::fmt::Display for LauncherError {
             }
             LauncherError::AuthRequired => {
                 write!(f, "This feature requires GitHub sign-in.")
+            }
+            LauncherError::MsaAuthRequired => {
+                write!(
+                    f,
+                    "Minecraft launch requires Microsoft sign-in. Run `agora auth login`."
+                )
             }
             LauncherError::ModrinthDisabled => {
                 write!(f, "Modrinth integration is disabled. Enable it in Settings or install this mod manually.")
@@ -453,6 +462,9 @@ impl serde::Serialize for LauncherError {
             LauncherError::NetworkOffline => Some("Check your internet connection and try again."),
             LauncherError::AuthExpired => Some("Sign in again via Settings to continue."),
             LauncherError::AuthRequired => Some("Sign in via Settings to use this feature."),
+            LauncherError::MsaAuthRequired => {
+                Some("Run `agora auth login` and complete Microsoft authorization.")
+            }
             LauncherError::GameVersionNotFound => {
                 Some("Check that the instance targets a released Minecraft version and update the registry.")
             }
@@ -635,6 +647,7 @@ mod tests {
             LauncherError::DiskFull,
             LauncherError::AuthExpired,
             LauncherError::AuthRequired,
+            LauncherError::MsaAuthRequired,
             LauncherError::ModrinthDisabled,
             LauncherError::InstanceLocked,
             LauncherError::SandboxUnavailable,

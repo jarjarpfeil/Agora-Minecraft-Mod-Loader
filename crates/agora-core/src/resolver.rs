@@ -724,7 +724,7 @@ impl Resolver {
 
         for release in &releases {
             for asset in &release.assets {
-                if !asset.name.ends_with(".jar") {
+                if !is_installable_github_asset(&asset.name) {
                     continue;
                 }
                 let (found_mc, loader_str, compat) = parse_version_from_github_asset(
@@ -1416,8 +1416,19 @@ pub fn select_curated_candidate<'a>(
     candidates
         .iter()
         .find(|c| c.is_compatible)
-        .or_else(|| candidates.first())
         .ok_or(LauncherError::VersionNotFound)
+}
+
+fn is_installable_github_asset(filename: &str) -> bool {
+    let lower = filename.to_ascii_lowercase();
+    let Some(stem) = lower.strip_suffix(".jar") else {
+        return false;
+    };
+    ![
+        "-api", "-dev", "-sources", "-source", "-javadoc", "-tests", "-test", "-slim",
+    ]
+    .iter()
+    .any(|suffix| stem.ends_with(suffix))
 }
 
 /// Select the best candidate from a list of raw Modrinth versions.
@@ -1841,6 +1852,45 @@ mod tests {
         ];
         let selected = select_curated_candidate(&candidates, None).unwrap();
         assert_eq!(selected.version, "v2.0");
+    }
+
+    #[test]
+    fn test_select_curated_candidate_without_compatible_version_fails() {
+        let candidates = vec![ModVersionCandidate {
+            version: "v1.0".into(),
+            filename: "mod-1.17.jar".into(),
+            download_url: "https://example.com/mod-1.17.jar".into(),
+            mc_version: Some("1.17".into()),
+            loader: Some("fabric".into()),
+            release_date: None,
+            is_compatible: false,
+            sha1: None,
+            sha256: None,
+            sha512: None,
+            size: None,
+            version_compat: "incompatible".into(),
+        }];
+
+        assert!(matches!(
+            select_curated_candidate(&candidates, None),
+            Err(LauncherError::VersionNotFound)
+        ));
+    }
+
+    #[test]
+    fn test_github_asset_filter_rejects_non_runtime_jars() {
+        assert!(is_installable_github_asset(
+            "fabric-api-0.116.14+1.21.1.jar"
+        ));
+        assert!(is_installable_github_asset(
+            "lithium-fabric-0.15.4+mc1.21.1.jar"
+        ));
+        assert!(!is_installable_github_asset(
+            "lithium-fabric-0.15.4+mc1.21.1-api.jar"
+        ));
+        assert!(!is_installable_github_asset("example-sources.jar"));
+        assert!(!is_installable_github_asset("example-javadoc.jar"));
+        assert!(!is_installable_github_asset("README.txt"));
     }
 
     #[test]

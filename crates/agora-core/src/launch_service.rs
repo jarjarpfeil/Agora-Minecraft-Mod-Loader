@@ -240,7 +240,8 @@ impl LaunchService {
             })?;
         let network_policy = NetworkPolicy::from_db(&conn);
         network_policy.check(crate::network::NetworkCategory::MicrosoftAuthentication)?;
-        let mut credentials = crate::msa::load_credentials()?.ok_or(LauncherError::AuthRequired)?;
+        let mut credentials =
+            crate::msa::load_credentials()?.ok_or(LauncherError::MsaAuthRequired)?;
         if credentials.needs_refresh() {
             credentials = crate::msa::refresh_credentials(
                 self.ctx

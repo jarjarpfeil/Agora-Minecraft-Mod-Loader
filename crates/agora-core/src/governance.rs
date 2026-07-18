@@ -16,14 +16,14 @@ use serde::Serialize;
 /// Resolve the governance repository with the same priority as the registry repo:
 /// 1. CLI override (passed as parameter)
 /// 2. `AGORA_REGISTRY_REPO` environment variable
-/// 3. Built-in default: `"jarjarpfeil/agora-registry"`
+/// 3. Built-in default: `"jarjarpfeil/Agora-Launcher"`
 pub fn governance_repo(cli_override: Option<&str>) -> String {
     cli_override
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty())
         .or_else(|| std::env::var("AGORA_REGISTRY_REPO").ok())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "jarjarpfeil/agora-registry".into())
+        .unwrap_or_else(|| "jarjarpfeil/Agora-Launcher".into())
 }
 
 /// Admin-alerts repo is where curator flag issues are filed. Configurable at

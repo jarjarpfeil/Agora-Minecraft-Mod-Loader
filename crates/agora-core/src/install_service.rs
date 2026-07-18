@@ -149,7 +149,14 @@ impl InstallService {
         reporter: &dyn ProgressReporter,
     ) -> LauncherResult<ResolvedInstallPlan> {
         let load = self.load_instance(&intent.target_instance)?;
-        let resolver = Resolver::new(self.ctx.clone());
+        let mut resolver = Resolver::new(self.ctx.clone());
+        if let Some(token) = std::env::var("GITHUB_TOKEN")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .or_else(crate::auth::get_token)
+        {
+            resolver = resolver.with_github_token(token);
+        }
         let prepared = resolver.resolve(&intent, &load.manifest).await?;
         InstallPipeline
             .resolve_plan(intent, &load.instance_dir, prepared, reporter)
