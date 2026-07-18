@@ -14,6 +14,7 @@
 //! result.  No global or async state is involved.
 
 use crate::error::{LauncherError, LauncherResult};
+use std::time::Duration;
 use sysinfo::{Pid, System};
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,45 @@ use sysinfo::{Pid, System};
 /// **Fail‑closed**: if the process is no longer alive or the OS cannot supply
 /// start_time, this returns `Err(ProcessCaptureFailed)`.
 pub fn capture(pid: u32) -> LauncherResult<ProcessIdentity> {
+    let mut previous = capture_once(pid)?;
+    let parent_exe = std::env::current_exe().ok().map(|path| {
+        path.canonicalize()
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/")
+    });
+
+    // On Unix the PID becomes visible between fork and exec. A single sample
+    // can therefore still report the parent's executable even though the
+    // child transitions to Java immediately afterwards. Require two stable
+    // consecutive samples before committing the identity.
+    for _ in 0..25 {
+        std::thread::sleep(Duration::from_millis(10));
+        let current = match capture_once(pid) {
+            Ok(current) => current,
+            // A very short-lived child may exit while identity is settling.
+            // Retain the last valid sample so its waiter can classify the exit.
+            Err(_) => return Ok(previous),
+        };
+        let still_parent_image = parent_exe.as_deref().is_some_and(|parent| {
+            current
+                .expected_exe
+                .as_deref()
+                .is_some_and(|exe| exe.replace('\\', "/") == parent)
+        });
+        if current.start_time == previous.start_time
+            && current.expected_exe == previous.expected_exe
+            && !still_parent_image
+        {
+            return Ok(current);
+        }
+        previous = current;
+    }
+
+    Ok(previous)
+}
+
+fn capture_once(pid: u32) -> LauncherResult<ProcessIdentity> {
     let mut system = System::new();
     // Refresh only the single process to keep the call lightweight.
     system.refresh_process(Pid::from_u32(pid));
