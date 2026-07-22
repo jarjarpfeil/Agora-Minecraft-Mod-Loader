@@ -268,12 +268,8 @@ def _fetch_fabric(
     try:
         versions = _fetch_json(url)
     except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            logger.warning("Fabric has no loader versions for MC %s", mc_version)
-            return []
-        raise UpstreamMetadataError(
-            f"Fabric loader list for {mc_version}: {exc}"
-        ) from exc
+        logger.warning("Fabric has no loader versions for MC %s (%s)", mc_version, exc)
+        return []
     except (urllib.error.URLError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UpstreamMetadataError(
             f"Fabric loader list for {mc_version}: {exc}"
@@ -365,12 +361,8 @@ def _fetch_quilt(
     try:
         versions = _fetch_json(url)
     except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            logger.warning("Quilt has no loader versions for MC %s", mc_version)
-            return []
-        raise UpstreamMetadataError(
-            f"Quilt loader list for {mc_version}: {exc}"
-        ) from exc
+        logger.warning("Quilt has no loader versions for MC %s (%s)", mc_version, exc)
+        return []
     except (urllib.error.URLError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UpstreamMetadataError(
             f"Quilt loader list for {mc_version}: {exc}"
