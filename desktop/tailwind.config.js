@@ -28,6 +28,7 @@ export default {
           900: '#253d4f',
         },
         background: "hsl(var(--background))",
+        "background-foreground": "hsl(var(--background-foreground))",
         foreground: "hsl(var(--foreground))",
         card: {
           DEFAULT: "hsl(var(--card))",

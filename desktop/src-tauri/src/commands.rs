@@ -2949,6 +2949,43 @@ pub async fn import_modrinth_pack_by_url(
 }
 
 /// Read the Windows personalization accent color. Returns HSL string or null.
+fn windows_accent_abgr_to_hsl(val: u32) -> String {
+    // DWM stores AccentColor as ABGR, despite reg.exe displaying the value as
+    // one hexadecimal DWORD.
+    let r = (val & 0xFF) as f64;
+    let g = ((val >> 8) & 0xFF) as f64;
+    let b = ((val >> 16) & 0xFF) as f64;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 510.0;
+    let s = if max == min {
+        0.0
+    } else {
+        (max - min)
+            / if l > 0.5 {
+                510.0 - max - min
+            } else {
+                max + min
+            }
+    };
+    let h = if max == min {
+        0.0
+    } else if max == r {
+        60.0 * ((g - b) / (max - min))
+    } else if max == g {
+        60.0 * (2.0 + (b - r) / (max - min))
+    } else {
+        60.0 * (4.0 + (r - g) / (max - min))
+    };
+    let normalized_h = if h < 0.0 { h + 360.0 } else { h };
+    format!(
+        "hsl({:.0} {:.0}% {:.0}%)",
+        normalized_h,
+        s * 100.0,
+        l * 100.0
+    )
+}
+
 #[tauri::command]
 pub fn get_windows_accent_color() -> Option<String> {
     #[cfg(target_os = "windows")]
@@ -2967,37 +3004,7 @@ pub fn get_windows_accent_color() -> Option<String> {
         if let Some(line) = stdout.lines().find(|l| l.contains("AccentColor")) {
             if let Some(val_str) = line.split_whitespace().last() {
                 if let Ok(val) = u32::from_str_radix(val_str.trim_start_matches("0x"), 16) {
-                    let r = ((val >> 16) & 0xFF) as f64;
-                    let g = ((val >> 8) & 0xFF) as f64;
-                    let b = (val & 0xFF) as f64;
-                    let max = r.max(g).max(b);
-                    let min = r.min(g).min(b);
-                    let l = (max + min) / 510.0;
-                    let s = if max == min {
-                        0.0
-                    } else {
-                        (max - min)
-                            / if l > 0.5 {
-                                510.0 - max - min
-                            } else {
-                                max + min
-                            }
-                    };
-                    let h = if max == min {
-                        0.0
-                    } else if max == r {
-                        60.0 * ((g - b) / (max - min))
-                    } else if max == g {
-                        60.0 * (2.0 + (b - r) / (max - min))
-                    } else {
-                        60.0 * (4.0 + (r - g) / (max - min))
-                    };
-                    return Some(format!(
-                        "hsl({:.0} {:.0}% {:.0}%)",
-                        h.max(0.0),
-                        s * 100.0,
-                        l * 100.0
-                    ));
+                    return Some(windows_accent_abgr_to_hsl(val));
                 }
             }
         }
@@ -3006,6 +3013,17 @@ pub fn get_windows_accent_color() -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     {
         None
+    }
+}
+
+#[cfg(test)]
+mod windows_accent_tests {
+    use super::windows_accent_abgr_to_hsl;
+
+    #[test]
+    fn decodes_dwm_abgr_without_swapping_red_and_blue() {
+        assert_eq!(windows_accent_abgr_to_hsl(0xff1a24e2), "hsl(3 79% 49%)");
+        assert_eq!(windows_accent_abgr_to_hsl(0xffff0000), "hsl(240 100% 50%)");
     }
 }
 

@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Path to the compiled `agora` binary, set by Cargo for integration tests.
 const AGORA_BIN: &str = env!("CARGO_BIN_EXE_agora");
@@ -807,11 +808,23 @@ fn create_vanilla_instance(data_dir: &Path, instance_id: &str, version: &str) {
     .unwrap();
 }
 
+/// The MSA credential fixture uses one OS-wide keyring entry. Keep the
+/// credential-backed launch tests isolated even when Cargo runs tests in
+/// parallel; macOS keychain operations otherwise race with each other's
+/// setup and cleanup.
+static CREDENTIAL_FIXTURE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 /// RAII guard that sets up fake MSA credentials and clears them on drop.
-struct CredentialGuard;
+struct CredentialGuard {
+    _lock: MutexGuard<'static, ()>,
+}
 
 impl CredentialGuard {
     fn setup() -> Self {
+        let lock = CREDENTIAL_FIXTURE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("credential fixture lock poisoned");
         let creds = MsaCredentials {
             username: "test".into(),
             uuid: "00000000-0000-0000-0000-000000000000".into(),
@@ -820,7 +833,7 @@ impl CredentialGuard {
             expires: chrono::Utc::now() + chrono::Duration::hours(1),
         };
         store_credentials(&creds).expect("store fake MSA credentials");
-        CredentialGuard
+        CredentialGuard { _lock: lock }
     }
 }
 

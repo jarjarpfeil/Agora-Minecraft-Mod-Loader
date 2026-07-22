@@ -1,4 +1,4 @@
-# Phase 13 CI Enforcement
+# CI Enforcement
 #
 # Comprehensive quality enforcement — formatting, linting, tests, builds,
 # and architecture-boundary checks — without modifying application code.
@@ -16,7 +16,7 @@
 #   boundaries   — architecture boundary analysis (HARD FAILURES for violations)
 #   tauri-bindings — Tauri command binding name-manifest consistency (typed sigs waived)
 
-name: "Phase 13 CI Enforcement"
+name: "CI Enforcement"
 
 on:
   push:

@@ -200,7 +200,7 @@ export function AiAssistant({
   // --- Copilot auth gate ---
   if (copilotLoading) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center rounded-xl border border-border bg-background">
+      <div className="flex h-full w-full flex-col items-center justify-center rounded-xl border border-border bg-card">
         <p className="text-sm text-muted-foreground">Loading…</p>
       </div>
     );
@@ -209,7 +209,7 @@ export function AiAssistant({
   // --- Device code flow (not authenticated) ---
   if (copilotToken === null) {
     return (
-      <div className="flex h-full w-full flex-col rounded-xl border border-border bg-background">
+      <div className="flex h-full w-full flex-col rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold">Agora Instance Assistant</h2>
           <button
@@ -293,7 +293,7 @@ export function AiAssistant({
 
   // --- Main chat UI ---
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-background">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">AI Assistant</h2>
@@ -422,7 +422,7 @@ export function AiAssistant({
             placeholder={rateLimited ? 'Monthly limit reached' : "Ask about crashes, mods, or anything…"}
             rows={2}
             disabled={rateLimited}
-            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button
             onClick={handleSend}

@@ -10,6 +10,7 @@
   "package_signatures": [
     "me.jellysquid.mods.lithium"
   ],
+  "modrinth_id": "gvQqBUqZ",
   "base_categories": [
     "optimization",
     "server-side"
@@ -20,7 +21,6 @@
     "gameplay-logic"
   ],
   "curator_note": "Server-side optimization suite that improves game logic, mob AI, and block ticking without changing vanilla behavior. Best run alongside Sodium.",
-  "icon_url": "https://raw.githubusercontent.com/CaffeineMC/lithium/main/assets/icon.png",
   "gallery_urls": [],
   "governance": {
     "immune": false,

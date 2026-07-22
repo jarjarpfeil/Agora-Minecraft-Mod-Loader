@@ -264,7 +264,7 @@ export function Home({
         />
       )}
       {knownGoodChecked && instances.length > 0 && knownGood.length === 0 && (
-        <div className="rounded-xl border border-dashed border-border p-4">
+        <div className="rounded-xl border border-dashed border-border bg-card p-4">
           <h4 className="text-sm font-semibold">No last-known-good state yet</h4>
           <p className="mt-1 text-xs text-muted-foreground">
             Play an instance successfully for at least 60 seconds. Agora will then promote its exact pre-launch snapshot for one-click recovery.
@@ -478,7 +478,7 @@ function RecommendationsCard({
 
   if (!hasInstances) {
     return (
-      <div className="rounded-xl border border-dashed border-border p-6 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
         <p className="text-muted-foreground">
           Once you have an instance, we&apos;ll show mods that work with it.
         </p>
@@ -491,7 +491,7 @@ function RecommendationsCard({
 
   if (!hasCachedDb) {
     return (
-      <div className="rounded-xl border border-dashed border-border p-6 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
         <p className="text-muted-foreground">
           Download the registry to see compatible recommendations.
         </p>
@@ -501,7 +501,7 @@ function RecommendationsCard({
 
   if (recommendations.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border p-6 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
         <p className="text-muted-foreground">
           No new curated matches were found for {activeInstance?.name ?? 'this instance'}.
         </p>
@@ -525,7 +525,7 @@ function RecommendationsCard({
           <button
             key={item.id}
             onClick={() => onOpenMod(item.id)}
-            className="rounded-lg border border-border p-3 text-left hover:bg-accent"
+            className="rounded-lg border border-border bg-muted p-3 text-left hover:bg-accent"
           >
             <span className="block text-sm font-medium">{item.name}</span>
             <span className="mt-1 block text-xs text-muted-foreground line-clamp-2">

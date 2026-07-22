@@ -162,11 +162,11 @@ export function Instances({
       )}
 
       {loading ? (
-        <div className="rounded-xl p-6 border border-dashed border-border text-center text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-muted-foreground">
           Loading instances…
         </div>
       ) : instances.length === 0 ? (
-        <div className="rounded-xl p-6 border border-dashed border-border text-center">
+        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
           <p className="text-muted-foreground">No instances yet.</p>
           <p className="text-sm text-muted-foreground mt-2">
             Create a custom instance to install a verified modloader and launch via the official Mojang launcher or the in-app direct launcher.
@@ -1043,7 +1043,7 @@ function CreateInstanceDialog({
               step={512}
               value={memoryMb}
               onChange={(e) => setMemoryMb(Number(e.target.value))}
-              className="mt-1 w-full accent-brand-600"
+              className="mt-1 w-full accent-primary"
             />
           </label>
         </div>
@@ -1108,7 +1108,7 @@ function PasteLogModal({
           </button>
           <button
             onClick={() => onSubmit(text)}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Investigate
           </button>

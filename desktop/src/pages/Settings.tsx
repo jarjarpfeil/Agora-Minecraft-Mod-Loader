@@ -40,6 +40,7 @@ import { useAdvancedMode } from '../components/AdvancedModeContext';
 import { DeviceFlowPanel } from '../components/DeviceFlowPanel';
 import { useTypedSettings, SETTINGS } from '../lib/useTypedSettings';
 import { showToast } from '../components/Toast';
+import { AppearanceSettings } from './settings/AppearanceSettings';
 
 // --- CopyButton helper ---
 
@@ -52,7 +53,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }}
-      className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+      className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       disabled={copied}
     >
       {copied ? 'Copied!' : label}
@@ -80,7 +81,7 @@ function TokenDisplay({ token }: { token: string }) {
   );
 }
 
-export function Settings() {
+export function Settings({ onResetLayout }: { onResetLayout: () => void }) {
   const ts = useTypedSettings();
 
   const [modrinth, setModrinth] = useState(false);
@@ -648,16 +649,44 @@ export function Settings() {
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="text-2xl font-bold mb-2">⚙️ Settings</h2>
+        <h2 className="text-2xl font-bold mb-2">Settings</h2>
         <p className="text-muted-foreground">
           Integration toggles, launcher path, and application preferences.
         </p>
       </section>
 
+      <nav
+        aria-label="Settings sections"
+        className="sticky top-0 z-20 flex flex-wrap gap-1.5 rounded-xl border border-border bg-card/95 p-2 shadow-sm backdrop-blur"
+      >
+        {[
+          ['settings-appearance', 'Appearance'],
+          ['settings-general', 'General'],
+          ['settings-services', 'Services'],
+          ['settings-accounts', 'Accounts'],
+          ['settings-launching', 'Launching'],
+          ['settings-java', 'Java'],
+          ['settings-launcher', 'Launcher'],
+          ['settings-updates', 'Updates'],
+          ...(advancedMode ? [['settings-privacy', 'Privacy']] : []),
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => document.getElementById(id)?.scrollIntoView({ block: 'start' })}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
       {/* Language Selector — commented out: i18n deferred post-v1 */}
 
+      <AppearanceSettings onResetLayout={onResetLayout} />
+
       {/* Advanced Mode Toggle */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <div id="settings-general" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 space-y-3">
         <h3 className="font-semibold">Advanced mode</h3>
         <label className="flex items-center justify-between">
           <span className="text-sm">Show advanced settings</span>
@@ -665,7 +694,7 @@ export function Settings() {
             type="checkbox"
             checked={advancedMode}
             onChange={toggleAdvanced}
-            className="h-5 w-5 accent-brand-600"
+            className="h-5 w-5 accent-primary"
           />
         </label>
         <p className="text-xs text-muted-foreground">
@@ -689,7 +718,7 @@ export function Settings() {
             </div>
           )}
 
-          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+          <div id="settings-services" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 space-y-4">
             <h3 className="font-semibold">External Services</h3>
 
             <label className="flex items-center justify-between">
@@ -698,7 +727,7 @@ export function Settings() {
                 type="checkbox"
                 checked={modrinth}
                 onChange={(e) => toggleModrinth(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
+                className="h-5 w-5 accent-primary"
               />
             </label>
             <p className="text-xs text-muted-foreground">
@@ -720,7 +749,7 @@ export function Settings() {
                 type="checkbox"
                 checked={aiChatEnabled}
                 onChange={(e) => toggleAiChat(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
+                className="h-5 w-5 accent-primary"
               />
             </label>
             {ts.statuses['ai_chat_enabled']?.status === 'error' && (
@@ -772,7 +801,7 @@ export function Settings() {
                 type="checkbox"
                 checked={aiMcp}
                 onChange={(e) => toggleAiMcp(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
+                className="h-5 w-5 accent-primary"
               />
             </label>
             <p className="text-xs text-muted-foreground">
@@ -820,7 +849,7 @@ export function Settings() {
                       ) : (
                         <button
                           onClick={handleStartServer}
-                          className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700"
+                          className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                         >
                           Start Server
                         </button>
@@ -1046,7 +1075,7 @@ export function Settings() {
           </div>
 
           {/* GitHub Account */}
-          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div id="settings-accounts" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 space-y-3">
             <h3 className="font-semibold">GitHub Account</h3>
             {githubLoading ? (
               <p className="text-xs text-muted-foreground">Checking connection…</p>
@@ -1185,7 +1214,7 @@ export function Settings() {
           </div>
 
           {/* Launch Mode */}
-          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div id="settings-launching" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 space-y-3">
             <h3 className="font-semibold">Launch Mode</h3>
             <label className="flex items-center justify-between">
               <span className="text-sm">Use in-app launcher (direct Java launch)</span>
@@ -1193,7 +1222,7 @@ export function Settings() {
                 type="checkbox"
                 checked={directLaunch}
                 onChange={(e) => toggleLaunchMode(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
+                className="h-5 w-5 accent-primary"
               />
             </label>
             <p className="text-xs text-muted-foreground">
@@ -1213,7 +1242,7 @@ export function Settings() {
           </div>
 
           {/* Java Runtime Management */}
-          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+          <div id="settings-java" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 space-y-4">
             <h3 className="font-semibold">Java Runtime Management</h3>
             <p className="text-xs text-muted-foreground">
               Agora can automatically download and manage Java runtimes for Minecraft.
@@ -1403,7 +1432,7 @@ export function Settings() {
                           <td className="px-3 py-1.5">
                             <span className={[
                               'inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                              rt.source === 'Managed' ? 'bg-brand-600/10 text-brand-600 dark:text-brand-400'
+                              rt.source === 'Managed' ? 'bg-primary/10 text-primary'
                                 : rt.source === 'Mojang' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
                                 : rt.source === 'System' ? 'bg-green-500/10 text-green-600 dark:text-green-400'
                                 : 'bg-muted text-muted-foreground',
@@ -1425,7 +1454,7 @@ export function Settings() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div id="settings-launcher" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 space-y-3">
             <h3 className="font-semibold">Launcher Path</h3>
             <input
               value={launcherPath}
@@ -1492,7 +1521,7 @@ export function Settings() {
                 type="checkbox"
                 checked={alwaysPreTouch}
                 onChange={(e) => toggleAlwaysPreTouch(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
+                className="h-5 w-5 accent-primary"
               />
             </label>
             <p className="text-xs text-muted-foreground">
@@ -1511,7 +1540,7 @@ export function Settings() {
                 type="checkbox"
                 checked={crashTelemetry}
                 onChange={(e) => toggleCrashTelemetry(e.target.checked)}
-                className="h-5 w-5 accent-brand-600"
+                className="h-5 w-5 accent-primary"
               />
             </label>
             <p className="text-xs text-muted-foreground">
@@ -1522,7 +1551,7 @@ export function Settings() {
             </p>
           </div> */}
 
-          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div id="settings-updates" className="scroll-mt-24 rounded-xl border border-border bg-card p-4 space-y-3">
             <h3 className="font-semibold">Software Updates</h3>
             <button
               onClick={async () => {
@@ -1553,7 +1582,9 @@ export function Settings() {
           </div>
 
           {advancedMode && (
-            <Privacy />
+            <div id="settings-privacy" className="scroll-mt-24">
+              <Privacy />
+            </div>
           )}
           {!advancedMode && (
             <p className="text-xs text-muted-foreground">Enable Advanced mode in Settings to see JVM, network, and MCP options.</p>

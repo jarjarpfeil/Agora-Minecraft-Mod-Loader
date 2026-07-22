@@ -56,7 +56,7 @@ function installedModDetailId(mod: InstalledMod): string | null {
 }
 
 function installedModSourceLabel(source: string): string {
-  const normalized = source.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const normalized = (source ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (normalized === 'modrinth_raw' || normalized === 'modrinth') return 'Modrinth';
   if (normalized === 'modrinth_pack') return 'Modrinth Pack';
   if (normalized.includes('github')) return 'GitHub Release';
@@ -642,7 +642,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
     return (
       <div className="space-y-6">
         <BackButton onBack={onBack} />
-        <div className="rounded-xl p-6 border border-dashed border-border text-center text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-muted-foreground">
           Loading instance…
         </div>
       </div>
@@ -1003,7 +1003,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
                   <span className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                     <span className="truncate">{mod.filename}</span>
                     {mod.version && <span>v{mod.version}</span>}
-                    <span className="rounded-full bg-brand-600/10 text-brand-600 dark:text-brand-400 px-1.5 py-0.5 text-[10px]">{installedModSourceLabel(mod.source)}</span>
+                    <span className="rounded-full bg-primary/10 text-primary px-1.5 py-0.5 text-[10px]">{installedModSourceLabel(mod.source)}</span>
                     <span>Installed {formatInstalledAt(mod.installed_at)}</span>
                     {!mod.enabled && <span className="text-yellow-600 dark:text-yellow-400 font-medium">disabled</span>}
                     {installedModDetailId(mod) && (
@@ -1655,7 +1655,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
                 </button>
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+              <div className="rounded-lg border border-dashed border-border bg-muted p-4 text-center text-xs text-muted-foreground">
                 Export this instance or paste a received lockfile to verify, repair, or clone it.
               </div>
             )}
@@ -1761,7 +1761,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
                     type="checkbox"
                     checked={instanceJavaAllowOverride}
                     onChange={(e) => setInstanceJavaAllowOverride(e.target.checked)}
-                    className="h-4 w-4 accent-brand-600"
+                    className="h-4 w-4 accent-primary"
                   />
                   <span className="text-sm">
                     Allow this Java major even when Minecraft requests a different major

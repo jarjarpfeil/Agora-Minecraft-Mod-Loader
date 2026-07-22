@@ -242,7 +242,7 @@ export function CommandPalette({ open, onOpenChange, onNavigate }: CommandPalett
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left',
                       isItemSelected(index)
-                        ? 'bg-brand-100 text-brand-900 dark:bg-brand-900 dark:text-brand-100'
+                        ? 'bg-accent text-accent-foreground'
                         : 'text-[rgb(var(--text))] hover:bg-gray-100 dark:hover:bg-gray-800',
                     )}
                   >
@@ -267,7 +267,7 @@ export function CommandPalette({ open, onOpenChange, onNavigate }: CommandPalett
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left',
                       isItemSelected(index)
-                        ? 'bg-brand-100 text-brand-900 dark:bg-brand-900 dark:text-brand-100'
+                        ? 'bg-accent text-accent-foreground'
                         : 'text-[rgb(var(--text))] hover:bg-gray-100 dark:hover:bg-gray-800',
                     )}
                   >

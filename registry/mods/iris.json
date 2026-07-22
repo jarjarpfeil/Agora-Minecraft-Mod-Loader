@@ -11,6 +11,7 @@
   },
   "download_strategy": "github_release",
   "source_identifier": "IrisShaders/Iris",
+  "modrinth_id": "YL57xq9U",
   "sha256": "47612b3175fece07f6c3e91992412c5b16ca88a9068cb72fecbcf653eb5ffcd7",
   "package_signatures": [
     "net.irisshaders.iris",
@@ -26,7 +27,6 @@
     "performance-boost"
   ],
   "curator_note": "Modern shader mod for Fabric/Quilt designed for performance and compatibility. Pairs with Sodium for high-framerate shader support without OptiFine.",
-  "icon_url": "https://raw.githubusercontent.com/IrisShaders/Iris/trunk/assets/icon.png",
   "gallery_urls": [
     "https://raw.githubusercontent.com/IrisShaders/Iris/trunk/assets/screenshot1.png"
   ],

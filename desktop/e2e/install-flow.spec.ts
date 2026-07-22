@@ -569,7 +569,7 @@ test.describe('Release C3 — Install flow entry points', () => {
 
     await expect(page.getByText('Test Instance').first()).toBeVisible();
     await expect(page.getByText('Test Mod', { exact: true })).toBeVisible();
-    await expect(page.getByText('manual', { exact: true })).toBeVisible();
+    await expect(page.getByText('Manual', { exact: true })).toBeVisible();
     await expect(page.getByText(/Installed /).first()).toBeVisible();
     const main = page.locator('main');
     const editorScrollTop = await main.evaluate((element) => {

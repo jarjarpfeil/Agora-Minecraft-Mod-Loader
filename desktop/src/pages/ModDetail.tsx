@@ -528,7 +528,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     return (
       <div className="space-y-6">
         <BackButton onBack={onBack} />
-        <div className="rounded-xl p-6 border border-dashed border-border text-center text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-muted-foreground">
           Loading mod…
         </div>
       </div>
@@ -922,7 +922,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                     + Create new instance
                   </button>
                   {showCreateInline && (
-                    <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
+                    <div className="mt-3 space-y-3 rounded-lg border border-border bg-muted p-3">
                       <p className="text-xs font-medium">Create new instance</p>
                       <label className="block">
                         <span className="text-xs">Instance name</span>
@@ -1021,7 +1021,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                         key={cand.version_id}
                         className={`rounded-lg border px-3 py-2 text-sm cursor-pointer transition-colors ${
                           selectedModrinthCandidate?.version_id === cand.version_id
-                            ? 'border-brand-600 bg-card/50 dark:bg-card/20'
+                            ? 'border-primary bg-card/50 dark:bg-card/20'
                             : 'border-border hover:bg-accent'
                         }`}
                         onClick={() => setSelectedModrinthCandidate(cand)}
@@ -1058,7 +1058,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                         key={idx}
                         className={`rounded-lg border px-3 py-2 text-sm cursor-pointer transition-colors ${
                           selectedCandidate?.filename === cand.filename
-                            ? 'border-brand-600 bg-card/50 dark:bg-card/20'
+                            ? 'border-primary bg-card/50 dark:bg-card/20'
                             : 'border-border hover:bg-accent'
                         }`}
                         onClick={() => setSelectedCandidate(cand)}
@@ -1166,7 +1166,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
             onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.key
-                ? 'border-brand-600 text-primary dark:border-primary dark:text-primary'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
             } ${tab.key === 'agora' ? 'text-amber-700 dark:text-amber-400' : ''}`}
           >
@@ -1307,7 +1307,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                             }}
                             className={`cursor-pointer border-b border-border/50 transition-colors ${
                               isSelected
-                                ? 'bg-brand-50 dark:bg-brand-900/20'
+                                ? 'bg-accent'
                                 : 'hover:bg-accent'
                             }`}
                           >
@@ -1324,7 +1324,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
 
                 {/* Selected version detail panel */}
                 {selectedVersion && (
-                  <div className="lg:w-80 lg:flex-shrink-0 rounded-lg border border-border p-3 space-y-3">
+                  <div className="space-y-3 rounded-lg border border-border bg-muted p-3 lg:w-80 lg:flex-shrink-0">
                     <div>
                       <p className="text-xs text-muted-foreground">Selected version</p>
                       <p className="font-semibold text-sm break-all">{selectedVersion.name || selectedVersion.version}</p>
@@ -1417,7 +1417,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
                             }}
                             className={`cursor-pointer border-b border-border/50 transition-colors ${
                               isSelected
-                                ? 'bg-brand-50 dark:bg-brand-900/20'
+                                ? 'bg-accent'
                                 : 'hover:bg-accent'
                             }`}
                           >
@@ -1439,7 +1439,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
 
                 {/* Selected version detail panel */}
                 {selectedGithubTabVersion && (
-                  <div className="lg:w-80 lg:flex-shrink-0 rounded-lg border border-border p-3 space-y-3">
+                  <div className="space-y-3 rounded-lg border border-border bg-muted p-3 lg:w-80 lg:flex-shrink-0">
                     <div>
                       <p className="text-xs text-muted-foreground">Selected version</p>
                       <p className="font-semibold text-sm break-all">{selectedGithubTabVersion.version}</p>

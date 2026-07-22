@@ -689,7 +689,7 @@ export function CrashInvestigator({
 
         <div className="space-y-4">
           {recoverySnapshotId && (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
               <span>Recovery snapshot ready: {recoverySnapshotId}</span>
               <button
                 onClick={() => { void restoreInvestigationSnapshot().then(onClose).catch((cause) => setError(formatError(cause))); }}
@@ -753,7 +753,7 @@ export function CrashInvestigator({
               )}
 
               {aiLoading && (
-                <div className="flex items-center gap-2 rounded-xl border border-border p-4 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
                   <div role="status" aria-label="Analyzing crash with AI" className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   Analyzing crash with AI…
                 </div>
@@ -809,7 +809,7 @@ export function CrashInvestigator({
 
               {/* No suspects */}
               {suggested_action.kind === 'NoSuspects' && (
-                <div className="rounded-xl border border-border p-4">
+                <div className="rounded-xl border border-border bg-card p-4">
                   <p className="text-sm text-muted-foreground">
                     No suspects identified. The crash may not be mod-related. Use the manual log viewer for deeper inspection.
                   </p>

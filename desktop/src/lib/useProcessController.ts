@@ -420,7 +420,7 @@ export function useProcessController(): ProcessController {
         // Core owns health analysis; React only decides whether to present
         // the returned findings and ask the user for approval.
         const healthReport = await checkInstanceHealth(instanceId);
-        if (healthReport.blockers.length > 0) {
+        if (healthReport.blockers.length > 0 || healthReport.warnings.length > 0) {
           setState((previous) => ({
             ...previous,
             phase: 'failed',

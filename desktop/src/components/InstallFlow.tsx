@@ -451,7 +451,7 @@ function DepRow({ dep, checked, onToggle }: { dep: ResolvedDep; checked: boolean
 
 function ConflictRow({ conflict, selected, onSelect }: { conflict: DepConflict; selected?: string; onSelect: (r: string) => void }) {
   return (
-    <div className="rounded border border-border p-2 text-sm">
+    <div className="rounded border border-border bg-muted p-2 text-sm">
       <p className="text-xs">{conflict.message}</p>
       <div className="flex gap-2 mt-1">
         {conflict.resolutionOptions.map((opt) => (

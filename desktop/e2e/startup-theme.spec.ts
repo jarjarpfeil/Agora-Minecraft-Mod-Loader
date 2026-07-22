@@ -20,11 +20,20 @@ test('hanging startup invokes still render a branded shell immediately', async (
   await expect(page.getByText('Preparing your library…')).toBeVisible();
 });
 
-test('stored theme and accent apply before optional Windows accent resolves', async ({ page }) => {
+test('stored preferences apply before optional Windows accent resolves', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('agora-theme', JSON.stringify({
-      theme: 'dark',
-      accentColor: 'hsl(210 50% 40%)',
+    localStorage.setItem('agora-ui-preferences', JSON.stringify({
+      version: 1,
+      colorMode: 'dark',
+      accentMode: 'custom',
+      customAccent: '#336699',
+      fontFamily: 'system',
+      fontScale: 1,
+      density: 'comfortable',
+      cornerStyle: 'soft',
+      motion: 'system',
+      highContrast: false,
+      backgroundEffects: true,
     }));
     Object.assign(window as unknown as Record<string, unknown>, {
       __TAURI_INTERNALS__: {
@@ -43,5 +52,5 @@ test('stored theme and accent apply before optional Windows accent resolves', as
   });
   await page.goto('/');
   await expect(page.locator('html')).toHaveClass(/dark/);
-  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())).toBe('210 50% 40%');
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--primary').trim())).toBe('210 50% 52%');
 });

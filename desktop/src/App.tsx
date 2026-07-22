@@ -34,6 +34,47 @@ const AI_TAB = {
   icon: Bot,
 };
 
+interface ShellLayout {
+  version: 1;
+  sidebar: {
+    collapsed: boolean;
+    width: number;
+    lastExpandedWidth: number;
+  };
+}
+
+const SHELL_LAYOUT_KEY = 'agora-shell-layout';
+const DEFAULT_SHELL_LAYOUT: ShellLayout = {
+  version: 1,
+  sidebar: { collapsed: false, width: 256, lastExpandedWidth: 256 },
+};
+
+function loadShellLayout(): ShellLayout {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SHELL_LAYOUT_KEY) ?? 'null') as Partial<ShellLayout> | null;
+    const sidebar = parsed?.sidebar;
+    if (parsed?.version !== 1 || !sidebar || typeof sidebar.width !== 'number') return DEFAULT_SHELL_LAYOUT;
+    const width = Math.min(420, Math.max(180, sidebar.width));
+    const lastExpandedWidth = typeof sidebar.lastExpandedWidth === 'number'
+      ? Math.min(420, Math.max(180, sidebar.lastExpandedWidth))
+      : width;
+    return {
+      version: 1,
+      sidebar: { collapsed: sidebar.collapsed === true, width, lastExpandedWidth },
+    };
+  } catch {
+    return DEFAULT_SHELL_LAYOUT;
+  }
+}
+
+function storeShellLayout(layout: ShellLayout) {
+  try {
+    localStorage.setItem(SHELL_LAYOUT_KEY, JSON.stringify(layout));
+  } catch {
+    // Layout remains usable for the current session when storage is unavailable.
+  }
+}
+
 /**
  * Parse a stored boolean setting strictly.
  * - `true` / `false` → as-is
@@ -128,6 +169,7 @@ export default function App() {
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const [aiChatEnabled, setAiChatEnabled] = useState<boolean>(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shellLayout, setShellLayout] = useState<ShellLayout>(loadShellLayout);
   const [crashInvestigation, setCrashInvestigation] = useState<{
     instanceId: string;
     crashFilename: string | null;
@@ -340,6 +382,39 @@ export default function App() {
           activeTab={effectiveTab}
           onSelectTab={navigateToTab}
           onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+          collapsed={shellLayout.sidebar.collapsed}
+          width={shellLayout.sidebar.width}
+          onCollapsedChange={(collapsed) => {
+            setShellLayout((current) => {
+              const next = {
+                ...current,
+                sidebar: {
+                  ...current.sidebar,
+                  collapsed,
+                  width: collapsed ? current.sidebar.width : current.sidebar.lastExpandedWidth,
+                  lastExpandedWidth: collapsed ? current.sidebar.width : current.sidebar.lastExpandedWidth,
+                },
+              };
+              storeShellLayout(next);
+              return next;
+            });
+          }}
+          onWidthChange={(width) => {
+            setShellLayout((current) => ({
+              ...current,
+              sidebar: { ...current.sidebar, width, lastExpandedWidth: width },
+            }));
+          }}
+          onWidthCommit={(width) => {
+            setShellLayout((current) => {
+              const next = {
+                ...current,
+                sidebar: { ...current.sidebar, width, lastExpandedWidth: width },
+              };
+              storeShellLayout(next);
+              return next;
+            });
+          }}
         />
 
         {processState.phase === 'failed' && processState.healthReport && (
@@ -352,7 +427,7 @@ export default function App() {
           />
         )}
 
-        <main ref={mainRef} className="flex-1 overflow-y-auto p-6 bg-background">
+        <main ref={mainRef} className="flex-1 overflow-y-auto bg-background p-6 text-background-foreground">
           <div className="contents">
             {!isKnownDestType ? (
               <NotFoundView
@@ -393,7 +468,18 @@ export default function App() {
                 )}
                 {effectiveTab === 'governance' && <Governance />}
                 {effectiveTab === 'ai' && aiChatEnabled && <AiChatPage />}
-                {effectiveTab === 'settings' && <Settings />}
+                {effectiveTab === 'settings' && (
+                  <Settings
+                    onResetLayout={() => {
+                      const reset = {
+                        ...DEFAULT_SHELL_LAYOUT,
+                        sidebar: { ...DEFAULT_SHELL_LAYOUT.sidebar },
+                      };
+                      setShellLayout(reset);
+                      storeShellLayout(reset);
+                    }}
+                  />
+                )}
               </>
             )}
           </div>

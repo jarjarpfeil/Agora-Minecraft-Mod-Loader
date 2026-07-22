@@ -641,7 +641,7 @@ function BrowseContent({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search mods, packs, and more…"
-          className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
         <div className="flex items-center gap-1 rounded-lg border border-input bg-background p-0.5">
           <button
@@ -854,11 +854,11 @@ function BrowseContent({
 
       {/* Loading or results */}
       {searchLoading ? (
-        <div className="rounded-xl p-6 border border-dashed border-border text-center text-muted-foreground">
+        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-muted-foreground">
           Loading items…
         </div>
       ) : items.length === 0 ? (
-        <div className="rounded-xl p-6 border border-dashed border-border text-center">
+        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
           <p className="text-muted-foreground">No items to display.</p>
           {hasActiveFilters && (
             <button

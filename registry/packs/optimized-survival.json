@@ -16,11 +16,6 @@
       "status": "required"
     },
     {
-      "id": "starlight",
-      "source": "manifest",
-      "status": "required"
-    },
-    {
       "id": "fabric-api",
       "source": "manifest",
       "status": "required"
@@ -41,7 +36,7 @@
     }
   ],
   "override_url": null,
-  "curator_note": "A curated, performance-focused survival pack for 1.21. Vanilla+ aesthetic with dramatically improved framerates.",
+  "curator_note": "A simple curated, performance-focused survival pack for 1.21. Vanilla+ aesthetic with dramatically improved framerates. Primarily intended as an example of a curated pack, but feel free to use it as a base for your own pack.",
   "governance": {
     "immune": false,
     "override_justification": null,

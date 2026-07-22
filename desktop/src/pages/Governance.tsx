@@ -167,7 +167,7 @@ export function Governance() {
       )}
 
       {/* Active Triage Polls */}
-      <section className="rounded-xl border border-border p-6">
+      <section className="rounded-xl border border-border bg-card p-6">
         <h3 className="text-lg font-semibold mb-4">Active Triage Polls</h3>
 
         {pollsError && (
@@ -277,7 +277,7 @@ export function Governance() {
       </section>
 
       {/* Recent Resolutions */}
-      <section className="rounded-xl border border-border p-6">
+      <section className="rounded-xl border border-border bg-card p-6">
         <h3 className="text-lg font-semibold mb-4">Recent Resolutions</h3>
 
         {resolutionsError && (
@@ -326,7 +326,7 @@ export function Governance() {
       </section>
 
       {/* Transparency Log */}
-      <section className="rounded-xl border border-border p-6">
+      <section className="rounded-xl border border-border bg-card p-6">
         <h3 className="text-lg font-semibold mb-4">Transparency Log</h3>
 
         {logError && (

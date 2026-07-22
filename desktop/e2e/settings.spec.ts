@@ -55,4 +55,10 @@ test('one failed setting does not cascade and settings page renders', async ({ p
   await expect(page.getByRole('heading', { name: 'GitHub Account' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Launch Mode' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Launcher Path' })).toBeVisible();
+
+  const contents = page.getByRole('navigation', { name: 'Settings sections' });
+  await expect(contents.getByRole('button', { name: 'Appearance' })).toBeVisible();
+  await contents.getByRole('button', { name: 'Launching' }).click();
+  await expect(page.locator('#settings-launching')).toContainText('Launch Mode');
+  await expect(page.locator('#settings-launching')).toBeInViewport();
 });
