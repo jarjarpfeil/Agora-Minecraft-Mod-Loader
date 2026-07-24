@@ -1003,6 +1003,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_modpack_category_allows_large_pack_entries() {
+        assert_eq!(
+            ClientCategory::Modpack.max_response_bytes(),
+            Some(500 * 1024 * 1024)
+        );
+        assert!(
+            ClientCategory::Modpack.max_response_bytes()
+                > ClientCategory::Modrinth.max_response_bytes()
+        );
+    }
+
     // ------------------------------------------------------------------
     // URL validation tests
     // ------------------------------------------------------------------

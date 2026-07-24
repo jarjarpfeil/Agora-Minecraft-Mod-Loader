@@ -78,6 +78,10 @@ const MRPACK_DOWNLOAD_ALLOWLIST: &[&str] = &[
     "release-assets.githubusercontent.com",
 ];
 
+fn mrpack_download_category() -> crate::http_client::ClientCategory {
+    crate::http_client::ClientCategory::Modpack
+}
+
 fn validate_mrpack_download_url(raw_url: &str) -> LauncherResult<reqwest::Url> {
     let url = reqwest::Url::parse(raw_url).map_err(|_| LauncherError::UntrustedSource)?;
     let host = url.host_str().ok_or(LauncherError::UntrustedSource)?;
@@ -731,19 +735,15 @@ fn parse_mrpack_deps(deps: &Option<serde_json::Value>) -> (String, String, Strin
 
 fn download_bytes(url: &str) -> LauncherResult<Vec<u8>> {
     let _validated = validate_mrpack_download_url(url)?;
-    // Create a local HttpClients for the download. Uses the Modrinth/GitHub
-    // category allowlists (which cover all MRPACK_DOWNLOAD_ALLOWLIST hosts)
-    // with the checked API's redirect re-validation and size enforcement.
+    // Pack entries can be substantially larger than individual mods. The
+    // modpack category covers every MRPACK_DOWNLOAD_ALLOWLIST host and keeps
+    // the checked API's redirect validation and 500 MiB response limit.
     let clients = crate::http_client::HttpClients::new().map_err(|e| LauncherError::Generic {
         code: "ERR_IMPORT_HTTP_CLIENT".into(),
         message: format!("Could not create download client: {e}"),
     })?;
-    let category = if url.contains("modrinth.com") {
-        crate::http_client::ClientCategory::Modrinth
-    } else {
-        crate::http_client::ClientCategory::GitHub
-    };
-    let bytes = crate::http_client::blocking_checked_get_bytes(&clients, category, url)?;
+    let bytes =
+        crate::http_client::blocking_checked_get_bytes(&clients, mrpack_download_category(), url)?;
     if bytes.len() > MAX_MRPACK_FILE_BYTES {
         return Err(import_error(
             "ERR_IMPORT_FILE_TOO_LARGE",
@@ -1272,6 +1272,14 @@ mod tests {
             validate_mrpack_download_url("https://127.0.0.1:39741/private"),
             Err(LauncherError::UntrustedSource)
         ));
+    }
+
+    #[test]
+    fn test_mrpack_entries_use_large_modpack_download_policy() {
+        assert_eq!(
+            mrpack_download_category(),
+            crate::http_client::ClientCategory::Modpack
+        );
     }
 
     #[test]
