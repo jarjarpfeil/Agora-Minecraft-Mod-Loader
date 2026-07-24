@@ -57,6 +57,20 @@ pub async fn list_mod_versions(
         .await
 }
 
+/// Resolve the bounded candidate set used by explicit automatic update checks.
+pub async fn list_mod_versions_for_update(
+    app: &tauri::AppHandle,
+    instance_id: &str,
+    item_id: &str,
+) -> LauncherResult<Vec<ModVersionCandidate>> {
+    let ctx = crate::core_context(app)?;
+    let instance = load_instance_info(app, instance_id)?;
+    let item = load_registry_item(app, item_id)?;
+    make_resolver(ctx, app)
+        .list_curated_versions_for_update(&item, &instance.minecraft_version, &instance.loader)
+        .await
+}
+
 /// Quick compatibility badge via core Resolver.
 pub async fn check_mod_compat(
     app: &tauri::AppHandle,
@@ -95,7 +109,7 @@ async fn list_curated_versions_tolerant(
 }
 
 fn github_token(app: &tauri::AppHandle) -> Option<String> {
-    auth::get_token(app).map(|t| format!("Bearer {t}"))
+    auth::get_token(app)
 }
 
 fn make_resolver(
@@ -104,7 +118,7 @@ fn make_resolver(
 ) -> agora_core::resolver::Resolver {
     let base = agora_core::resolver::Resolver::new(ctx);
     match github_token(app) {
-        Some(tok) => base.with_github_token(tok),
+        Some(tok) => base.with_stored_github_token(tok),
         None => base,
     }
 }

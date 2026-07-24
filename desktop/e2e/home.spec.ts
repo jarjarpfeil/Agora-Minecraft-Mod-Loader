@@ -112,6 +112,7 @@ async function installHomeMock(page: Page, opts: HomeMockOptions = {}) {
 
       const callbacks = new Map<number, (...args: unknown[]) => void>();
       let callbackId = 0;
+      let updateChecks = 0;
 
       const internals = {
         transformCallback(callback: (...args: unknown[]) => void) {
@@ -146,7 +147,10 @@ async function installHomeMock(page: Page, opts: HomeMockOptions = {}) {
           // Instances
           if (command === 'list_instances') return Promise.resolve(instances);
           if (command === 'check_instance_crash') return Promise.resolve(crashResult);
-          if (command === 'check_instance_updates') return Promise.resolve(updatesResult);
+          if (command === 'check_instance_updates') {
+            updateChecks += 1;
+            return Promise.resolve(updatesResult);
+          }
           if (command === 'get_lkg_marker') return Promise.resolve(lkgMarker);
           if (command === 'list_snapshots') return Promise.resolve(snapshots);
           if (command === 'detect_drift') return Promise.resolve(driftResult);
@@ -165,6 +169,7 @@ async function installHomeMock(page: Page, opts: HomeMockOptions = {}) {
       Object.assign(window as unknown as Record<string, unknown>, {
         __TAURI_INTERNALS__: internals,
         __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener() {} },
+        __homeUpdateChecks: () => updateChecks,
       });
     },
     {
@@ -491,7 +496,7 @@ test.describe('Home — zone C: Maintenance / LKG', () => {
     await expect(page.getByText(/Before playing session 2026-07-11/)).toBeVisible();
   });
 
-  test('updates card shown when updates exist', async ({ page }) => {
+  test('does not check mod updates during Home mount', async ({ page }) => {
     const updates = [
       {
         filename: 'old-mod.jar',
@@ -509,9 +514,8 @@ test.describe('Home — zone C: Maintenance / LKG', () => {
     });
     await page.goto('/');
 
-    await expect(page.getByText('Updates Available')).toBeVisible();
-    await expect(page.getByText(/1 mods can be updated/)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Review' })).toBeVisible();
+    await expect(page.getByText('Updates Available')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).__homeUpdateChecks())).toBe(0);
   });
 
 });

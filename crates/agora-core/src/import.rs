@@ -1250,10 +1250,11 @@ mod tests {
         let result = import_mrpack(&mrpack_path, &instances_root, false).unwrap();
 
         assert_eq!(result.instance_id, "a-pack");
-        assert!(instances_root
-            .join("a-pack")
-            .join("instance_manifest.json")
-            .exists());
+        let manifest_path = instances_root.join("a-pack").join("instance_manifest.json");
+        assert!(manifest_path.exists());
+        let manifest: InstanceManifest =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        assert!(!manifest.is_locked);
         assert_eq!(
             fs::read(instances_root.join("keep-me").join("sentinel")).unwrap(),
             b"safe"

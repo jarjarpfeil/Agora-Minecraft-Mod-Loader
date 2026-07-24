@@ -42,6 +42,12 @@ fn open_conn(ctx: &Ctx) -> Result<rusqlite::Connection, LauncherError> {
 }
 
 fn check_modrinth_enabled(conn: &rusqlite::Connection) -> LauncherResult<()> {
+    if !db::is_network_enabled(conn, "network_modrinth_enabled") {
+        return Err(LauncherError::Generic {
+            code: "ERR_NETWORK_DISABLED".into(),
+            message: "Modrinth API requests are disabled in Privacy settings.".into(),
+        });
+    }
     match db::get_setting(conn, "modrinth_enabled") {
         Ok(Some(v)) if v.as_bool() == Some(true) => Ok(()),
         _ => Err(LauncherError::ModrinthDisabled),
@@ -178,10 +184,14 @@ impl CatalogSource for ModrinthSource {
 
     fn is_enabled(&self, ctx: &Ctx) -> bool {
         match open_conn(ctx) {
-            Ok(conn) => match db::get_setting(&conn, "modrinth_enabled") {
-                Ok(Some(v)) => v.as_bool().unwrap_or(true),
-                _ => true,
-            },
+            Ok(conn) => {
+                let net = db::is_network_enabled(&conn, "network_modrinth_enabled");
+                let feature = match db::get_setting(&conn, "modrinth_enabled") {
+                    Ok(Some(v)) => v.as_bool().unwrap_or(false),
+                    _ => false,
+                };
+                net && feature
+            }
             Err(_) => true,
         }
     }

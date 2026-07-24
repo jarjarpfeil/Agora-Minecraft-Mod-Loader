@@ -38,11 +38,47 @@ pub struct JvmConfig {
 impl JvmConfig {
     /// Build the `javaArgs` string consumed by the Mojang launcher profile.
     pub fn to_args(&self) -> String {
+        self.to_args_for_java(17)
+    }
+
+    /// Build arguments using the selected Java major for automatic GC mode.
+    pub fn to_args_for_java(&self, java_version: u32) -> String {
+        let gc = self.gc.trim().to_ascii_lowercase();
+        let profile = match gc.as_str() {
+            // `g1gc` was the implicit default before Auto was persisted.
+            "auto" | "" | "g1gc" => None,
+            "low_latency" | "zgc" => Some(crate::gc::GcProfile::LowLatency),
+            "high_efficiency" => Some(crate::gc::GcProfile::HighEfficiency),
+            "manual" => Some(crate::gc::GcProfile::Manual),
+            _ => None,
+        };
+        if gc == "auto" || gc == "g1gc" || gc.is_empty() {
+            return crate::gc::compute_gc_with_pre_touch(
+                java_version,
+                self.memory_mb,
+                &self.custom_args,
+                None,
+                Some(self.always_pre_touch),
+            )
+            .jvm_args;
+        }
+
+        if let Some(profile) = profile {
+            return crate::gc::compute_gc_with_pre_touch(
+                java_version,
+                self.memory_mb,
+                &self.custom_args,
+                Some(profile),
+                Some(self.always_pre_touch),
+            )
+            .jvm_args;
+        }
+
         let mut parts: Vec<String> = Vec::new();
         let mem = format!("-Xmx{}M -Xms{}M", self.memory_mb, self.memory_mb);
         parts.push(mem);
 
-        match self.gc.as_str() {
+        match self.gc.to_ascii_lowercase().as_str() {
             "zgc" => parts.push("-XX:+UseZGC".to_string()),
             "shenandoah" => parts.push("-XX:+UseShenandoahGC".to_string()),
             "g1gc" => parts.push("-XX:+UseG1GC".to_string()),
@@ -57,6 +93,32 @@ impl JvmConfig {
             parts.push("-XX:+AlwaysPreTouch".to_string());
         }
         parts.join(" ")
+    }
+}
+
+/// Infer the Java major used by the official launcher for common Minecraft
+/// version ranges. Direct launches still use the resolved runtime's actual
+/// major; this is only a safe preview for delegated launcher profiles.
+pub fn recommended_java_version_for_minecraft(version: &str) -> u32 {
+    let mut parts = version.split('.');
+    let first = parts.next().and_then(|part| part.parse::<u32>().ok());
+    // Minecraft's post-1.x version format (for example, 26.2) no longer has
+    // the leading `1`. Minecraft 26.x requires Java 25.
+    if first.is_some_and(|major| major >= 26) {
+        return 25;
+    }
+
+    let minor = if first == Some(1) {
+        parts.next().and_then(|part| part.parse::<u32>().ok())
+    } else {
+        first
+    };
+    let patch = parts.next().and_then(|part| part.parse::<u32>().ok());
+    match (minor, patch) {
+        (Some(major), Some(patch)) if major >= 21 || (major == 20 && patch >= 5) => 21,
+        (Some(major), None) if major >= 21 => 21,
+        (Some(major), _) if major >= 18 => 17,
+        _ => 8,
     }
 }
 
@@ -354,5 +416,46 @@ mod tests {
             manifest.mods[0].incompatible_deps
         );
         assert_eq!(deserialized.user_preferences, manifest.user_preferences);
+    }
+
+    #[test]
+    fn automatic_java_version_tracks_minecraft_requirements() {
+        assert_eq!(recommended_java_version_for_minecraft("26.2"), 25);
+        assert_eq!(recommended_java_version_for_minecraft("1.21.1"), 21);
+        assert_eq!(recommended_java_version_for_minecraft("1.20.4"), 17);
+        assert_eq!(recommended_java_version_for_minecraft("1.16.5"), 8);
+    }
+
+    #[test]
+    fn delegated_profiles_use_the_same_gc_flags_as_preview() {
+        let args = JvmConfig {
+            memory_mb: 4096,
+            gc: "high_efficiency".into(),
+            custom_args: String::new(),
+            always_pre_touch: false,
+        }
+        .to_args_for_java(17);
+        assert!(args.contains("-XX:+UseG1GC"));
+        assert!(!args.contains("AlwaysPreTouch"));
+
+        let args = JvmConfig {
+            memory_mb: 4096,
+            gc: "low_latency".into(),
+            custom_args: String::new(),
+            always_pre_touch: true,
+        }
+        .to_args_for_java(21);
+        assert!(args.contains("-XX:+UseZGC"));
+        assert!(args.contains("-XX:+ZGenerational"));
+
+        let args = JvmConfig {
+            memory_mb: 4096,
+            gc: "g1gc".into(),
+            custom_args: String::new(),
+            always_pre_touch: false,
+        }
+        .to_args_for_java(25);
+        assert!(args.contains("-XX:+UseZGC"));
+        assert!(args.contains("-XX:+ZGenerational"));
     }
 }

@@ -94,7 +94,7 @@ function makeInstanceDetail(isLocked: boolean): Record<string, unknown> {
       loader_version: '0.16.9',
       is_locked: isLocked,
       mods: [
-        { id: 'mod-A', name: 'Sodium', filename: 'sodium-fabric-0.6.10+mc1.21.jar', enabled: true },
+        { id: 'mod-A', name: 'Sodium', filename: 'sodium-fabric-0.6.10+mc1.21.jar', modrinth_id: 'project-A', source: 'modrinth', enabled: true },
         { id: 'mod-B', name: 'Lithium', filename: 'lithium-fabric-0.13.1+mc1.21.jar', enabled: true },
       ],
       resourcepacks: [],
@@ -237,6 +237,20 @@ async function installReproducibleMock(page: Page, opts: ReproducibleMockOptions
           }
           if (command.startsWith('plugin:event|')) return Promise.resolve(1);
           if (command === 'get_instance_detail') return Promise.resolve(detail);
+          if (command === 'fetch_modrinth_project') {
+            return Promise.resolve({
+              id: 'project-A',
+              title: 'Sodium',
+              description: '',
+              body: null,
+              icon_url: null,
+              project_type: 'mod',
+              page_url: null,
+              license_id: null,
+              source_updated_at: null,
+              gallery_urls: [],
+            });
+          }
           if (command === 'list_categories') return Promise.resolve([]);
           if (command === 'list_instances') return Promise.resolve([]);
           if (command === 'check_registry_update') return Promise.resolve(null);
@@ -324,6 +338,27 @@ test('consolidates mrpack, Agora JSON, and lockfile exports with guidance', asyn
   await expect.poll(() => page.evaluate(() => (
     window as unknown as { __commandArgs: Record<string, Record<string, unknown>> }
   ).__commandArgs.export_instance_pack?.format)).toBe('json');
+});
+
+test('toggling a mod updates local state without refreshing detail or Modrinth metadata', async ({ page }) => {
+  await installReproducibleMock(page);
+  await navigateToInstanceEditor(page);
+  await expect(page.getByText('Sodium', { exact: true })).toBeVisible();
+
+  const before = await page.evaluate(() => ({
+    detail: (window as any).__commandCalls.get_instance_detail ?? 0,
+    modrinth: (window as any).__commandCalls.fetch_modrinth_project ?? 0,
+  }));
+
+  await page.getByRole('button', { name: /Disable/ }).first().click();
+  await expect(page.getByRole('button', { name: /Enable/ }).first()).toBeVisible();
+
+  const after = await page.evaluate(() => ({
+    detail: (window as any).__commandCalls.get_instance_detail ?? 0,
+    modrinth: (window as any).__commandCalls.fetch_modrinth_project ?? 0,
+  }));
+  expect(after.detail).toBe(before.detail);
+  expect(after.modrinth).toBe(before.modrinth);
 });
 
 // ---------------------------------------------------------------------------

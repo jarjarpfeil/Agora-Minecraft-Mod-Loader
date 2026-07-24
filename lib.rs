@@ -138,6 +138,7 @@ pub fn run() {
             commands::msa_refresh,
             commands::msa_logout,
             commands::compute_gc_args,
+            commands::update_instance_jvm,
             commands::browse_search,
             commands::browse_load_more,
             commands::browse_page,

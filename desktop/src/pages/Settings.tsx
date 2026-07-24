@@ -722,7 +722,7 @@ export function Settings({ onResetLayout }: { onResetLayout: () => void }) {
             <h3 className="font-semibold">External Services</h3>
 
             <label className="flex items-center justify-between">
-              <span className="text-sm">Modrinth Access</span>
+              <span className="text-sm">Modrinth Integration</span>
               <input
                 type="checkbox"
                 checked={modrinth}
@@ -731,7 +731,7 @@ export function Settings({ onResetLayout }: { onResetLayout: () => void }) {
               />
             </label>
             <p className="text-xs text-muted-foreground">
-              Allow live Modrinth API queries and show Modrinth-sourced curated mods.
+              Include Modrinth-hosted catalog entries and enable live Modrinth features when permitted by Privacy settings.
             </p>
             {ts.statuses['modrinth_enabled']?.status === 'error' && (
               <p className="text-xs text-destructive">{ts.statuses['modrinth_enabled']?.error}</p>

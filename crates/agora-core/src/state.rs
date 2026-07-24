@@ -1,5 +1,6 @@
 use crate::browse_cache::SharedBrowseCache;
 use crate::error::LauncherResult;
+use crate::models::ModVersionCandidate;
 use crate::msa::LoginFlow;
 use crate::process_identity::{self, ProcessIdentity};
 use std::collections::{HashMap, HashSet};
@@ -26,6 +27,13 @@ pub struct RunningProcess {
 #[derive(Debug, Clone)]
 pub struct LaunchReservation {
     pub instance_id: String,
+}
+
+/// A short-lived release-resolution result shared by explicit update scans.
+#[derive(Clone)]
+pub struct UpdateCandidateCacheEntry {
+    pub fetched_at: std::time::Instant,
+    pub candidates: Vec<ModVersionCandidate>,
 }
 
 /// Lightweight shared application state.
@@ -61,6 +69,8 @@ pub struct AppState {
     /// monitors can overlap a newer direct launch, so the global launch lock is
     /// not sufficient for protecting `lkg.json`.
     pub lkg_locks: HashMap<String, Arc<Mutex<()>>>,
+    /// Release candidates shared across explicit update scans for five minutes.
+    pub update_candidate_cache: HashMap<String, UpdateCandidateCacheEntry>,
 }
 
 impl AppState {
@@ -90,6 +100,7 @@ impl AppState {
             user_cancelled_launches: HashSet::new(),
             active_install_instances: HashSet::new(),
             lkg_locks: HashMap::new(),
+            update_candidate_cache: HashMap::new(),
         }
     }
 }

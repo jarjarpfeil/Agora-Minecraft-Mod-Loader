@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export type Tab = 'home' | 'browse' | 'instances' | 'governance' | 'ai' | 'settings';
+export type Tab = 'home' | 'browse' | 'instances' | 'governance' | 'ai' | 'guide' | 'settings';
 
 /**
  * A single typed application destination. Replaces the previous pattern of
  * three independent state variables (activeTab, selectedModId, editingInstanceId).
  *
  * Destinations:
- * - `tab` — one of the sidebar tabs (home, browse, instances, governance, ai, settings).
+ * - `tab` — one of the sidebar tabs (home, browse, instances, governance, ai, guide, settings).
  * - `mod-detail` — browsing a specific curated item.
  * - `instance-detail` — editing a specific instance.
  */
 export type Destination =
-  | { type: 'tab'; tab: Tab; browseInstanceId?: string }
+  | { type: 'tab'; tab: Tab; browseInstanceId?: string; browseContentType?: string }
   | { type: 'mod-detail'; itemId: string }
   | { type: 'instance-detail'; instanceId: string };
 
@@ -22,7 +22,7 @@ export interface UseDestinationReturn {
   navigate: (dest: Destination) => void;
   goBack: () => void;
   navigateToTab: (tab: Tab) => void;
-  navigateToBrowse: (instanceId?: string) => void;
+  navigateToBrowse: (instanceId?: string, contentType?: string) => void;
   navigateToModDetail: (itemId: string) => void;
   navigateToInstanceDetail: (instanceId: string) => void;
 }
@@ -34,7 +34,8 @@ function isValidDestination(d: unknown): d is Destination {
   const dest = d as Record<string, unknown>;
   if (dest.type === 'tab') {
     return typeof dest.tab === 'string'
-      && (dest.browseInstanceId === undefined || typeof dest.browseInstanceId === 'string');
+      && (dest.browseInstanceId === undefined || typeof dest.browseInstanceId === 'string')
+      && (dest.browseContentType === undefined || typeof dest.browseContentType === 'string');
   }
   if (dest.type === 'mod-detail') return typeof dest.itemId === 'string';
   if (dest.type === 'instance-detail') return typeof dest.instanceId === 'string';
@@ -94,10 +95,11 @@ export function useDestination(): UseDestinationReturn {
   const goBack = useCallback(() => window.history.back(), []);
   const navigateToTab = useCallback((tab: Tab) => push({ type: 'tab', tab }), [push]);
   const navigateToBrowse = useCallback(
-    (instanceId?: string) => push({
+    (instanceId?: string, contentType?: string) => push({
       type: 'tab',
       tab: 'browse',
       ...(instanceId ? { browseInstanceId: instanceId } : {}),
+      ...(contentType ? { browseContentType: contentType } : {}),
     }),
     [push],
   );

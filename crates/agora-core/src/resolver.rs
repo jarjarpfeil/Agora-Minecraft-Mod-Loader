@@ -16,6 +16,7 @@ use crate::ctx::Ctx;
 use crate::dependency_ops::{AliasMap, DepSource, Requirement};
 use crate::download;
 use crate::error::{LauncherError, LauncherResult};
+use crate::github_ratelimit;
 use crate::http_client::{self, ClientCategory, HttpClients};
 use crate::install_pipeline::{
     ArtifactMetadata, ArtifactSource, ConflictKind, ConflictResolution, DepConflict,
@@ -134,6 +135,7 @@ struct GitHubReleaseAsset {
 pub struct Resolver {
     ctx: Ctx,
     github_token: Option<String>,
+    clear_stored_github_token_on_unauthorized: bool,
 }
 
 impl Resolver {
@@ -141,11 +143,20 @@ impl Resolver {
         Self {
             ctx,
             github_token: None,
+            clear_stored_github_token_on_unauthorized: false,
         }
     }
 
     pub fn with_github_token(mut self, token: String) -> Self {
         self.github_token = Some(token);
+        self
+    }
+
+    /// Attach a token read from Agora's secure credential store. If GitHub
+    /// rejects it, clear the stored credential before retrying anonymously.
+    pub fn with_stored_github_token(mut self, token: String) -> Self {
+        self.github_token = Some(token);
+        self.clear_stored_github_token_on_unauthorized = true;
         self
     }
 
@@ -622,6 +633,44 @@ impl Resolver {
         }
     }
 
+    /// Resolve candidates for an automatic update check without walking the
+    /// complete GitHub release history. The interactive Versions tab can load
+    /// older pages on demand; background checks use page one plus up to three
+    /// tail pages instead.
+    pub async fn list_curated_versions_for_update(
+        &self,
+        item: &crate::registry::RegistryItem,
+        mc_version: &str,
+        loader: &str,
+    ) -> LauncherResult<Vec<ModVersionCandidate>> {
+        if item.download_strategy != "github_release" {
+            return self.list_curated_versions(item, mc_version, loader).await;
+        }
+
+        let has_modrinth = item.modrinth_id.as_deref().is_some_and(|id| !id.is_empty());
+        let primary = match self
+            .fetch_github_releases_initial(&item.source_identifier, mc_version, loader)
+            .await
+        {
+            Ok((candidates, _, _)) => candidates,
+            Err(_) => Vec::new(),
+        };
+        if !primary.is_empty() {
+            return Ok(primary);
+        }
+        if has_modrinth {
+            return fetch_modrinth_versions_for_item(
+                &self.ctx.http_clients,
+                &item.source_identifier,
+                item.modrinth_id.as_deref(),
+                mc_version,
+                loader,
+            )
+            .await;
+        }
+        Ok(primary)
+    }
+
     /// Fetch all GitHub release pages for a source, returning candidates filtered
     /// and sorted by compatibility.
     pub async fn fetch_all_github_releases(
@@ -633,25 +682,25 @@ impl Resolver {
         let mut all = Vec::new();
         let mut page: u32 = 1;
         let max_pages = 50;
-        let mut errored = false;
+        let mut total_pages = 1;
 
         loop {
-            if page > max_pages || errored {
+            if page > max_pages || page > total_pages {
                 break;
             }
             match self
                 .fetch_github_releases_page(source, mc_version, loader, page)
                 .await
             {
-                Ok((candidates, _)) => {
-                    let has_more = !candidates.is_empty();
+                Ok((candidates, reported_total_pages)) => {
                     all.extend(candidates);
-                    if !has_more {
+                    total_pages = reported_total_pages.max(page);
+                    if page >= total_pages {
                         break;
                     }
                 }
                 Err(_) => {
-                    errored = true;
+                    break;
                 }
             }
             page += 1;
@@ -672,24 +721,18 @@ impl Resolver {
         let url =
             format!("https://api.github.com/repos/{source}/releases?per_page=100&page={page}");
 
-        use crate::github_ratelimit;
-        let _permit = github_ratelimit::acquire_github_permit().await;
+        let headers = github_auth_headers(self.github_token.as_deref());
+        let mut response = self.send_github_releases_request(&url, &headers).await?;
 
-        let mut headers: Vec<(String, String)> = Vec::new();
-        if let Some(token) = &self.github_token {
-            headers.push(("Authorization".into(), format!("Bearer {token}")));
+        // Release listings are public. A stale or malformed stored token must
+        // not turn a public request into a hard failure, and must not be
+        // retried with the same invalid Authorization header.
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED && self.github_token.is_some() {
+            if self.clear_stored_github_token_on_unauthorized {
+                let _ = crate::auth::clear_token();
+            }
+            response = self.send_github_releases_request(&url, &[]).await?;
         }
-
-        let response = crate::http_client::checked_send(
-            &self.ctx.http_clients,
-            ClientCategory::GitHub,
-            reqwest::Method::GET,
-            &url,
-            &headers,
-            None,
-            None,
-        )
-        .await?;
 
         if github_ratelimit::is_rate_limit_response(&response) {
             let retry = github_ratelimit::parse_retry_after(&response);
@@ -762,6 +805,24 @@ impl Resolver {
         }
 
         Ok((candidates, total_pages))
+    }
+
+    async fn send_github_releases_request(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+    ) -> LauncherResult<reqwest::Response> {
+        let _permit = crate::github_ratelimit::acquire_github_permit().await;
+        crate::http_client::checked_send(
+            &self.ctx.http_clients,
+            ClientCategory::GitHub,
+            reqwest::Method::GET,
+            url,
+            headers,
+            None,
+            None,
+        )
+        .await
     }
 
     // ------------------------------------------------------------------
@@ -1202,6 +1263,12 @@ fn effective_raw_modrinth_dependencies(
 // ---------------------------------------------------------------------------
 // Standalone functions: GitHub release helpers
 // ---------------------------------------------------------------------------
+
+fn github_auth_headers(token: Option<&str>) -> Vec<(String, String)> {
+    token
+        .map(|token| vec![("Authorization".into(), format!("Bearer {token}"))])
+        .unwrap_or_default()
+}
 
 /// Parse the GitHub API `Link` response header to discover the total number of pages.
 pub fn parse_link_total_pages(header_value: Option<&str>) -> u32 {
@@ -2224,6 +2291,18 @@ mod tests {
     // ------------------------------------------------------------------
     // fetch_github_releases_initial / compute_tail_pages / batch
     // ------------------------------------------------------------------
+
+    #[test]
+    fn github_release_auth_header_contains_one_bearer_prefix() {
+        assert_eq!(
+            github_auth_headers(Some("gho_test_token")),
+            vec![(
+                "Authorization".to_string(),
+                "Bearer gho_test_token".to_string()
+            )]
+        );
+        assert!(github_auth_headers(None).is_empty());
+    }
 
     #[test]
     fn test_compute_tail_pages_single_page() {

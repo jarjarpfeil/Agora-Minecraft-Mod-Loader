@@ -104,6 +104,7 @@ impl InstanceService {
         instance_id: &str,
         java_path: Option<&str>,
         allow_incompatible: bool,
+        custom_args: Option<&str>,
     ) -> LauncherResult<()> {
         let instance_id = self.validate_id(instance_id)?;
         let conn = self.connection()?;
@@ -116,12 +117,55 @@ impl InstanceService {
                 code: "ERR_INSTANCE_NOT_FOUND".into(),
                 message: format!("Instance '{instance_id}' not found"),
             })?;
-        crate::db::update_instance_java(&conn, &instance_id, java_path, allow_incompatible).map_err(
-            |error| LauncherError::Generic {
+        crate::db::update_instance_java(
+            &conn,
+            &instance_id,
+            java_path,
+            allow_incompatible,
+            custom_args,
+        )
+        .map_err(|error| LauncherError::Generic {
+            code: "ERR_LOCAL_STATE_FAILED".into(),
+            message: error.to_string(),
+        })
+    }
+
+    pub fn update_jvm(
+        &self,
+        instance_id: &str,
+        memory_mb: i64,
+        gc: &str,
+        always_pre_touch: bool,
+        custom_args: &str,
+    ) -> LauncherResult<()> {
+        let instance_id = self.validate_id(instance_id)?;
+        let memory_mb = memory_mb.clamp(2048, 32768);
+        let gc = match gc.trim().to_ascii_lowercase().as_str() {
+            "auto" | "g1gc" | "zgc" | "shenandoah" | "manual" => gc.trim().to_ascii_lowercase(),
+            _ => "auto".to_string(),
+        };
+        let conn = self.connection()?;
+        let _row = crate::db::get_instance(&conn, &instance_id)
+            .map_err(|error| LauncherError::Generic {
                 code: "ERR_LOCAL_STATE_FAILED".into(),
                 message: error.to_string(),
-            },
+            })?
+            .ok_or_else(|| LauncherError::Generic {
+                code: "ERR_INSTANCE_NOT_FOUND".into(),
+                message: format!("Instance '{instance_id}' not found"),
+            })?;
+        crate::db::update_instance_jvm(
+            &conn,
+            &instance_id,
+            memory_mb,
+            &gc,
+            always_pre_touch,
+            custom_args,
         )
+        .map_err(|error| LauncherError::Generic {
+            code: "ERR_LOCAL_STATE_FAILED".into(),
+            message: error.to_string(),
+        })
     }
 
     pub fn rename(&self, instance_id: &str, name: &str) -> LauncherResult<()> {
@@ -163,14 +207,7 @@ impl InstanceService {
             memory_mb: row.jvm_memory_mb,
             gc: row.jvm_gc.clone(),
             custom_args: row.jvm_custom_args.clone(),
-            always_pre_touch: user_override.unwrap_or_else(|| {
-                if !row.jvm_always_pre_touch {
-                    false
-                } else {
-                    let gc = row.jvm_gc.to_ascii_lowercase();
-                    !(gc.contains("zgc") || gc.contains("shenandoah"))
-                }
-            }),
+            always_pre_touch: row.jvm_always_pre_touch && user_override.unwrap_or(true),
         };
         let profile_id = format!("agora-{}", row.instance_id);
         let profile = crate::launcher_profiles::LauncherProfileEntry {
@@ -178,7 +215,9 @@ impl InstanceService {
             name: format!("{} (Agora)", row.name),
             last_version_id: loader_version_id(&row),
             game_dir: self.ctx.paths.instance_dir(&instance_id)?,
-            java_args: jvm.to_args(),
+            java_args: jvm.to_args_for_java(crate::models::recommended_java_version_for_minecraft(
+                &row.minecraft_version,
+            )),
         };
         if let Some(profiles_path) = &self.ctx.launcher_profiles_path {
             crate::launcher_profiles::upsert_profile(&profile, profiles_path)?;
@@ -585,14 +624,18 @@ impl InstanceService {
                 memory_mb: new_row.jvm_memory_mb,
                 gc: new_row.jvm_gc.clone(),
                 custom_args: new_row.jvm_custom_args.clone(),
-                always_pre_touch: user_override.unwrap_or(new_row.jvm_always_pre_touch),
+                always_pre_touch: new_row.jvm_always_pre_touch && user_override.unwrap_or(true),
             };
             let profile = crate::launcher_profiles::LauncherProfileEntry {
                 profile_id: format!("agora-{}", new_row.instance_id),
                 name: format!("{} (Agora)", new_row.name),
                 last_version_id: loader_version_id(&new_row),
                 game_dir: dest_dir,
-                java_args: jvm.to_args(),
+                java_args: jvm.to_args_for_java(
+                    crate::models::recommended_java_version_for_minecraft(
+                        &new_row.minecraft_version,
+                    ),
+                ),
             };
             if let Err(error) = crate::launcher_profiles::upsert_profile(&profile, profiles_path) {
                 let _ = crate::db::delete_instance(&conn, &new_row.instance_id);
@@ -748,7 +791,7 @@ impl InstanceService {
                 memory_mb: row.jvm_memory_mb,
                 gc: row.jvm_gc.clone(),
                 custom_args: row.jvm_custom_args.clone(),
-                always_pre_touch: user_override.unwrap_or(row.jvm_always_pre_touch),
+                always_pre_touch: row.jvm_always_pre_touch && user_override.unwrap_or(true),
             };
             let profile = crate::launcher_profiles::LauncherProfileEntry {
                 profile_id: format!("agora-{}", row.instance_id),
@@ -794,10 +837,27 @@ impl InstanceService {
     fn set_locked(&self, instance_id: &str, locked: bool) -> LauncherResult<()> {
         let instance_id = self.validate_id(instance_id)?;
         let conn = self.connection()?;
-        crate::db::set_locked(&conn, &instance_id, locked).map_err(|error| LauncherError::Generic {
-            code: "ERR_LOCAL_STATE_FAILED".into(),
-            message: error.to_string(),
-        })
+        let manifest_path = self.ctx.paths.instance_manifest(&instance_id)?;
+        let mut manifest = read_manifest(&manifest_path)?;
+        if let Some(manifest) = manifest.as_mut() {
+            manifest.is_locked = locked;
+        }
+
+        crate::db::set_locked(&conn, &instance_id, locked).map_err(|error| {
+            LauncherError::Generic {
+                code: "ERR_LOCAL_STATE_FAILED".into(),
+                message: error.to_string(),
+            }
+        })?;
+
+        if let Some(manifest) = manifest {
+            if let Err(error) = crate::helpers::atomic_write_manifest(&manifest_path, &manifest) {
+                // Keep the database and manifest aligned if the filesystem write fails.
+                let _ = crate::db::set_locked(&conn, &instance_id, !locked);
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     fn prepare_files(&self, dir: &Path, manifest: &InstanceManifest) -> LauncherResult<()> {
@@ -833,9 +893,11 @@ fn prepare_row(instance_id: &str, request: &CreateInstanceRequest) -> InstanceRo
         is_locked: false,
         last_launched_at: None,
         jvm_memory_mb: request.jvm_memory_mb.unwrap_or(4096),
-        jvm_gc: request.jvm_gc.clone().unwrap_or_else(|| "g1gc".into()),
+        jvm_gc: request.jvm_gc.clone().unwrap_or_else(|| "auto".into()),
         jvm_custom_args: request.jvm_custom_args.clone().unwrap_or_default(),
-        jvm_always_pre_touch: request.jvm_always_pre_touch.unwrap_or(true),
+        jvm_always_pre_touch: request.jvm_always_pre_touch.unwrap_or_else(|| {
+            crate::models::recommended_java_version_for_minecraft(&request.minecraft_version) < 21
+        }),
         created_at: chrono::Utc::now().to_rfc3339(),
         java_path: None,
         java_incompatible_override: false,
@@ -929,13 +991,22 @@ mod tests {
         )
         .unwrap();
 
-        let service = InstanceService::new(ctx);
+        let service = InstanceService::new(ctx.clone());
         assert_eq!(service.list().unwrap().len(), 1);
         assert!(service.get("test").unwrap().is_some());
         service.lock("test").unwrap();
+        let locked_detail = service.get("test").unwrap().unwrap();
+        assert!(locked_detail.row.is_locked);
+        assert!(locked_detail.manifest.unwrap().is_locked);
         service.rename("test", "Renamed").unwrap();
         assert_eq!(service.list().unwrap()[0].name, "Renamed");
         service.unlock("test").unwrap();
+        let unlocked_detail = service.get("test").unwrap().unwrap();
+        assert!(!unlocked_detail.row.is_locked);
+        assert!(!unlocked_detail.manifest.unwrap().is_locked);
+        assert!(crate::install_service::InstallService::new(ctx)
+            .check_not_locked("test")
+            .is_ok());
         service.delete("test", None).unwrap();
         assert!(service.list().unwrap().is_empty());
         let _ = std::fs::remove_dir_all(root);

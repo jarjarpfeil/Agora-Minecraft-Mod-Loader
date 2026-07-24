@@ -193,7 +193,10 @@ pub fn run() {
             commands::remove_unused_java_runtimes,
             commands::inspect_java_executable,
             commands::update_instance_java,
+            commands::update_instance_jvm,
             commands::cancel_java_runtime,
+            commands::open_instance_folder,
+            commands::reveal_path,
         ])
         .setup(|app| {
             if let Err(error) = crate::paths::migrate_legacy_data_dir(app.handle()) {

@@ -2,8 +2,7 @@ import { useRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ChevronLeft, ChevronRight, Command } from 'lucide-react';
 import { BrandMark } from './BrandMark';
-
-type Tab = 'home' | 'browse' | 'instances' | 'governance' | 'ai' | 'settings';
+import type { Tab } from '../lib/useDestination';
 
 interface SidebarProps {
   tabs: { id: Tab; label: string; icon: LucideIcon }[];

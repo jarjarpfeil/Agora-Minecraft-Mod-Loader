@@ -77,6 +77,18 @@ pub fn safe_heap_mb(requested_mb: i64, total_ram_mb: u64) -> i64 {
 ///
 /// The output is space-separated flags ready for `java -Xmx... -XX...`.
 pub fn generate_args(profile: GcProfile, heap_mb: i64, manual_args: &str) -> String {
+    generate_args_for_java(profile, heap_mb, manual_args, 21)
+}
+
+/// Generate arguments for a specific Java major. Explicit ZGC remains
+/// available on older Java releases, but Generational ZGC is only emitted on
+/// Java 21+.
+pub fn generate_args_for_java(
+    profile: GcProfile,
+    heap_mb: i64,
+    manual_args: &str,
+    java_version: u32,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     // Memory
@@ -85,9 +97,10 @@ pub fn generate_args(profile: GcProfile, heap_mb: i64, manual_args: &str) -> Str
 
     match profile {
         GcProfile::LowLatency => {
-            // Java 21 Generational ZGC
             parts.push("-XX:+UseZGC".into());
-            parts.push("-XX:+ZGenerational".into());
+            if java_version >= 21 {
+                parts.push("-XX:+ZGenerational".into());
+            }
             parts.push("-XX:+AlwaysPreTouch".into());
         }
         GcProfile::HighEfficiency => {
@@ -104,13 +117,28 @@ pub fn generate_args(profile: GcProfile, heap_mb: i64, manual_args: &str) -> Str
             parts.push("-XX:+ParallelRefProcEnabled".into());
             parts.push("-XX:+UseStringDeduplication".into());
         }
-        GcProfile::Manual => {
-            if !manual_args.trim().is_empty() {
-                parts.push(manual_args.trim().to_string());
-            }
-        }
+        GcProfile::Manual => {}
     }
 
+    // Custom flags are an escape hatch in every profile. The UI only exposes
+    // them in Advanced mode, but keeping them here preserves existing users'
+    // saved settings when switching between profiles.
+    if !manual_args.trim().is_empty() {
+        parts.push(manual_args.trim().to_string());
+    }
+
+    parts.join(" ")
+}
+
+/// Apply the user's pre-touch preference without changing the selected GC
+/// profile. This keeps the automatic profile useful while making the common
+/// toggle effective for both direct and delegated launches.
+pub fn apply_pre_touch(args: &str, enabled: bool) -> String {
+    let mut parts: Vec<&str> = args.split_whitespace().collect();
+    parts.retain(|part| *part != "-XX:+AlwaysPreTouch");
+    if enabled {
+        parts.push("-XX:+AlwaysPreTouch");
+    }
     parts.join(" ")
 }
 
@@ -154,6 +182,24 @@ pub fn compute_gc(
     manual_args: &str,
     override_profile: Option<GcProfile>,
 ) -> GcResult {
+    compute_gc_with_pre_touch(
+        java_version,
+        requested_heap_mb,
+        manual_args,
+        override_profile,
+        None,
+    )
+}
+
+/// Compute GC arguments while optionally overriding the profile's default
+/// pre-touch behavior.
+pub fn compute_gc_with_pre_touch(
+    java_version: u32,
+    requested_heap_mb: i64,
+    manual_args: &str,
+    override_profile: Option<GcProfile>,
+    always_pre_touch: Option<bool>,
+) -> GcResult {
     let sys = SystemResources::detect();
     let heap = if requested_heap_mb > 0 {
         safe_heap_mb(requested_heap_mb, sys.total_ram_mb)
@@ -162,10 +208,19 @@ pub fn compute_gc(
         safe_heap_mb(4096, sys.total_ram_mb)
     };
 
-    let profile =
+    let requested_profile =
         override_profile.unwrap_or_else(|| GcProfile::recommended_for_java_version(java_version));
-
-    let jvm_args = generate_args(profile, heap, manual_args);
+    // ZGC became production-ready in Java 15. Keep an explicit request safe
+    // on legacy Java 8 runtimes while allowing classic ZGC on Java 15-20.
+    let profile = if java_version < 15 && requested_profile == GcProfile::LowLatency {
+        GcProfile::HighEfficiency
+    } else {
+        requested_profile
+    };
+    let jvm_args = generate_args_for_java(profile, heap, manual_args, java_version);
+    let jvm_args = always_pre_touch
+        .map(|enabled| apply_pre_touch(&jvm_args, enabled))
+        .unwrap_or(jvm_args);
 
     GcResult {
         profile,
@@ -189,6 +244,10 @@ mod tests {
         );
         assert_eq!(
             GcProfile::recommended_for_java_version(22),
+            GcProfile::LowLatency
+        );
+        assert_eq!(
+            GcProfile::recommended_for_java_version(25),
             GcProfile::LowLatency
         );
     }
@@ -237,6 +296,27 @@ mod tests {
     }
 
     #[test]
+    fn low_latency_uses_classic_zgc_on_java_17() {
+        let result = compute_gc(17, 4096, "", Some(GcProfile::LowLatency));
+        assert_eq!(result.profile, GcProfile::LowLatency);
+        assert!(result.jvm_args.contains("UseZGC"));
+        assert!(!result.jvm_args.contains("UseG1GC"));
+        assert!(!result.jvm_args.contains("ZGenerational"));
+    }
+
+    #[test]
+    fn custom_flags_are_preserved_for_managed_profiles() {
+        let args = generate_args(GcProfile::HighEfficiency, 4096, "-Xss1M");
+        assert!(args.ends_with("-Xss1M"));
+    }
+
+    #[test]
+    fn pre_touch_override_removes_profile_default() {
+        let result = compute_gc_with_pre_touch(17, 4096, "", None, Some(false));
+        assert!(!result.jvm_args.contains("AlwaysPreTouch"));
+    }
+
+    #[test]
     fn g1gc_args_include_aikar_flags() {
         let args = generate_args(GcProfile::HighEfficiency, 8192, "");
         assert!(args.contains("G1GC"));
@@ -256,5 +336,13 @@ mod tests {
         let result = compute_gc(21, 0, "", None);
         assert_eq!(result.profile, GcProfile::LowLatency);
         assert!(result.recommended);
+    }
+
+    #[test]
+    fn compute_gc_auto_uses_generational_zgc_for_java_25() {
+        let result = compute_gc(25, 4096, "", None);
+        assert_eq!(result.profile, GcProfile::LowLatency);
+        assert!(result.jvm_args.contains("-XX:+UseZGC"));
+        assert!(result.jvm_args.contains("-XX:+ZGenerational"));
     }
 }

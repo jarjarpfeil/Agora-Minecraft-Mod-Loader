@@ -312,9 +312,11 @@ impl ImportService {
             is_locked: false,
             last_launched_at: None,
             jvm_memory_mb: 4096,
-            jvm_gc: "g1gc".into(),
+            jvm_gc: "auto".into(),
             jvm_custom_args: String::new(),
-            jvm_always_pre_touch: true,
+            jvm_always_pre_touch: crate::models::recommended_java_version_for_minecraft(
+                &result.minecraft_version,
+            ) < 21,
             created_at: chrono::Utc::now().to_rfc3339(),
             java_path: None,
             java_incompatible_override: false,

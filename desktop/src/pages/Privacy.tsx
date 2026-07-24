@@ -19,9 +19,9 @@ interface Endpoint {
 const ENDPOINTS: Endpoint[] = [
   {
     key: 'network_modrinth_enabled',
-    name: 'Modrinth Catalog API',
+    name: 'Modrinth API requests',
     hosts: 'api.modrinth.com',
-    purpose: 'Browse, search, and install curated mods from the Modrinth platform.',
+    purpose: 'Permit requests to api.modrinth.com for live search, project details, and version metadata. Disabling this does not remove metadata already included in the signed catalog.',
     default: true,
     group: 'Mod Discovery',
   },

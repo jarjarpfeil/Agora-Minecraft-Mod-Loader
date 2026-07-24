@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { BookOpen } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,8 +10,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { InstanceRow } from '@/lib/tauri';
-
-type Tab = 'home' | 'browse' | 'instances' | 'governance' | 'ai' | 'settings';
+import type { Tab } from '@/lib/useDestination';
 
 interface CommandPaletteProps {
   open: boolean;
@@ -23,6 +23,7 @@ const SETTINGS_ITEMS: { label: string; tab: Tab; icon: string }[] = [
   { label: 'Browse', tab: 'browse', icon: '🔍' },
   { label: 'My Instances', tab: 'instances', icon: '📦' },
   { label: 'Community Governance', tab: 'governance', icon: '🗳️' },
+  { label: 'Help & Guide', tab: 'guide', icon: '' },
   { label: 'Settings', tab: 'settings', icon: '⚙️' },
 ];
 
@@ -271,7 +272,11 @@ export function CommandPalette({ open, onOpenChange, onNavigate }: CommandPalett
                         : 'text-[rgb(var(--text))] hover:bg-gray-100 dark:hover:bg-gray-800',
                     )}
                   >
-                    <span className="text-lg" aria-hidden="true">{item.icon}</span>
+                    {item.tab === 'guide' ? (
+                      <BookOpen className="h-5 w-5" aria-hidden="true" />
+                    ) : (
+                      <span className="text-lg" aria-hidden="true">{item.icon}</span>
+                    )}
                     <span className="font-medium">{item.label}</span>
                   </button>
                 );

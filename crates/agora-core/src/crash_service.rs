@@ -114,9 +114,14 @@ impl CrashService {
     /// datapacks, saves). Returns an error if the file is not found.
     pub fn disable_artifact(&self, instance_id: &str, filename: &str) -> LauncherResult<()> {
         let sanitized = crate::paths::sanitize_id(instance_id);
+        let _guard = self.ctx.lock_manager.acquire(
+            LockResource::Instance(sanitized.clone()),
+            "disable_artifact",
+        )?;
         let dir = self.ctx.paths.instance_dir(&sanitized)?;
 
-        if rename_in_content_dir(&dir, filename, false).is_none() {
+        let renamed = rename_in_content_dir(&dir, filename, false).is_some();
+        if !renamed {
             return Err(LauncherError::Generic {
                 code: "ERR_MOD_FILE_NOT_FOUND".to_string(),
                 message: format!("File '{filename}' not found in any content directory."),
@@ -124,13 +129,21 @@ impl CrashService {
         }
 
         let manifest_path = self.ctx.paths.instance_manifest(&sanitized)?;
-        if manifest_path.exists() {
-            let text = std::fs::read_to_string(&manifest_path)
-                .map_err(|_| LauncherError::InstanceCreateFailed)?;
-            let mut manifest: crate::models::InstanceManifest =
-                serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
-            set_enabled_in_all_arrays(&mut manifest, filename, false);
-            crate::helpers::atomic_write_manifest(&manifest_path, &manifest)?;
+        let result = if manifest_path.exists() {
+            (|| -> LauncherResult<()> {
+                let text = std::fs::read_to_string(&manifest_path)
+                    .map_err(|_| LauncherError::InstanceCreateFailed)?;
+                let mut manifest: crate::models::InstanceManifest =
+                    serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                set_enabled_in_all_arrays(&mut manifest, filename, false);
+                crate::helpers::atomic_write_manifest(&manifest_path, &manifest)
+            })()
+        } else {
+            Ok(())
+        };
+        if let Err(error) = result {
+            let _ = rename_in_content_dir(&dir, filename, true);
+            return Err(error);
         }
 
         Ok(())
@@ -143,18 +156,32 @@ impl CrashService {
     /// already enabled or not found.
     pub fn enable_artifact(&self, instance_id: &str, filename: &str) -> LauncherResult<()> {
         let sanitized = crate::paths::sanitize_id(instance_id);
+        let _guard = self
+            .ctx
+            .lock_manager
+            .acquire(LockResource::Instance(sanitized.clone()), "enable_artifact")?;
         let dir = self.ctx.paths.instance_dir(&sanitized)?;
 
-        rename_in_content_dir(&dir, filename, true);
+        let renamed = rename_in_content_dir(&dir, filename, true).is_some();
 
         let manifest_path = self.ctx.paths.instance_manifest(&sanitized)?;
-        if manifest_path.exists() {
-            let text = std::fs::read_to_string(&manifest_path)
-                .map_err(|_| LauncherError::InstanceCreateFailed)?;
-            let mut manifest: crate::models::InstanceManifest =
-                serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
-            set_enabled_in_all_arrays(&mut manifest, filename, true);
-            crate::helpers::atomic_write_manifest(&manifest_path, &manifest)?;
+        let result = if manifest_path.exists() {
+            (|| -> LauncherResult<()> {
+                let text = std::fs::read_to_string(&manifest_path)
+                    .map_err(|_| LauncherError::InstanceCreateFailed)?;
+                let mut manifest: crate::models::InstanceManifest =
+                    serde_json::from_str(&text).map_err(|_| LauncherError::InstanceCreateFailed)?;
+                set_enabled_in_all_arrays(&mut manifest, filename, true);
+                crate::helpers::atomic_write_manifest(&manifest_path, &manifest)
+            })()
+        } else {
+            Ok(())
+        };
+        if let Err(error) = result {
+            if renamed {
+                let _ = rename_in_content_dir(&dir, filename, false);
+            }
+            return Err(error);
         }
 
         Ok(())
@@ -1457,6 +1484,26 @@ mod tests {
 
         svc.enable_mod("test-instance", "testmod.jar").unwrap();
         assert_mod_exists(&ctx, "test-instance", "testmod.jar");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_disable_artifact_rolls_back_rename_when_manifest_update_fails() {
+        let (ctx, tmp) = setup_ctx();
+        let svc = CrashService::new(ctx.clone());
+        create_instance(&ctx, "test-instance", &["testmod.jar"]);
+        std::fs::write(
+            ctx.paths.instance_manifest("test-instance").unwrap(),
+            b"not valid json",
+        )
+        .unwrap();
+
+        assert!(svc
+            .disable_artifact("test-instance", "testmod.jar")
+            .is_err());
+        assert_mod_exists(&ctx, "test-instance", "testmod.jar");
+        assert_mod_not_exists(&ctx, "test-instance", "testmod.jar.disabled");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

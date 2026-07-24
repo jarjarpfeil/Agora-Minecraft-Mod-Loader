@@ -335,6 +335,7 @@ export interface InstanceRow {
   jvm_memory_mb: number;
   jvm_gc: string;
   jvm_custom_args: string;
+  jvm_always_pre_touch: boolean;
   created_at: string;
   java_path: string | null;
   java_incompatible_override: boolean;
@@ -415,6 +416,7 @@ export interface CategoryInfo {
   id: string;
   display_name: string;
   is_community: boolean;
+  content_types: string[];
 }
 
 export type SortOption = 'for_you' | 'net_score' | 'velocity' | 'most_downvoted' | 'newest' | 'most_upvoted';
@@ -473,6 +475,10 @@ export const renameInstance = (instanceId: string, newName: string) =>
   invoke<void>('rename_instance', { instanceId, newName });
 export const revertInstance = (instanceId: string) =>
   invoke<void>('revert_instance', { instanceId });
+export const openInstanceFolder = (instanceId: string) =>
+  invoke<void>('open_instance_folder', { instanceId });
+export const revealPath = (path: string) =>
+  invoke<void>('reveal_path', { path });
 export const launchInstance = (instanceId: string) =>
   invoke<void>('launch_instance', { instanceId });
 
@@ -1186,13 +1192,15 @@ export const computeGcArgs = (
   javaVersion: number,
   requestedHeapMb: number,
   manualArgs: string,
-  overrideProfile?: GcProfile,
+  gcMode: 'auto' | GcProfile,
+  alwaysPreTouch = true,
 ) =>
   invoke<GcResult>('compute_gc_args', {
     javaVersion,
     requestedHeapMb,
     manualArgs,
-    overrideProfile,
+    gcMode,
+    alwaysPreTouch,
   });
 
 // ---------------------------------------------------------------------------
@@ -1436,18 +1444,36 @@ export const inspectJavaExecutable = (path: string) =>
   invoke<JavaRuntimeSummary>('inspect_java_executable', { path });
 
 /**
- * Update per-instance Java path and incompatible override setting.
+ * Update per-instance Java path, custom JVM arguments, and incompatible override setting.
  * Pass path as null/undefined to clear the per-instance override.
+ * Omit customArgs when changing only the Java runtime selection.
  */
 export const updateInstanceJava = (
   instanceId: string,
   path: string | null,
   allowIncompatible: boolean,
+  customArgs?: string,
 ) =>
   invoke<void>('update_instance_java', {
     instanceId,
     path,
     allowIncompatible,
+    customArgs: customArgs ?? null,
+  });
+
+export const updateInstanceJvm = (
+  instanceId: string,
+  memoryMb: number,
+  gc: string,
+  alwaysPreTouch: boolean,
+  customArgs: string,
+) =>
+  invoke<void>('update_instance_jvm', {
+    instanceId,
+    memoryMb,
+    gc,
+    alwaysPreTouch,
+    customArgs,
   });
 
 /**

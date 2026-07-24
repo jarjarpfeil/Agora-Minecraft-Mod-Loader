@@ -42,6 +42,7 @@ async function installBrowseMock(page: Page) {
         if (command === 'get_setting') {
           const key = args.key;
           if (key === 'onboarding_complete') return Promise.resolve(true);
+          if (key === 'modrinth_enabled') return Promise.resolve(true);
           return Promise.resolve(false);
         }
         if (command === 'get_registry_status') {
@@ -55,7 +56,26 @@ async function installBrowseMock(page: Page) {
             message: 'Registry ready.',
           });
         }
-        if (command === 'list_categories' || command === 'list_manifest_loaders' || command === 'list_manifest_mc_versions') {
+        if (command === 'list_categories') {
+          return Promise.resolve([
+            { id: 'performance', display_name: 'Performance', is_community: false, content_types: ['mod'] },
+            { id: 'questing', display_name: 'Questing', is_community: false, content_types: ['pack'] },
+            { id: 'visuals', display_name: 'Visuals', is_community: true, content_types: ['mod', 'shader'] },
+          ]);
+        }
+        if (command === 'list_modrinth_categories') {
+          return Promise.resolve([
+            { name: 'technology', project_type: 'mod', header: 'categories' },
+            { name: 'adventure', project_type: 'mod', header: 'categories' },
+            { name: 'adventure', project_type: 'modpack', header: 'categories' },
+            { name: 'kitchen-sink', project_type: 'modpack', header: 'categories' },
+            { name: 'realistic', project_type: 'shader', header: 'features' },
+            { name: 'audio', project_type: 'resourcepack', header: 'features' },
+            { name: 'worldgen', project_type: 'datapack', header: 'categories' },
+            { name: 'minigame', project_type: 'minecraft_java_server', header: 'minecraft_server_gameplay' },
+          ]);
+        }
+        if (command === 'list_manifest_loaders' || command === 'list_manifest_mc_versions') {
           return Promise.resolve([]);
         }
         if (command === 'get_windows_accent_color') return Promise.resolve(null);
@@ -133,6 +153,7 @@ test('stale pagination is ignored and new query can paginate', async ({ page }) 
   await installBrowseMock(page);
   const initial = await openBrowse(page);
   await resolveCall(page, initial, { items: [item('a', 'Query A')], total: 40, page: 0, hasMore: true });
+  await page.getByTestId('browse-load-sentinel').scrollIntoViewIfNeeded();
   const staleLoad = await findCall(page, 'browse_load_more');
 
   const search = page.getByPlaceholder('Search mods, packs, and more…');
@@ -141,6 +162,7 @@ test('stale pagination is ignored and new query can paginate', async ({ page }) 
   await resolveCall(page, beta, { items: [item('b', 'Query B')], total: 40, page: 0, hasMore: true });
   await resolveCall(page, staleLoad, { items: [item('a-more', 'Stale A Page')], total: 40, page: 1, hasMore: false });
 
+  await page.getByTestId('browse-load-sentinel').scrollIntoViewIfNeeded();
   const betaLoad = await findCall(page, 'browse_load_more', undefined, [staleLoad]);
   const args = await page.evaluate((index) => (window as any).__browseCalls[index].args, betaLoad);
   expect(args.queryKey).toContain('beta');
@@ -155,6 +177,7 @@ test('pagination failure is visible and retryable', async ({ page }) => {
   await installBrowseMock(page);
   const initial = await openBrowse(page);
   await resolveCall(page, initial, { items: [item('a', 'Initial Page')], total: 40, page: 0, hasMore: true });
+  await page.getByTestId('browse-load-sentinel').scrollIntoViewIfNeeded();
   const failedLoad = await findCall(page, 'browse_load_more');
   await page.evaluate((index) => (window as any).__rejectBrowse(index, new Error('Pagination failed')), failedLoad);
 
@@ -164,6 +187,51 @@ test('pagination failure is visible and retryable', async ({ page }) => {
   await resolveCall(page, retry, { items: [item('more', 'Next Page')], total: 40, page: 1, hasMore: false });
   await expect(page.getByText('Next Page')).toBeVisible();
   await expect(page.getByText('Pagination failed')).toHaveCount(0);
+});
+
+test('category lists follow the selected content type', async ({ page }) => {
+  await installBrowseMock(page);
+  const initial = await openBrowse(page);
+  await resolveCall(page, initial, { items: [], total: 0, page: 0, hasMore: false });
+
+  await expect(page.getByRole('button', { name: 'Technology', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Kitchen Sink', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Adventure', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Minigame', exact: true })).toBeVisible();
+
+  await page.getByLabel('Content type').selectOption('pack');
+
+  await expect(page.getByText('Categories for pack content.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Kitchen Sink', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Adventure', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Technology', exact: true })).toHaveCount(0);
+
+  await page.getByLabel('Content type').selectOption('server');
+  await expect(page.getByRole('button', { name: 'Minigame', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Kitchen Sink', exact: true })).toHaveCount(0);
+});
+
+test('curated category dropdown is searchable and type-aware', async ({ page }) => {
+  await installBrowseMock(page);
+  const initial = await openBrowse(page);
+  await resolveCall(page, initial, { items: [], total: 0, page: 0, hasMore: false });
+  await page.getByLabel('Content type').selectOption('pack');
+
+  await page.getByRole('button', { name: 'Curated categories' }).click();
+  const categorySearch = page.getByLabel('Search curated categories');
+  await categorySearch.fill('perf');
+  await expect(page.getByText('No curated categories found.')).toBeVisible();
+  await categorySearch.fill('quest');
+  await expect(page.getByRole('menuitem', { name: 'Questing' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Questing' }).click();
+
+  await expect(page.getByRole('button', { name: 'Curated category: Questing' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const calls = (window as any).__browseCalls as Array<{ command: string; args: Record<string, unknown> }>;
+    return calls.some((call) => call.command === 'browse_search'
+      && call.args.contentType === 'pack'
+      && call.args.category === 'questing');
+  })).toBe(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -217,6 +285,7 @@ async function installBrowseContextMock(page: Page) {
       const { instance, detail } = params;
       const callbacks = new Map<number, (...args: unknown[]) => void>();
       let callbackId = 0;
+      let updateChecks = 0;
 
       // Helper inlined because addInitScript only serializes the function body.
       function compatItem(id: string, name: string): Record<string, unknown> {
@@ -334,6 +403,7 @@ async function installBrowseContextMock(page: Page) {
             return Promise.resolve(detail);
           }
           if (command === 'check_instance_updates') {
+            updateChecks += 1;
             return Promise.resolve([
               {
                 filename: 'updatable-mod.jar',
@@ -375,6 +445,7 @@ async function installBrowseContextMock(page: Page) {
       Object.assign(window as unknown as Record<string, unknown>, {
         __TAURI_INTERNALS__: internals,
         __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener() {} },
+        __browseUpdateChecks: () => updateChecks,
       });
     },
     { instance: instanceData, detail: detailData },
@@ -449,7 +520,7 @@ test.describe('D1 — Browse instance-context selector', () => {
     await expect(page.getByText('Installed').first()).toBeVisible({ timeout: 5000 });
   });
 
-  test('update available label shown for items with pending updates', async ({ page }) => {
+  test('selecting an instance does not check mod updates', async ({ page }) => {
     await installBrowseContextMock(page);
     await page.goto('/');
     await page.getByRole('button', { name: 'Browse', exact: true }).click();
@@ -459,9 +530,9 @@ test.describe('D1 — Browse instance-context selector', () => {
     const contextSelect = page.locator('#browse-instance-context');
     await contextSelect.selectOption('fabric-121');
 
-    // check_instance_updates returns an update with mod_jar_id 'updatable-mod',
-    // which matches the item's id
-    await expect(page.getByText('Update available')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Compatible with My Fabric World/).first()).toBeVisible({ timeout: 5000 });
+    expect(await page.evaluate(() => (window as any).__browseUpdateChecks())).toBe(0);
+    await expect(page.getByText('Update available')).toHaveCount(0);
   });
 
   test('For You sort shows per-item recommendation reason', async ({ page }) => {

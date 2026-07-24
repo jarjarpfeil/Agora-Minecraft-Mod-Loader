@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRegistryState } from '../lib/useRegistryState';
 import {
   checkInstanceCrash,
-  checkInstanceUpdates,
   detectDrift,
   getLkgMarker,
   getSetting,
@@ -13,10 +12,10 @@ import {
   setSetting,
   checkRegistryUpdate,
   type InstanceRow,
-  type UpdateInfo,
   type RegistryItem,
 } from '../lib/tauri';
 import type { Tab } from '../lib/useDestination';
+import { ArrowRight, BookOpen, GraduationCap } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // D1: Action-oriented Home
@@ -39,7 +38,6 @@ export function Home({
   const [instances, setInstances] = useState<InstanceRow[]>([]);
   const [instancesLoading, setInstancesLoading] = useState(true);
   const [lastCrash, setLastCrash] = useState<{ instanceId: string; name: string; filename?: string } | null>(null);
-  const [updatesByInstance, setUpdatesByInstance] = useState<Record<string, UpdateInfo[]>>({});
   const [knownGood, setKnownGood] = useState<{
     instanceId: string;
     instanceName: string;
@@ -81,17 +79,6 @@ export function Home({
       } else {
         setLastCrash(null);
       }
-
-      // Check for updates on launched instances.
-      const updates: Record<string, UpdateInfo[]> = {};
-      for (const inst of all) {
-        if (inst.is_locked) continue;
-        try {
-          const u = await checkInstanceUpdates(inst.instance_id);
-          if (u.length > 0) updates[inst.instance_id] = u;
-        } catch { /* skip */ }
-      }
-      setUpdatesByInstance(updates);
 
       // Resolve exact promoted LKG pointers and current drift, never arbitrary snapshots.
       const lkgResults: typeof knownGood = [];
@@ -167,7 +154,6 @@ export function Home({
     (a, b) => new Date(b.last_launched_at ?? 0).getTime() - new Date(a.last_launched_at ?? 0).getTime(),
   );
   const lastLaunched = sortedByLaunched[0] ?? null;
-  const totalUpdates = Object.values(updatesByInstance).reduce((s, u) => s + u.length, 0);
   const heroInstance = lastLaunched ?? sortedByLaunched[0] ?? null;
   const crashKnownGood = lastCrash
     ? knownGood.find((entry) => entry.instanceId === lastCrash.instanceId) ?? null
@@ -248,13 +234,7 @@ export function Home({
         onBrowsePacks={() => onNavigateTab('browse')}
       />
 
-      {/* Zone C: Maintenance — only when triggered */}
-      {totalUpdates > 0 && (
-        <UpdatesCard
-          totalUpdates={totalUpdates}
-          onReview={() => onNavigateTab('instances')}
-        />
-      )}
+      <GuideCard onOpenGuide={() => onNavigateTab('guide')} />
 
       {knownGood.length > 0 && (
         <KnownGoodCard
@@ -394,19 +374,33 @@ function ContinuePlayingCard({ instance, loading, onLaunch, onBrowsePacks }: {
   );
 }
 
-function UpdatesCard({ totalUpdates, onReview }: {
-  totalUpdates: number;
-  onReview: () => void;
-}) {
+function GuideCard({ onOpenGuide }: { onOpenGuide: () => void }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 flex items-center justify-between">
-      <div>
-        <h4 className="font-semibold text-sm">Updates Available</h4>
-        <p className="text-xs text-muted-foreground">{totalUpdates} mods can be updated</p>
+    <div className="overflow-hidden rounded-xl border border-primary/20 bg-card">
+      <div className="grid gap-4 p-5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <BookOpen className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold">Learn Agora at your level</h3>
+            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-secondary-foreground">
+              <GraduationCap className="h-3 w-3" aria-hidden="true" />
+              36 guide pages
+            </span>
+          </div>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+            Follow beginner walkthroughs or open the advanced companion for every topic, from your first mod to JVM tuning and recovery.
+          </p>
+        </div>
+        <button
+          onClick={onOpenGuide}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+        >
+          Open Help & Guide
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
-      <button onClick={onReview} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-        Review
-      </button>
     </div>
   );
 }

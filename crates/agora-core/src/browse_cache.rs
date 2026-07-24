@@ -71,6 +71,14 @@ pub fn new_cache() -> SharedBrowseCache {
     Arc::new(RwLock::new(BrowseCache::default()))
 }
 
+pub fn normalize_modrinth_content_type(project_type: &str) -> &str {
+    match project_type {
+        "modpack" => "pack",
+        "minecraft_java_server" => "server",
+        other => other,
+    }
+}
+
 /// Merge registry items and Modrinth results, deduplicating by modrinth_id.
 pub fn merge_items(
     registry_items: Vec<RegistryItem>,
@@ -112,10 +120,7 @@ pub fn merge_items(
                 icon_url: mr.icon_url.clone(),
                 description: Some(mr.description.clone()),
                 // Normalize Modrinth project types to app-internal content_type values.
-                content_type: match mr.project_type.as_str() {
-                    "modpack" => "pack".to_string(),
-                    other => other.to_string(),
-                },
+                content_type: normalize_modrinth_content_type(&mr.project_type).to_string(),
             });
         }
     }
@@ -233,6 +238,16 @@ mod tests {
             description: None,
             content_type: "mod".into(),
         }
+    }
+
+    #[test]
+    fn normalizes_modrinth_project_types_for_browse() {
+        assert_eq!(normalize_modrinth_content_type("modpack"), "pack");
+        assert_eq!(
+            normalize_modrinth_content_type("minecraft_java_server"),
+            "server"
+        );
+        assert_eq!(normalize_modrinth_content_type("shader"), "shader");
     }
 
     #[tokio::test]

@@ -193,8 +193,8 @@ function ServicesStep({
 
       <div className="space-y-4">
         <ServiceToggle
-          title="Modrinth Access"
-          description="Allow live Modrinth API queries and show Modrinth-sourced curated mods alongside the Agora registry."
+          title="Modrinth Integration"
+          description="Include Modrinth-hosted catalog entries and enable live Modrinth features when permitted by Privacy settings."
           checked={values.modrinth}
           onChange={(modrinth) => onChange({ ...values, modrinth })}
         />

@@ -441,12 +441,21 @@ pub struct CategoryInfo {
     pub id: String,
     pub display_name: String,
     pub is_community: bool,
+    pub content_types: Vec<String>,
 }
 
 /// List all categories from the registry.
 pub fn list_categories(conn: &Connection) -> LauncherResult<Vec<CategoryInfo>> {
     let mut stmt = conn
-        .prepare("SELECT id, display_name, is_community FROM categories ORDER BY display_name")
+        .prepare(
+            "SELECT c.id, c.display_name, c.is_community,
+                    GROUP_CONCAT(DISTINCT ri.content_type)
+             FROM categories c
+             LEFT JOIN item_categories ic ON ic.category_id = c.id
+             LEFT JOIN registry_items ri ON ri.id = ic.item_id
+             GROUP BY c.id, c.display_name, c.is_community
+             ORDER BY c.display_name",
+        )
         .map_err(|e| LauncherError::Generic {
             code: "ERR_INVALID_QUERY".to_string(),
             message: e.to_string(),
@@ -454,10 +463,19 @@ pub fn list_categories(conn: &Connection) -> LauncherResult<Vec<CategoryInfo>> {
 
     let rows = stmt
         .query_map([], |row| {
+            let mut content_types = row
+                .get::<_, Option<String>>(3)?
+                .unwrap_or_default()
+                .split(',')
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            content_types.sort();
             Ok(CategoryInfo {
                 id: row.get(0)?,
                 display_name: row.get(1)?,
                 is_community: row.get(2)?,
+                content_types,
             })
         })
         .map_err(|e| LauncherError::Generic {
@@ -1593,6 +1611,7 @@ mod tests {
         let cats = list_categories(&conn).unwrap();
         assert_eq!(cats.len(), 1);
         assert_eq!(cats[0].display_name, "Fabric");
+        assert_eq!(cats[0].content_types, vec!["mod"]);
     }
 
     #[test]

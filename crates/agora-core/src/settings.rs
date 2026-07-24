@@ -55,14 +55,11 @@ impl SettingsService {
         Ok(())
     }
 
-    /// Get a setting as a boolean. Returns `false` when the key is absent,
-    /// the value is not a JSON `true`, or the database cannot be read (secure
-    /// default).
+    /// Get a setting as a boolean. Accepts genuine JSON booleans and legacy
+    /// string/number encodings left by older frontend versions. Returns
+    /// `false` for missing or unexpected values.
     pub fn get_bool(&self, key: &str) -> LauncherResult<bool> {
-        Ok(self
-            .get(key)?
-            .map(|v| matches!(v, serde_json::Value::Bool(true)))
-            .unwrap_or(false))
+        Ok(self.get(key)?.map(parse_bool_value).unwrap_or(false))
     }
 
     /// Get a setting as an optional string. Returns `Ok(None)` when the key
@@ -87,6 +84,15 @@ impl SettingsService {
             code: "ERR_LOCAL_STATE_FAILED".into(),
             message: error.to_string(),
         })
+    }
+}
+
+fn parse_bool_value(value: serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Bool(value) => value,
+        serde_json::Value::String(value) => value == "true" || value == "1",
+        serde_json::Value::Number(value) => value.as_i64() == Some(1),
+        _ => false,
     }
 }
 
@@ -305,14 +311,24 @@ mod tests {
     }
 
     #[test]
-    fn service_get_bool_string_true_is_strict() {
+    fn service_get_bool_accepts_legacy_string_true() {
         let (ctx, root) = seeded_ctx();
         let conn = crate::db::local_state_connection(&ctx.paths.local_state_db()).unwrap();
         set(&conn, "string_true", "\"true\"").unwrap();
         conn.close().unwrap();
         let svc = SettingsService::new(ctx);
-        // String "true" is not Value::Bool(true) -> get_bool returns false.
-        assert!(!svc.get_bool("string_true").unwrap());
+        assert!(svc.get_bool("string_true").unwrap());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn service_get_bool_accepts_legacy_number_one() {
+        let (ctx, root) = seeded_ctx();
+        let conn = crate::db::local_state_connection(&ctx.paths.local_state_db()).unwrap();
+        set(&conn, "number_one", "1").unwrap();
+        conn.close().unwrap();
+        let svc = SettingsService::new(ctx);
+        assert!(svc.get_bool("number_one").unwrap());
         let _ = std::fs::remove_dir_all(root);
     }
 }

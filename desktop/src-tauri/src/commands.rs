@@ -1326,7 +1326,7 @@ pub async fn disable_instance_mod(
 ) -> LauncherResult<()> {
     check_not_locked(&app, &instance_id)?;
     tokio::task::spawn_blocking(move || {
-        toggle_mod_with_snapshot(&app, &instance_id, &filename, false)
+        mod_install::disable_instance_mod(&app, &instance_id, &filename)
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
@@ -1342,57 +1342,10 @@ pub async fn enable_instance_mod(
 ) -> LauncherResult<()> {
     check_not_locked(&app, &instance_id)?;
     tokio::task::spawn_blocking(move || {
-        toggle_mod_with_snapshot(&app, &instance_id, &filename, true)
+        mod_install::enable_instance_mod(&app, &instance_id, &filename)
     })
     .await
     .map_err(|_| LauncherError::LocalStateFailed)?
-}
-
-fn toggle_mod_with_snapshot(
-    app: &tauri::AppHandle,
-    instance_id: &str,
-    filename: &str,
-    enable: bool,
-) -> LauncherResult<()> {
-    let instance_dir =
-        paths::instance_dir(app, instance_id).map_err(|error| LauncherError::Generic {
-            code: "ERR_INSTANCE_PATH".into(),
-            message: error.to_string(),
-        })?;
-    let label = if enable {
-        "before-enable"
-    } else {
-        "before-disable"
-    };
-    let snapshot =
-        agora_core::snapshot::create_snapshot(&instance_dir, Some(label)).map_err(|error| {
-            LauncherError::Generic {
-                code: "ERR_SNAPSHOT_REQUIRED".into(),
-                message: format!("Could not create the required recovery snapshot: {error}"),
-            }
-        })?;
-    let operation = if enable {
-        mod_install::enable_instance_mod(app, instance_id, filename)
-    } else {
-        mod_install::disable_instance_mod(app, instance_id, filename)
-    };
-    if let Err(error) = operation {
-        let restored = agora_core::snapshot::restore_snapshot(&instance_dir, &snapshot.id);
-        return Err(LauncherError::Generic {
-            code: "ERR_TOGGLE_FAILED".into(),
-            message: match restored {
-                Ok(()) => format!("The mod change failed and was rolled back: {error:?}"),
-                Err(restore_error) => format!(
-                    "The mod change failed and rollback also failed: {error:?}; {restore_error}"
-                ),
-            },
-        });
-    }
-    agora_core::lkg::run_retention(&instance_dir).map_err(|error| LauncherError::Generic {
-        code: "ERR_RETENTION".into(),
-        message: error,
-    })?;
-    Ok(())
 }
 
 /// Open a native file picker and return the chosen file path, or `None` if cancelled.
@@ -2491,20 +2444,28 @@ pub async fn msa_logout(
     agora_core::msa::clear_credentials()
 }
 
-/// Compute optimal JVM GC flags for an instance.
+/// Compute the JVM preview using the same GC and pre-touch rules as launch.
 #[tauri::command]
 pub fn compute_gc_args(
     _state: tauri::State<'_, LauncherState>,
     java_version: u32,
     requested_heap_mb: i64,
     manual_args: String,
-    override_profile: Option<agora_core::gc::GcProfile>,
+    gc_mode: String,
+    always_pre_touch: bool,
 ) -> agora_core::gc::GcResult {
-    agora_core::gc::compute_gc(
+    let override_profile = match gc_mode.trim().to_ascii_lowercase().as_str() {
+        "high_efficiency" => Some(agora_core::gc::GcProfile::HighEfficiency),
+        "low_latency" => Some(agora_core::gc::GcProfile::LowLatency),
+        "manual" => Some(agora_core::gc::GcProfile::Manual),
+        _ => None,
+    };
+    agora_core::gc::compute_gc_with_pre_touch(
         java_version,
         requested_heap_mb,
         &manual_args,
         override_profile,
+        Some(always_pre_touch),
     )
 }
 
@@ -2934,17 +2895,9 @@ pub async fn import_modrinth_pack_by_url(
         )
         .await?
         .instance_id;
-    // Lock the instance so the pack stays intact
+    // Keep downloaded packs protected by the normal lock transition. The
+    // lifecycle service synchronizes the DB row and manifest together.
     instances::lock_instance(&app, &instance_id).await?;
-    // Lock the manifest too so check_not_locked and other guards see it as locked
-    if let Ok(mut manifest) = load_manifest(&app, &instance_id) {
-        manifest.is_locked = true;
-        let manifest_path = paths::instance_manifest_path(&app, &instance_id)
-            .map_err(|_| LauncherError::InstanceCreateFailed)?;
-        let text = serde_json::to_string_pretty(&manifest)
-            .map_err(|_| LauncherError::InstanceCreateFailed)?;
-        std::fs::write(&manifest_path, text).map_err(|_| LauncherError::InstanceCreateFailed)?;
-    }
     Ok(instance_id)
 }
 
@@ -3031,6 +2984,14 @@ mod windows_accent_tests {
 // Phase: Rust-backed browse cache (Modrinth + registry, paginated)
 // ---------------------------------------------------------------------------
 
+fn modrinth_project_type(content_type: &str) -> &str {
+    match content_type {
+        "pack" => "modpack",
+        "server" => "minecraft_java_server",
+        other => other,
+    }
+}
+
 /// Search browse items — fetches registry + first Modrinth page, merges, caches in Rust, returns first page.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -3046,10 +3007,17 @@ pub async fn browse_search(
     loader: Option<String>,
 ) -> LauncherResult<BrowsePage> {
     let s = state.lock().await;
-    let (modrinth_enabled, registry_items) = {
+    let (modrinth_api_allowed, registry_items) = {
         let ctx = crate::core_context(&app)?;
         let svc = agora_core::settings::SettingsService::new(ctx.clone());
         let me = svc.get_bool("modrinth_enabled").unwrap_or(false);
+        let net_mr = svc
+            .get("network_modrinth_enabled")
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let api_ok = me && net_mr;
         let svc = agora_core::registry::RegistryService::new(ctx);
         let sort_enum = to_sort_option(sort.as_deref().unwrap_or("net_score"));
         let items = svc
@@ -3067,14 +3035,14 @@ pub async fn browse_search(
                 code: "ERR_REGISTRY".into(),
                 message: e.to_string(),
             })?;
-        (me, items)
+        (api_ok, items)
     };
 
-    let (modrinth_results, total_hits) = if modrinth_enabled {
-        let modrinth_pt = content_type.as_ref().map(|ct| match ct.as_str() {
-            "pack" => "modpack".to_string(),
-            other => other.to_string(),
-        });
+    let (modrinth_results, total_hits) = if modrinth_api_allowed {
+        let modrinth_pt = content_type
+            .as_deref()
+            .map(modrinth_project_type)
+            .map(str::to_string);
         let params = ModrinthSearchParams {
             query: query.clone(),
             categories: category.clone().map(|c| vec![c]),
@@ -3109,7 +3077,7 @@ pub async fn browse_search(
             sort: sort.unwrap_or_else(|| "relevance".to_string()),
             mc_version,
             loader,
-            modrinth_enabled,
+            modrinth_enabled: modrinth_api_allowed,
         },
         offset,
         has_more_modrinth, // stored separately for load-more use
@@ -3160,10 +3128,11 @@ pub async fn browse_load_more(
             break;
         }
 
-        let modrinth_pt = filters.content_type.as_ref().map(|ct| match ct.as_str() {
-            "pack" => "modpack".to_string(),
-            other => other.to_string(),
-        });
+        let modrinth_pt = filters
+            .content_type
+            .as_deref()
+            .map(modrinth_project_type)
+            .map(str::to_string);
         let params = ModrinthSearchParams {
             query: Some(filters.query.clone()),
             categories: filters.category.clone().map(|c| vec![c]),
@@ -3194,7 +3163,8 @@ pub async fn browse_load_more(
                 name: mr.title.clone(),
                 icon_url: mr.icon_url.clone(),
                 description: Some(mr.description.clone()),
-                content_type: mr.project_type.clone(),
+                content_type: browse_cache::normalize_modrinth_content_type(&mr.project_type)
+                    .to_string(),
             })
             .collect();
 
@@ -4366,18 +4336,53 @@ pub struct UpdateInfo {
     pub source: String,
 }
 
+const UPDATE_CANDIDATE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+async fn cached_curated_update_candidates(
+    state: &LauncherState,
+    app: &tauri::AppHandle,
+    instance_id: &str,
+    item_id: &str,
+    cache_key: String,
+) -> LauncherResult<Vec<ModVersionCandidate>> {
+    let cached = {
+        let state = state.lock().await;
+        state
+            .update_candidate_cache
+            .get(&cache_key)
+            .filter(|entry| entry.fetched_at.elapsed() < UPDATE_CANDIDATE_CACHE_TTL)
+            .map(|entry| entry.candidates.clone())
+    };
+    if let Some(candidates) = cached {
+        return Ok(candidates);
+    }
+
+    let candidates = mod_install::list_mod_versions_for_update(app, instance_id, item_id).await?;
+    let mut state = state.lock().await;
+    state.update_candidate_cache.insert(
+        cache_key,
+        agora_core::state::UpdateCandidateCacheEntry {
+            fetched_at: std::time::Instant::now(),
+            candidates: candidates.clone(),
+        },
+    );
+    Ok(candidates)
+}
+
 /// Check for available updates for all tracked content in an instance.
 ///
 /// Resolves the newest compatible, verified candidate for each tracked item.
 #[tauri::command]
 pub async fn check_instance_updates(
     app: tauri::AppHandle,
+    state: tauri::State<'_, LauncherState>,
     instance_id: String,
 ) -> LauncherResult<Vec<UpdateInfo>> {
     use crate::models::InstanceManifest;
     use crate::paths;
 
     let ctx = crate::core_context(&app)?;
+    let shared_state = state.inner().clone();
     let sanitized = paths::sanitize_id(&instance_id);
     let manifest_path = paths::instance_manifest_path(&app, &sanitized)
         .map_err(|_| LauncherError::LocalStateFailed)?;
@@ -4440,7 +4445,19 @@ pub async fn check_instance_updates(
         let Some(registry_id) = installed_mod.registry_id.as_deref() else {
             continue;
         };
-        let candidates = mod_install::list_mod_versions(&app, &sanitized, registry_id).await?;
+        let item = mod_install::load_registry_item(&app, registry_id)?;
+        let cache_key = format!(
+            "{}\n{}\n{}",
+            item.source_identifier, manifest.minecraft_version, manifest.loader
+        );
+        let candidates = cached_curated_update_candidates(
+            &shared_state,
+            &app,
+            &sanitized,
+            registry_id,
+            cache_key,
+        )
+        .await?;
         let Some(candidate) = candidates
             .iter()
             .find(|candidate| candidate.is_compatible)
@@ -4833,10 +4850,31 @@ pub async fn update_instance_java(
     instance_id: String,
     path: Option<String>,
     allow_incompatible: bool,
+    custom_args: Option<String>,
 ) -> LauncherResult<()> {
     let ctx = crate::core_context(&app)?;
     let service = agora_core::instance_service::InstanceService::new(ctx);
-    service.update_java(&instance_id, path.as_deref(), allow_incompatible)
+    service.update_java(
+        &instance_id,
+        path.as_deref(),
+        allow_incompatible,
+        custom_args.as_deref(),
+    )
+}
+
+/// Update the structured JVM tuning controls for an instance.
+#[tauri::command]
+pub async fn update_instance_jvm(
+    app: tauri::AppHandle,
+    instance_id: String,
+    memory_mb: i64,
+    gc: String,
+    always_pre_touch: bool,
+    custom_args: String,
+) -> LauncherResult<()> {
+    let ctx = crate::core_context(&app)?;
+    let service = agora_core::instance_service::InstanceService::new(ctx);
+    service.update_jvm(&instance_id, memory_mb, &gc, always_pre_touch, &custom_args)
 }
 
 fn to_modrinth_sort(sort: &str) -> ModrinthSort {
@@ -4858,6 +4896,81 @@ fn to_sort_option(sort: &str) -> registry::SortOption {
         "most_upvoted" => registry::SortOption::MostUpvoted,
         _ => registry::SortOption::NetScore,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn open_instance_folder(
+    app: tauri::AppHandle,
+    instance_id: String,
+) -> Result<(), String> {
+    let path = crate::paths::instance_dir(&app, &instance_id)
+        .map_err(|e| format!("Failed to resolve instance path: {e}"))?;
+    open_path_in_explorer(&path)
+}
+
+#[tauri::command]
+pub async fn reveal_path(path: String) -> Result<(), String> {
+    reveal_in_explorer(&std::path::Path::new(&path))
+}
+
+fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {e}"))?;
+    }
+    Ok(())
+}
+
+fn reveal_in_explorer(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let path_str = path.to_string_lossy().to_string();
+        std::process::Command::new("explorer")
+            .arg("/select,")
+            .arg(&path_str)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // xdg-open cannot select files; open the parent directory instead
+        if let Some(parent) = path.parent() {
+            std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {e}"))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

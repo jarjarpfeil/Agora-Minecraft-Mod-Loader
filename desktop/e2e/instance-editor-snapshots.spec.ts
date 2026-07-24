@@ -81,7 +81,7 @@ const INSTANCE_DETAIL: Record<string, unknown> = {
   row: {
     instance_id: 'test-instance',
     name: 'Test Instance',
-    minecraft_version: '1.21',
+    minecraft_version: '26.2',
     loader: 'fabric',
     loader_version: '0.16.9',
     is_modpack: false,
@@ -96,7 +96,7 @@ const INSTANCE_DETAIL: Record<string, unknown> = {
     instance_id: 'test-instance',
     name: 'Test Instance',
     created_from_pack: null,
-    minecraft_version: '1.21',
+    minecraft_version: '26.2',
     loader: 'fabric',
     loader_version: '0.16.9',
     is_locked: false,
@@ -154,9 +154,10 @@ async function installSnapshotEditorMock(page: Page, opts: SnapshotEditorMockOpt
           if (command === 'get_setting') {
             const key = args.key as string;
             if (key === 'onboarding_complete') return Promise.resolve(true);
-            if (key === 'launch_mode') return Promise.resolve('delegation');
-            if (key === 'modrinth_enabled') return Promise.resolve(true);
-            return Promise.resolve(null);
+             if (key === 'launch_mode') return Promise.resolve('delegation');
+             if (key === 'modrinth_enabled') return Promise.resolve(true);
+             if (key === 'advanced_mode') return Promise.resolve('true');
+             return Promise.resolve(null);
           }
           if (command === 'set_setting') return Promise.resolve(null);
           if (command === 'get_windows_accent_color') return Promise.resolve(null);
@@ -172,8 +173,21 @@ async function installSnapshotEditorMock(page: Page, opts: SnapshotEditorMockOpt
             });
           }
           if (command.startsWith('plugin:event|')) return Promise.resolve(1);
-          if (command === 'get_instance_detail') return Promise.resolve(detail);
-          if (command === 'list_categories') return Promise.resolve([]);
+           if (command === 'get_instance_detail') return Promise.resolve(detail);
+           if (command === 'compute_gc_args') {
+             const profile = args.gcMode === 'auto'
+               ? ((args.javaVersion as number) >= 21 ? 'low_latency' : 'high_efficiency')
+               : args.gcMode;
+             return Promise.resolve({
+               profile,
+               jvm_args: `${profile} ${args.alwaysPreTouch ? 'AlwaysPreTouch' : 'NoPreTouch'} ${args.manualArgs ?? ''}`,
+               heap_mb: args.requestedHeapMb,
+               total_ram_mb: 32768,
+               cpu_threads: 8,
+               recommended: args.gcMode === 'auto',
+             });
+           }
+           if (command === 'list_categories') return Promise.resolve([]);
           if (command === 'list_snapshots') return Promise.resolve(snapshots);
           if (command === 'detect_drift') return Promise.resolve(driftResult);
           if (command === 'restore_snapshot') {
@@ -267,6 +281,30 @@ test.describe('InstanceEditor — Snapshots tab: badges', () => {
     await expect(plainRow.getByText('Undo restore')).toHaveCount(0);
   });
 
+});
+
+test('JVM preview follows GC and pre-touch controls', async ({ page }) => {
+  await installSnapshotEditorMock(page);
+  await navigateToInstanceEditor(page);
+
+  await page.getByRole('button', { name: 'Java & Args' }).click();
+  await expect(page.getByText(/^Generational ZGC ·/)).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Automatic GC selection' })).toBeChecked();
+
+  await page.getByRole('checkbox', { name: 'Automatic GC selection' }).uncheck();
+  await expect(page.getByText(/^Tuned G1GC ·/)).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Pre-touch allocated memory' }).uncheck();
+  await expect.poll(async () => page.evaluate(() => (
+    (window as unknown as { __commandArgs: Record<string, Record<string, unknown>> }).__commandArgs
+      .compute_gc_args?.alwaysPreTouch
+  ))).toBe(false);
+  await expect(page.getByText('NoPreTouch')).toBeVisible();
+
+  await page.getByRole('checkbox', { name: 'Automatic GC selection' }).uncheck();
+  await page.getByRole('combobox', { name: 'Garbage collector' }).selectOption('manual');
+  await page.getByLabel('Additional JVM flags').fill('-Xss1M');
+  await expect(page.getByText(/^Manual JVM flags ·/)).toBeVisible();
+  await expect(page.locator('code').filter({ hasText: '-Xss1M' })).toBeVisible();
 });
 
 test.describe('InstanceEditor — Snapshots tab: diff rendering', () => {

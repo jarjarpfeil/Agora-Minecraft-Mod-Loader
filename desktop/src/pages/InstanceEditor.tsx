@@ -20,6 +20,8 @@ import {
   repairLockfile,
   importLockfile,
   updateInstanceJava,
+  updateInstanceJvm,
+  computeGcArgs,
   browseItems,
   listModVersions,
   listPackMods,
@@ -36,8 +38,12 @@ import {
   createLoadoutProfile,
   applyLoadoutProfile,
   deleteLoadoutProfile,
+  openInstanceFolder,
+  revealPath,
   type InstanceDetail,
+  type InstanceManifest,
   type JavaRuntimeSummary,
+  type GcProfile,
   type RegistryItem,
   type PackModRow,
   type InstalledMod,
@@ -46,6 +52,7 @@ import {
   type LoadoutProfile,
   type LockfileDriftReport,
 } from '../lib/tauri';
+import { Play } from 'lucide-react';
 
 function installedModKey(mod: InstalledMod): string {
   return `${mod.filename}:${mod.sha256}`;
@@ -79,9 +86,66 @@ function formatInstalledAt(value: string): string {
   return `${weekday}, ${month}/${day}/${year} ${hour}:${minute} ${meridiem}`;
 }
 
-export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpenModDetail, onOpenBrowseForInstance }: { instanceId: string; onBack: () => void; onOpenInstanceEditor?: (instanceId: string) => void; onOpenModDetail?: (itemId: string) => void; onOpenBrowseForInstance?: (instanceId: string) => void }) {
+const CONTENT_KEYS = ['mods', 'resourcepacks', 'shaders', 'datapacks', 'worlds'] as const;
+
+function updateManifestEntryEnabled(
+  manifest: InstanceManifest,
+  filename: string,
+  enabled: boolean,
+): InstanceManifest {
+  for (const key of CONTENT_KEYS) {
+    if (!manifest[key].some((entry) => entry.filename === filename)) continue;
+    return {
+      ...manifest,
+      [key]: manifest[key].map((entry) =>
+        entry.filename === filename ? { ...entry, enabled } : entry,
+      ),
+    };
+  }
+  return manifest;
+}
+
+function installedModMetadataKey(mods: InstalledMod[] | undefined): string {
+  return (mods ?? [])
+    .map((mod) => `${installedModKey(mod)}:${installedModDetailId(mod) ?? ''}`)
+    .join('|');
+}
+
+type GcMode = 'auto' | GcProfile;
+
+function storedGcMode(value: string | undefined): GcMode {
+  switch ((value ?? '').toLowerCase()) {
+    case 'zgc':
+    case 'low_latency':
+      return 'low_latency';
+    case 'manual':
+      return 'manual';
+    case 'g1gc':
+      // Legacy rows used g1gc as the implicit default before Auto existed.
+      return 'auto';
+    case 'high_efficiency':
+      return 'high_efficiency';
+    default:
+      return 'auto';
+  }
+}
+
+function previewJavaMajor(version: string | undefined): number {
+  const parts = (version ?? '').split('.');
+  const first = Number(parts[0]);
+  if (first >= 26) return 25;
+  const minor = first === 1 ? Number(parts[1]) : first;
+  const patch = first === 1 ? Number(parts[2]) : Number(parts[1]);
+  if (minor >= 21 || (minor === 20 && patch >= 5)) return 21;
+  if (minor >= 18) return 17;
+  return 8;
+}
+
+export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpenModDetail, onOpenBrowseForInstance, onLaunch }: { instanceId: string; onBack: () => void; onOpenInstanceEditor?: (instanceId: string) => void; onOpenModDetail?: (itemId: string) => void; onOpenBrowseForInstance?: (instanceId: string, contentType?: string) => void; onLaunch?: (instanceId: string) => Promise<boolean> }) {
   const [detail, setDetail] = useState<InstanceDetail | null>(null);
   const [modDisplayNames, setModDisplayNames] = useState<Record<string, string>>({});
+  const modDisplayNameCache = useRef<Map<string, string | null>>(new Map());
+  const modDisplayNameRequests = useRef<Map<string, Promise<string | null>>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -90,7 +154,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
   const { advancedMode } = useAdvancedMode();
 
   // Sub-sidebar active tab
-  const [activeTab, setActiveTab] = useState<'mods' | 'resourcepacks' | 'shaders' | 'datapacks' | 'snapshots' | 'loadout-profiles' | 'import' | 'export' | 'console' | 'java-args' | 'advanced'>('mods');
+  const [activeTab, setActiveTab] = useState<'mods' | 'resourcepacks' | 'shaders' | 'datapacks' | 'snapshots' | 'loadout-profiles' | 'import' | 'export' | 'console' | 'java-args'>('mods');
 
   // Snapshots state (Phase 6)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -115,10 +179,17 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
 
   // Java & Args state
   const [instanceJavaPath, setInstanceJavaPath] = useState('');
+  const [instanceJavaArgs, setInstanceJavaArgs] = useState('');
+  const [instanceJvmMemory, setInstanceJvmMemory] = useState(4096);
+  const [instanceGcMode, setInstanceGcMode] = useState<GcMode>('auto');
+  const [instanceAlwaysPreTouch, setInstanceAlwaysPreTouch] = useState(true);
+  const [gcPreview, setGcPreview] = useState<Awaited<ReturnType<typeof computeGcArgs>> | null>(null);
+  const [gcPreviewLoading, setGcPreviewLoading] = useState(false);
   const [instanceJavaInspected, setInstanceJavaInspected] = useState<JavaRuntimeSummary | null>(null);
   const [instanceJavaInspectError, setInstanceJavaInspectError] = useState<string | null>(null);
   const [instanceJavaAllowOverride, setInstanceJavaAllowOverride] = useState(false);
   const [instanceJavaSaving, setInstanceJavaSaving] = useState(false);
+  const [playBusy, setPlayBusy] = useState(false);
 
 
 
@@ -159,6 +230,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
   }, [packDropdownOpen]);
 
   useEffect(() => {
+    setModDisplayNames({});
     let cancelled = false;
     (async () => {
       try {
@@ -166,6 +238,10 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
         if (!cancelled) {
           setDetail(result);
           setInstanceJavaPath(result?.row?.java_path ?? '');
+          setInstanceJavaArgs(result?.row?.jvm_custom_args ?? '');
+          setInstanceJvmMemory(result?.row?.jvm_memory_mb ?? 4096);
+          setInstanceGcMode(storedGcMode(result?.row?.jvm_gc));
+          setInstanceAlwaysPreTouch(result?.row?.jvm_always_pre_touch ?? true);
           setInstanceJavaAllowOverride(result?.row?.java_incompatible_override ?? false);
           if (!result) setError('Instance not found.');
         }
@@ -179,37 +255,84 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
   }, [instanceId]);
 
   useEffect(() => {
+    if (activeTab !== 'java-args' || !detail?.row) return;
+    let cancelled = false;
+    setGcPreviewLoading(true);
+    computeGcArgs(
+      instanceJavaInspected?.version ?? previewJavaMajor(detail.row.minecraft_version),
+      instanceJvmMemory,
+      instanceGcMode === 'manual' ? instanceJavaArgs : '',
+      instanceGcMode,
+      instanceAlwaysPreTouch,
+    ).then((result) => {
+      if (!cancelled) setGcPreview(result);
+    }).catch(() => {
+      if (!cancelled) setGcPreview(null);
+    }).finally(() => {
+      if (!cancelled) setGcPreviewLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, detail?.row, instanceGcMode, instanceJvmMemory, instanceJavaArgs, instanceAlwaysPreTouch, instanceJavaInspected?.version]);
+
+  const modMetadataKey = installedModMetadataKey(detail?.manifest?.mods);
+
+  useEffect(() => {
     const installedMods = detail?.manifest?.mods;
     if (!installedMods) {
-      setModDisplayNames({});
       return;
     }
 
     let cancelled = false;
-    setModDisplayNames({});
-    void Promise.all(installedMods.map(async (mod) => {
-      try {
-        const identity = installedModDetailId(mod);
-        if (!identity) return null;
-        let name: string | null = null;
-        if (mod.registry_id || !mod.modrinth_id) {
-          const item = await getRegistryItem(identity);
-          name = item?.name ?? null;
-        } else {
-          const project = await fetchModrinthProject(mod.modrinth_id);
-          name = project.title || null;
-        }
-        return name ? [installedModKey(mod), name] as const : null;
-      } catch {
-        return null;
+
+    const resolveDisplayName = async (mod: InstalledMod): Promise<string | null> => {
+      const identity = installedModDetailId(mod);
+      if (!identity) return null;
+      if (modDisplayNameCache.current.has(identity)) {
+        return modDisplayNameCache.current.get(identity) ?? null;
       }
+
+      const pending = modDisplayNameRequests.current.get(identity);
+      if (pending) return pending;
+
+      const request = (async () => {
+        try {
+          if (mod.registry_id || !mod.modrinth_id) {
+            const item = await getRegistryItem(identity);
+            return item?.name ?? null;
+          }
+          const project = await fetchModrinthProject(mod.modrinth_id);
+          return project.title || null;
+        } catch {
+          return null;
+        }
+      })()
+        .then((name) => {
+          modDisplayNameCache.current.set(identity, name);
+          return name;
+        })
+        .finally(() => {
+          modDisplayNameRequests.current.delete(identity);
+        });
+      modDisplayNameRequests.current.set(identity, request);
+      return request;
+    };
+
+    void Promise.all(installedMods.map(async (mod) => {
+      const name = await resolveDisplayName(mod);
+      if (name) {
+        return name ? [installedModKey(mod), name] as const : null;
+      }
+      return null;
     })).then((results) => {
       if (cancelled) return;
-      setModDisplayNames(Object.fromEntries(results.filter((result): result is readonly [string, string] => result !== null)));
+      setModDisplayNames((previous) => ({
+        ...previous,
+        ...Object.fromEntries(results.filter((result): result is readonly [string, string] => result !== null)),
+      }));
     });
 
     return () => { cancelled = true; };
-  }, [detail?.manifest]);
+  }, [modMetadataKey]);
 
   // Load snapshots when tab becomes active
   useEffect(() => {
@@ -267,13 +390,19 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
   const handleToggleMod = async (mod: InstalledMod) => {
     setError(null);
     try {
+      const enabled = !mod.enabled;
       if (mod.enabled) {
         await disableInstanceMod(instanceId, mod.filename);
       } else {
         await enableInstanceMod(instanceId, mod.filename);
       }
-      const result = await getInstanceDetail(instanceId);
-      setDetail(result);
+      setDetail((current) => {
+        if (!current?.manifest) return current;
+        return {
+          ...current,
+          manifest: updateManifestEntryEnabled(current.manifest, mod.filename, enabled),
+        };
+      });
     } catch (e) {
       setError(formatError(e));
     }
@@ -487,6 +616,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
     try {
       const path = await exportInstancePack(instanceId, format);
       setStatus(`Exported ${format === 'json' ? 'pack' : '.mrpack'} to: ${path}`);
+      await revealPath(path);
     } catch (e) {
       setError(formatError(e));
     } finally {
@@ -666,29 +796,75 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
 
       {/* Header */}
       <section className="rounded-xl border border-border bg-card p-6">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 className="text-2xl font-bold">
-              {row?.name}
-              {' '}
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-2xl font-bold">
+                {row?.name}
+                {' '}
+                <button
+                  onClick={handleRename}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Rename
+                </button>
+              </h2>
               <button
-                onClick={handleRename}
-                className="text-xs text-muted-foreground hover:text-foreground underline"
+                type="button"
+                onClick={async () => {
+                  if (!onLaunch || playBusy) return;
+                  setPlayBusy(true);
+                  setError(null);
+                  try {
+                    await onLaunch(instanceId);
+                  } catch (cause) {
+                    setError(formatError(cause));
+                  } finally {
+                    setPlayBusy(false);
+                  }
+                }}
+                disabled={!onLaunch || playBusy}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-base font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label={`Play ${row?.name ?? 'instance'}`}
               >
-                Rename
+                <Play className="h-5 w-5 fill-current" aria-hidden="true" />
+                {playBusy ? 'Starting…' : 'Play'}
               </button>
-            </h2>
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
               MC {row?.minecraft_version} · {manifest?.loader} {manifest?.loader_version}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {row?.is_locked ? '🔒 Locked' : '🔓 Unlocked'}
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>{row?.is_locked ? '🔒 Locked' : '🔓 Unlocked'}</span>
+              {row?.is_locked ? (
+                <button
+                  onClick={handleUnlock}
+                  className="rounded-lg border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                >
+                  Unlock
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleLock}
+                    className="rounded-lg border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                  >
+                    Lock
+                  </button>
+                  <button
+                    onClick={handleRevert}
+                    className="rounded-lg border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                  >
+                    Revert
+                  </button>
+                </>
+              )}
               {row?.last_launched_at && (
                 <span className="ml-2">· Last launched {row.last_launched_at}</span>
               )}
-            </p>
+            </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => {
                 setPackInstallOpen(true);
@@ -707,44 +883,23 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
               📥 Import Pack
             </button>
             <button
-              onClick={() => setActiveTab('export')}
+              onClick={() => openInstanceFolder(instanceId)}
               className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium"
+              title="Open instance folder in file explorer"
             >
-              ↓ Export…
+              📂 Open in Folder
             </button>
           </div>
-        </div>
-
-        {/* Lock / Unlock / Revert controls (§6.5) */}
-        <div className="mt-3 flex items-center gap-3 text-sm">
-          {row?.is_locked ? (
-            <button
-              onClick={handleUnlock}
-              className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium"
-            >
-              🔓 Unlock
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={handleLock}
-                className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium"
-              >
-                🔒 Lock
-              </button>
-              <button
-                onClick={handleRevert}
-                className="rounded-lg border border-input bg-background hover:bg-accent px-3 py-1.5 text-sm font-medium"
-              >
-                ↩ Revert
-              </button>
-            </>
-          )}
         </div>
 
         {error && (
           <div className="mt-4 rounded-lg bg-destructive p-3 text-sm text-destructive-foreground">
             {error}
+          </div>
+        )}
+        {status && (
+          <div className="mt-4 rounded-lg bg-accent text-accent-foreground p-3 text-sm">
+            {status}
           </div>
         )}
       </section>
@@ -765,34 +920,18 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
             {tab === 'mods' ? `Mods (${mods.length})` : tab === 'resourcepacks' ? `Resource Packs (${manifest?.resourcepacks?.length ?? 0})` : tab === 'shaders' ? `Shaders (${manifest?.shaders?.length ?? 0})` : tab === 'datapacks' ? `Data Packs (${manifest?.datapacks?.length ?? 0})` : tab === 'snapshots' ? 'Snapshots' : tab === 'loadout-profiles' ? 'Loadout Profiles' : tab === 'import' ? 'Import' : tab === 'export' ? 'Export' : 'Console'}
           </button>
         ))}
-        {advancedMode && (
-          <>
-            <button
-              key="java-args"
-              onClick={() => setActiveTab('java-args')}
-              className={[
-                'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
-                activeTab === 'java-args'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              ].join(' ')}
-            >
-              Java & Args
-            </button>
-            <button
-              key="advanced"
-              onClick={() => setActiveTab('advanced')}
-              className={[
-                'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
-                activeTab === 'advanced'
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              ].join(' ')}
-            >
-              Advanced
-            </button>
-          </>
-        )}
+        <button
+            key="java-args"
+            onClick={() => setActiveTab('java-args')}
+            className={[
+              'px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px',
+              activeTab === 'java-args'
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            ].join(' ')}
+          >
+            Java & Args
+        </button>
       </div>
 
       {activeTab === 'mods' && (
@@ -942,13 +1081,6 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
         </section>
       )}
 
-      {/* Status message */}
-      {status && (
-        <div className="rounded-lg bg-accent text-accent-foreground p-3 text-sm">
-          {status}
-        </div>
-      )}
-
       {/* Mods list */}
       <section
         className="rounded-xl border border-border bg-card p-4"
@@ -1002,7 +1134,6 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
                   </span>
                   <span className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                     <span className="truncate">{mod.filename}</span>
-                    {mod.version && <span>v{mod.version}</span>}
                     <span className="rounded-full bg-primary/10 text-primary px-1.5 py-0.5 text-[10px]">{installedModSourceLabel(mod.source)}</span>
                     <span>Installed {formatInstalledAt(mod.installed_at)}</span>
                     {!mod.enabled && <span className="text-yellow-600 dark:text-yellow-400 font-medium">disabled</span>}
@@ -1070,14 +1201,6 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
                       {rp.enabled ? '🔌 Disable' : '🔌 Enable'}
                     </button>
                   )}
-                  {!row?.is_locked && (
-                    <button
-                      onClick={() => handleToggleMod(rp)}
-                      className="ml-2 text-xs text-foreground hover:text-primary whitespace-nowrap"
-                    >
-                      {rp.enabled ? '🔌 Disable' : '🔌 Enable'}
-                    </button>
-                  )}
                   <button
                     onClick={() => handleRemove(rp.filename)}
                     disabled={!!row?.is_locked}
@@ -1090,6 +1213,14 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
               ))}
             </div>
           )}
+          <button
+            onClick={() => onOpenBrowseForInstance?.(instanceId, 'resourcepack')}
+            disabled={!!row?.is_locked}
+            className="mt-3 rounded-lg border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed w-full"
+            title={row?.is_locked ? 'Unlock the instance to add resource packs.' : undefined}
+          >
+            {row?.is_locked ? '🔒 Instance Locked' : '+ Add Resource Pack'}
+          </button>
         </section>
       )}
 
@@ -1129,6 +1260,14 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
               ))}
             </div>
           )}
+          <button
+            onClick={() => onOpenBrowseForInstance?.(instanceId, 'shader')}
+            disabled={!!row?.is_locked}
+            className="mt-3 rounded-lg border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed w-full"
+            title={row?.is_locked ? 'Unlock the instance to add shaders.' : undefined}
+          >
+            {row?.is_locked ? '🔒 Instance Locked' : '+ Add Shader'}
+          </button>
         </section>
       )}
 
@@ -1168,6 +1307,14 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
               ))}
             </div>
           )}
+          <button
+            onClick={() => onOpenBrowseForInstance?.(instanceId, 'datapack')}
+            disabled={!!row?.is_locked}
+            className="mt-3 rounded-lg border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed w-full"
+            title={row?.is_locked ? 'Unlock the instance to add data packs.' : undefined}
+          >
+            {row?.is_locked ? '🔒 Instance Locked' : '+ Add Data Pack'}
+          </button>
         </section>
       )}
 
@@ -1753,6 +1900,122 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
               <p className="text-xs text-destructive">{instanceJavaInspectError}</p>
             )}
 
+            <div className="rounded-lg border border-border bg-background p-4 space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold">Automatic JVM tuning</h4>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Agora keeps heap size, Java compatibility, and garbage collection flags together so you do not need to hand-build JVM arguments.
+                </p>
+              </div>
+
+              <label className="block space-y-2">
+                <span className="flex items-center justify-between text-sm font-medium">
+                  <span>Memory allocation</span>
+                  <span className="tabular-nums text-primary">
+                    {instanceJvmMemory >= 1024 ? `${(instanceJvmMemory / 1024).toFixed(instanceJvmMemory % 1024 === 0 ? 0 : 1)} GB` : `${instanceJvmMemory} MB`}
+                  </span>
+                </span>
+                <input
+                  aria-label="Memory allocation"
+                  type="range"
+                  min={2048}
+                  max={32768}
+                  step={512}
+                  value={instanceJvmMemory}
+                  onChange={(e) => setInstanceJvmMemory(Number(e.target.value))}
+                  className="w-full accent-primary"
+                />
+                <span className="flex justify-between text-[11px] text-muted-foreground">
+                  <span>2 GB</span>
+                  <span>32 GB maximum</span>
+                </span>
+              </label>
+
+              <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                <span>
+                  <span className="block text-sm font-medium">Choose the best GC automatically</span>
+                  <span className="block text-xs text-muted-foreground">Uses Generational ZGC on Java 21+ and tuned G1GC on older Java.</span>
+                </span>
+                <input
+                  aria-label="Automatic GC selection"
+                  type="checkbox"
+                  checked={instanceGcMode === 'auto'}
+                  onChange={(e) => setInstanceGcMode(e.target.checked ? 'auto' : 'high_efficiency')}
+                  className="h-5 w-5 shrink-0 accent-primary"
+                />
+              </label>
+
+              {instanceGcMode !== 'auto' && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">Garbage collector</span>
+                  <select
+                    aria-label="Garbage collector"
+                    value={instanceGcMode}
+                    onChange={(e) => setInstanceGcMode(e.target.value as GcMode)}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="high_efficiency">G1GC · high efficiency</option>
+                    <option value="low_latency">ZGC · low latency (Java 15+)</option>
+                    {advancedMode && <option value="manual">Manual flags</option>}
+                  </select>
+                </label>
+              )}
+
+              <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                <span>
+                  <span className="block text-sm font-medium">Pre-touch allocated memory</span>
+                  <span className="block text-xs text-muted-foreground">Reduces in-game stutter at the cost of a longer startup. Recommended for G1GC.</span>
+                </span>
+                <input
+                  aria-label="Pre-touch allocated memory"
+                  type="checkbox"
+                  checked={instanceAlwaysPreTouch}
+                  onChange={(e) => setInstanceAlwaysPreTouch(e.target.checked)}
+                  className="h-5 w-5 shrink-0 accent-primary"
+                />
+              </label>
+
+              <div className="rounded-lg bg-muted px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">Launch preview</span>
+                  {gcPreviewLoading && <span className="text-muted-foreground">Updating…</span>}
+                </div>
+                <p className="mt-1 text-muted-foreground">
+                  Selected: {instanceGcMode === 'auto' ? 'Auto' : instanceGcMode === 'manual' ? 'Manual' : instanceGcMode === 'low_latency' ? 'ZGC low latency' : 'G1GC high efficiency'}
+                </p>
+                {gcPreview ? (
+                  <>
+                    <p className="mt-1 text-muted-foreground">
+                      {gcPreview.profile === 'low_latency' ? 'Generational ZGC' : gcPreview.profile === 'high_efficiency' ? 'Tuned G1GC' : 'Manual JVM flags'} · {gcPreview.heap_mb >= 1024 ? `${(gcPreview.heap_mb / 1024).toFixed(1)} GB effective heap` : `${gcPreview.heap_mb} MB effective heap`}
+                    </p>
+                    <code className="mt-2 block max-h-20 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">{gcPreview.jvm_args}</code>
+                    {gcPreview.heap_mb !== instanceJvmMemory && (
+                      <p className="mt-1 text-amber-700 dark:text-amber-400">The launch-time safety limit adjusted the heap to leave room for the OS.</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-1 text-muted-foreground">Launch preview unavailable until the backend responds.</p>
+                )}
+              </div>
+
+              {/* Manual flags remain available without making them the default workflow. */}
+              {advancedMode && instanceGcMode === 'manual' && (
+                <div className="space-y-2">
+                  <label htmlFor="instance-java-args" className="text-sm font-medium">Additional JVM flags</label>
+                  <p className="text-xs text-muted-foreground">
+                    Advanced flags are appended after Agora&apos;s managed memory settings. Do not include classpath or native-library flags.
+                  </p>
+                  <textarea
+                    id="instance-java-args"
+                    value={instanceJavaArgs}
+                    onChange={(e) => setInstanceJavaArgs(e.target.value)}
+                    rows={4}
+                    placeholder="-Xss1M -Dsome.setting=true"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono resize-y"
+                  />
+                </div>
+              )}
+
             {/* Allow incompatible override (Advanced Mode only) */}
             {advancedMode && (
               <div className="space-y-2">
@@ -1764,7 +2027,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
                     className="h-4 w-4 accent-primary"
                   />
                   <span className="text-sm">
-                    Allow this Java major even when Minecraft requests a different major
+                    Allow this Java version even when Minecraft requests a different version (⚠ advanced users only)
                   </span>
                 </label>
                 {instanceJavaAllowOverride && (
@@ -1796,7 +2059,14 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
                       instanceJavaPath.trim() || null,
                       instanceJavaAllowOverride,
                     );
-                    setStatus('Java path saved.');
+                    await updateInstanceJvm(
+                      instanceId,
+                      instanceJvmMemory,
+                      instanceGcMode,
+                      instanceAlwaysPreTouch,
+                      instanceJavaArgs.trim(),
+                    );
+                    setStatus('Java settings saved.');
                     // Refresh to update the displayed detail
                     const fresh = await getInstanceDetail(instanceId);
                     setDetail(fresh);
@@ -1814,11 +2084,19 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
               <button
                 onClick={async () => {
                   setInstanceJavaPath('');
+                  setInstanceJavaArgs('');
                   setInstanceJavaInspected(null);
                   setInstanceJavaInspectError(null);
                   try {
-                    await updateInstanceJava(instanceId, null, false);
-                    setStatus('Java path cleared.');
+                     await updateInstanceJava(instanceId, null, false);
+                     await updateInstanceJvm(
+                       instanceId,
+                       instanceJvmMemory,
+                       instanceGcMode,
+                       instanceAlwaysPreTouch,
+                       '',
+                     );
+                    setStatus('Java settings cleared.');
                     const fresh = await getInstanceDetail(instanceId);
                     setDetail(fresh);
                   } catch (e) {
@@ -1831,15 +2109,7 @@ export function InstanceEditor({ instanceId, onBack, onOpenInstanceEditor, onOpe
               </button>
             </div>
           </div>
-        </section>
-      )}
-
-      {activeTab === 'advanced' && (
-        <section className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <h3 className="font-semibold text-sm">Advanced</h3>
-          <p className="text-xs text-muted-foreground">
-            Instance-level advanced settings: custom launch commands, environment variables, wrapper scripts. (Coming soon.)
-          </p>
+          </div>
         </section>
       )}
 

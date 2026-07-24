@@ -153,9 +153,10 @@ impl InstallService {
         if let Some(token) = std::env::var("GITHUB_TOKEN")
             .ok()
             .filter(|value| !value.is_empty())
-            .or_else(crate::auth::get_token)
         {
             resolver = resolver.with_github_token(token);
+        } else if let Some(token) = crate::auth::get_token() {
+            resolver = resolver.with_stored_github_token(token);
         }
         let prepared = resolver.resolve(&intent, &load.manifest).await?;
         InstallPipeline

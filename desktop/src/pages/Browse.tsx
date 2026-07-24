@@ -1,11 +1,10 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Leaf, List, LayoutGrid } from 'lucide-react';
+import { Check, ChevronDown, Leaf, List, LayoutGrid, Search } from 'lucide-react';
 import {
   browseSearch,
   browseLoadMore,
   batchCheckCompat,
   forYouItems,
-  checkInstanceUpdates,
   formatError,
   getInstanceDetail,
   getSetting,
@@ -13,17 +12,25 @@ import {
   listInstances,
   listManifestLoaders,
   listManifestMcVersions,
+  listModrinthCategories,
   type BrowseItemCached,
   type CategoryInfo,
   type RegistryItem,
   type SortOption,
   type ModrinthSearchResult,
+  type ModrinthCategoryInfo,
   type InstanceDetail,
   type InstanceRow,
 } from '../lib/tauri';
 import { useRegistryState } from '../lib/useRegistryState';
 import { RegistryStatusView } from '../components/registry-status-view';
 import { agoraRepositoryUrl } from '../lib/brandConfig';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -44,6 +51,112 @@ const SORTS: { label: string; value: SortOption }[] = [
 ];
 
 const CONTENT_TYPES = ['mod', 'pack', 'shader', 'resourcepack', 'server', 'datapack', 'world'];
+
+const MODRINTH_PROJECT_TYPES: Partial<Record<string, string>> = {
+  mod: 'mod',
+  pack: 'modpack',
+  shader: 'shader',
+  resourcepack: 'resourcepack',
+  server: 'minecraft_java_server',
+  datapack: 'datapack',
+};
+
+const SUPPORTED_MODRINTH_PROJECT_TYPES = new Set(Object.values(MODRINTH_PROJECT_TYPES));
+
+function formatCategoryName(value: string): string {
+  return value.replace(/[-_]/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function modrinthCategoryMatchesContentType(category: ModrinthCategoryInfo, contentType: string | null): boolean {
+  if (contentType === null) return SUPPORTED_MODRINTH_PROJECT_TYPES.has(category.project_type);
+  return MODRINTH_PROJECT_TYPES[contentType] === category.project_type;
+}
+
+function curatedCategoryMatchesContentType(category: CategoryInfo, contentType: string | null): boolean {
+  return contentType === null || category.content_types.includes(contentType);
+}
+
+function CuratedCategoryDropdown({
+  categories,
+  selectedCategory,
+  onSelect,
+  disabled,
+}: {
+  categories: CategoryInfo[];
+  selectedCategory: string | null;
+  onSelect: (category: string | null) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const selected = categories.find((category) => category.id === selectedCategory) ?? null;
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const filteredCategories = normalizedSearch
+    ? categories.filter((category) =>
+        category.display_name.toLocaleLowerCase().includes(normalizedSearch)
+        || category.id.toLocaleLowerCase().includes(normalizedSearch),
+      )
+    : categories;
+
+  return (
+    <DropdownMenu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setSearch('');
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={selected ? `Curated category: ${selected.display_name}` : 'Curated categories'}
+          className={[
+            'inline-flex min-w-48 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+            selected
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-input bg-background hover:bg-accent',
+          ].join(' ')}
+        >
+          <span className="truncate">{selected ? `Curated: ${selected.display_name}` : 'Curated categories'}</span>
+          <ChevronDown aria-hidden className="h-4 w-4 shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72 p-2">
+        <div
+          className="relative mb-2"
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <Search aria-hidden className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <input
+            autoFocus
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search curated categories…"
+            aria-label="Search curated categories"
+            className="w-full rounded-md border border-input bg-background py-2 pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+        <div className="max-h-64 overflow-y-auto">
+          <DropdownMenuItem onSelect={() => onSelect(null)}>
+            <span className="flex-1">All categories</span>
+            {selectedCategory === null && <Check aria-hidden className="h-4 w-4" />}
+          </DropdownMenuItem>
+          {filteredCategories.map((category) => (
+            <DropdownMenuItem key={category.id} onSelect={() => onSelect(category.id)}>
+              <span className="flex-1 truncate">{category.display_name}</span>
+              {category.id === selectedCategory && <Check aria-hidden className="h-4 w-4" />}
+            </DropdownMenuItem>
+          ))}
+          {filteredCategories.length === 0 && (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">No curated categories found.</p>
+          )}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 type BrowseItem = BrowseItemCached;
 
@@ -171,7 +284,7 @@ function RegistryRecoveryShell({
   );
 }
 
-export function Browse({ onSelectMod, initialInstanceId }: { onSelectMod?: (id: string) => void; initialInstanceId?: string }) {
+export function Browse({ onSelectMod, initialInstanceId, initialContentType }: { onSelectMod?: (id: string) => void; initialInstanceId?: string; initialContentType?: string }) {
   // Registry availability — show recovery panel when missing.
   // This is the ONLY hook call in this component, so the hook count is stable.
   const registry = useRegistryState();
@@ -202,12 +315,13 @@ export function Browse({ onSelectMod, initialInstanceId }: { onSelectMod?: (id: 
     );
   }
 
-  return <BrowseContent onSelectMod={onSelectMod} initialInstanceId={initialInstanceId} registryState={registry.state} registryStatus={registry.status} registryError={registry.error} registryActions={registry.actions} />;
+  return <BrowseContent onSelectMod={onSelectMod} initialInstanceId={initialInstanceId} initialContentType={initialContentType} registryState={registry.state} registryStatus={registry.status} registryError={registry.error} registryActions={registry.actions} />;
 }
 
 function BrowseContent({
   onSelectMod,
   initialInstanceId,
+  initialContentType,
   registryState: regState,
   registryStatus: regStatus,
   registryError: regError,
@@ -215,6 +329,7 @@ function BrowseContent({
 }: {
   onSelectMod?: (id: string) => void;
   initialInstanceId?: string;
+  initialContentType?: string;
   registryState: import('../lib/useRegistryState').RegistryState;
   registryStatus: import('../lib/tauri').RegistryStatus | null;
   registryError: string | null;
@@ -224,6 +339,7 @@ function BrowseContent({
   const [items, setItems] = useState<BrowseItemCached[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
+  const [modrinthCategories, setModrinthCategories] = useState<ModrinthCategoryInfo[]>([]);
   const [sort, setSort] = useState<SortOption>(() => {
     try {
       const saved = localStorage.getItem('browse_sort');
@@ -232,7 +348,7 @@ function BrowseContent({
     return 'net_score';
   });
   const [category, setCategory] = useState<string | null>(null);
-  const [contentType, setContentType] = useState<string | null>(null);
+  const [contentType, setContentType] = useState<string | null>(initialContentType ?? 'mod');
   const [mcVersion, setMcVersion] = useState<string | null>(null);
   const [loader, setLoader] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -246,7 +362,7 @@ function BrowseContent({
   });
 
   // ---- Separate loading/error state for metadata vs search ----
-  const [, setMetaLoading] = useState(true);
+  const [metaLoading, setMetaLoading] = useState(true);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [searchLoading, setSearchLoading] = useState(true);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -266,10 +382,25 @@ function BrowseContent({
   const [instances, setInstances] = useState<InstanceRow[]>([]);
   const [activeInstanceId, setActiveInstanceId] = useState('');
   const [activeInstance, setActiveInstance] = useState<InstanceDetail | null>(null);
-  const [activeUpdateIds, setActiveUpdateIds] = useState<Set<string>>(new Set());
   const [compatibilityById, setCompatibilityById] = useState<Record<string, string>>({});
   const [contextLoading, setContextLoading] = useState(false);
   const [contextError, setContextError] = useState<string | null>(null);
+
+  const visibleCuratedCategories = useMemo(
+    () => categories.filter((item) => curatedCategoryMatchesContentType(item, contentType)),
+    [categories, contentType],
+  );
+  const visibleModrinthCategories = useMemo(() => {
+    const seen = new Set<string>();
+    return modrinthCategories
+      .filter((item) => modrinthCategoryMatchesContentType(item, contentType))
+      .filter((item) => {
+        if (seen.has(item.name)) return false;
+        seen.add(item.name);
+        return true;
+      })
+      .sort((left, right) => formatCategoryName(left.name).localeCompare(formatCategoryName(right.name)));
+  }, [contentType, modrinthCategories]);
 
   useEffect(() => {
     let cancelled = false;
@@ -283,18 +414,13 @@ function BrowseContent({
     setActiveInstanceId(instanceId);
     setContextError(null);
     setActiveInstance(null);
-    setActiveUpdateIds(new Set());
     setCompatibilityById({});
     if (!instanceId) return;
     setContextLoading(true);
     try {
-      const [detail, updates] = await Promise.all([
-        getInstanceDetail(instanceId),
-        checkInstanceUpdates(instanceId),
-      ]);
+      const detail = await getInstanceDetail(instanceId);
       if (!detail) throw new Error('The selected instance no longer exists.');
       setActiveInstance(detail);
-      setActiveUpdateIds(new Set(updates.map((update) => update.mod_jar_id)));
       setMcVersion(detail.row.minecraft_version);
       setLoader(detail.row.loader);
     } catch (cause) {
@@ -367,7 +493,7 @@ function BrowseContent({
       loader: activeInstance.row.loader,
       compatibility: (compatibilityById[item.id] ?? '') as ItemContext['compatibility'],
       installed,
-      updateAvailable: activeUpdateIds.has(item.id),
+      updateAvailable: false,
       whyRecommended: sort === 'for_you'
         ? item.registryItem?.recommendation_reason
           ?? `Recommended by Agora's curated score for ${activeInstance.row.loader} ${activeInstance.row.minecraft_version}.`
@@ -389,15 +515,39 @@ function BrowseContent({
     [sort, category, contentType, mcVersion, loader, debouncedQuery],
   );
 
-  // ---- Load categories (metadata only — separate from search) ----
+  // ---- Load category metadata — separate from search ----
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         if (!cancelled) setMetaLoading(true);
         setMetaError(null);
-        const cats = await listCategories();
-        if (!cancelled) setCategories(cats);
+        const [curatedResult, modrinthEnabledResult] = await Promise.allSettled([
+          listCategories(),
+          getSetting('modrinth_enabled'),
+        ]);
+        if (cancelled) return;
+
+        if (curatedResult.status === 'fulfilled') {
+          setCategories(Array.isArray(curatedResult.value) ? curatedResult.value : []);
+        } else {
+          setMetaError(`Curated categories: ${formatError(curatedResult.reason)}`);
+        }
+
+        const modrinthEnabled = modrinthEnabledResult.status === 'fulfilled'
+          && (modrinthEnabledResult.value === true || modrinthEnabledResult.value === 'true');
+        if (modrinthEnabled) {
+          try {
+            const result = await listModrinthCategories();
+            if (!cancelled) setModrinthCategories(Array.isArray(result) ? result : []);
+          } catch (error) {
+            if (!cancelled) {
+              setMetaError((current) => [current, `Modrinth categories: ${formatError(error)}`].filter(Boolean).join(' '));
+            }
+          }
+        } else {
+          setModrinthCategories([]);
+        }
       } catch (e) {
         if (!cancelled) setMetaError(formatError(e));
       } finally {
@@ -407,7 +557,14 @@ function BrowseContent({
     return () => {
       cancelled = true;
     };
-  }, [contentType]);
+  }, []);
+
+  useEffect(() => {
+    if (metaLoading || category === null) return;
+    const isAvailable = visibleCuratedCategories.some((item) => item.id === category)
+      || visibleModrinthCategories.some((item) => item.name === category);
+    if (!isAvailable) setCategory(null);
+  }, [category, metaLoading, visibleCuratedCategories, visibleModrinthCategories]);
 
   // ---- Load loaders and MC versions (static metadata) ----
   useEffect(() => {
@@ -565,9 +722,9 @@ function BrowseContent({
       <section>
         <div className="flex items-center gap-3 mb-2">
           <h2 className="text-2xl font-bold">Browse</h2>
-          <span className="rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-xs font-medium uppercase tracking-wide">
+          {/* <span className="rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-xs font-medium uppercase tracking-wide">
             Preview
-          </span>
+          </span> */}
         </div>
         <p className="text-muted-foreground">
           Curated mods, packs, shaders, resource packs, and more.
@@ -666,6 +823,7 @@ function BrowseContent({
           </button>
         </div>
         <select
+          aria-label="Content type"
           value={contentType ?? ''}
           onChange={(e) => setContentType(e.target.value || null)}
           disabled={sort === 'for_you'}
@@ -732,34 +890,57 @@ function BrowseContent({
         </div>
       )}
 
-      {/* Category chips */}
-      {sort !== 'for_you' && categories.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setCategory(null)}
-            className={[
-              'px-3 py-1 rounded-full text-sm border transition-colors',
-              category === null
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'border-border hover:bg-accent',
-            ].join(' ')}
-          >
-            All
-          </button>
-          {categories.map((c) => (
+      {/* Category filters */}
+      {sort !== 'for_you' && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Modrinth categories</p>
+              <p className="text-xs text-muted-foreground">
+                {contentType ? `Categories for ${contentType} content.` : 'Combined categories for all content types.'}
+              </p>
+            </div>
+            <CuratedCategoryDropdown
+              categories={visibleCuratedCategories}
+              selectedCategory={category}
+              onSelect={setCategory}
+              disabled={metaLoading || visibleCuratedCategories.length === 0}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
             <button
-              key={c.id}
-              onClick={() => setCategory(c.id)}
+              type="button"
+              onClick={() => setCategory(null)}
               className={[
                 'px-3 py-1 rounded-full text-sm border transition-colors',
-                category === c.id
+                category === null
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'border-border hover:bg-accent',
               ].join(' ')}
             >
-              {c.display_name}
+              All
             </button>
-          ))}
+            {visibleModrinthCategories.map((item) => (
+              <button
+                type="button"
+                key={item.name}
+                onClick={() => setCategory(item.name)}
+                className={[
+                  'px-3 py-1 rounded-full text-sm border transition-colors',
+                  category === item.name
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border hover:bg-accent',
+                ].join(' ')}
+              >
+                {formatCategoryName(item.name)}
+              </button>
+            ))}
+            {!metaLoading && visibleModrinthCategories.length === 0 && (
+              <span className="self-center text-xs text-muted-foreground">
+                No Modrinth categories are available for this content type.
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -896,7 +1077,11 @@ function BrowseContent({
         </div>
       )}
       {hasMore && !searchLoading && (
-        <div ref={sentinelRef} className="py-6 text-center text-sm text-muted-foreground">
+        <div
+          ref={sentinelRef}
+          data-testid="browse-load-sentinel"
+          className="py-6 text-center text-sm text-muted-foreground"
+        >
           {loadMoreLoading ? 'Loading more…' : ''}
         </div>
       )}

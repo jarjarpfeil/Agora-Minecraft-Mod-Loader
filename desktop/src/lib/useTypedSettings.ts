@@ -5,11 +5,11 @@ import { formatError, getSetting, setSetting } from './tauri';
 // Typed setting definitions
 // ---------------------------------------------------------------------------
 
-/** Each setting is defined with a key, a parser, and a serializer. */
+/** Each setting is defined with a key, a parser, and a stored-value mapper. */
 interface SettingDef<T> {
   key: string;
   parse: (raw: unknown) => T;
-  serialize: (value: T) => string;
+  toStoredValue: (value: T) => unknown;
 }
 
 export function boolDef(key: string): SettingDef<boolean> {
@@ -21,7 +21,7 @@ export function boolDef(key: string): SettingDef<boolean> {
       if (typeof raw === 'number') return raw === 1;
       return false;
     },
-    serialize: (v) => String(v),
+    toStoredValue: (v) => v,
   };
 }
 
@@ -33,7 +33,7 @@ export function stringDef(key: string): SettingDef<string> {
       if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
       return '';
     },
-    serialize: (v) => v,
+    toStoredValue: (v) => v,
   };
 }
 
@@ -48,7 +48,7 @@ export function numberDef(key: string, fallback: number): SettingDef<number> {
       }
       return fallback;
     },
-    serialize: (v) => String(v),
+    toStoredValue: (v) => v,
   };
 }
 
@@ -59,7 +59,7 @@ export function enumDef<T extends string>(key: string, valid: readonly T[], fall
       if (typeof raw === 'string' && valid.includes(raw as T)) return raw as T;
       return fallback;
     },
-    serialize: (v) => v,
+    toStoredValue: (v) => v,
   };
 }
 
@@ -71,7 +71,7 @@ export function nullableDef<T>(key: string, inner: SettingDef<T>): SettingDef<T 
       if (raw === null || raw === undefined || raw === '') return null;
       return inner.parse(raw);
     },
-    serialize: (v) => (v === null ? '' : inner.serialize(v)),
+    toStoredValue: (v) => (v === null ? null : inner.toStoredValue(v)),
   };
 }
 
@@ -200,9 +200,9 @@ export function useTypedSettings(): UseTypedSettingsReturn {
         [def.key]: { status: 'write-pending' },
       }));
 
-      const serialized = def.serialize(value);
+      const storedValue = def.toStoredValue(value);
       try {
-        await setSetting(def.key, serialized);
+        await setSetting(def.key, storedValue);
         if (mountedRef.current) {
           setValues((prev) => ({ ...prev, [name]: value }));
           setStatuses((prev) => ({

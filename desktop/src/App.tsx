@@ -5,6 +5,7 @@ import { Home } from './pages/Home';
 import { Browse } from './pages/Browse';
 import { Instances } from './pages/Instances';
 import { Governance } from './pages/Governance';
+import { Guide } from './pages/Guide';
 import { Settings } from './pages/Settings';
 import AiChatPage from './pages/AiChatPage';
 import { Onboarding } from './pages/Onboarding';
@@ -18,13 +19,14 @@ import { ToastContainer } from './components/Toast';
 import { useDestination, type Destination, type Tab } from './lib/useDestination';
 import { useProcessController } from './lib/useProcessController';
 import { BrandMark } from './components/BrandMark';
-import { Bot, Boxes, Compass, HomeIcon, Landmark, SettingsIcon } from 'lucide-react';
+import { BookOpen, Bot, Boxes, Compass, HomeIcon, Landmark, SettingsIcon } from 'lucide-react';
 
 const BASE_TABS = [
   { id: 'home' as Tab, label: 'Home', icon: HomeIcon },
   { id: 'browse' as Tab, label: 'Browse', icon: Compass },
   { id: 'instances' as Tab, label: 'My Instances', icon: Boxes },
   { id: 'governance' as Tab, label: 'Community Governance', icon: Landmark },
+  { id: 'guide' as Tab, label: 'Help & Guide', icon: BookOpen },
   { id: 'settings' as Tab, label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -306,6 +308,7 @@ export default function App() {
     BASE_TABS[3],
     ...(aiChatEnabled ? [AI_TAB] : []),
     BASE_TABS[4],
+    BASE_TABS[5],
   ];
 
   // Resolve the current UI state from the destination.
@@ -336,6 +339,10 @@ export default function App() {
     destination.type === 'tab' && destination.tab === 'browse'
       ? destination.browseInstanceId
       : undefined;
+  const browseContentType =
+    destination.type === 'tab' && destination.tab === 'browse'
+      ? destination.browseContentType
+      : undefined;
   const instanceEditorId =
     destination.type === 'instance-detail'
       ? destination.instanceId
@@ -355,6 +362,16 @@ export default function App() {
     repairAndRetry,
     useDelegatedLaunch,
   } = processController;
+
+  const handleInstanceEditorLaunch = async (instanceId: string) => {
+    let directLaunch = false;
+    try {
+      directLaunch = (await getSetting('launch_mode')) === 'direct';
+    } catch {
+      // Delegated launch is the safe default when the setting is unavailable.
+    }
+    return startLaunch(instanceId, directLaunch);
+  };
 
   const handleModDetailBack = () => {
     if (canGoBack) {
@@ -468,6 +485,7 @@ export default function App() {
                 )}
                 {effectiveTab === 'governance' && <Governance />}
                 {effectiveTab === 'ai' && aiChatEnabled && <AiChatPage />}
+                {effectiveTab === 'guide' && <Guide onNavigateTab={navigateToTab} />}
                 {effectiveTab === 'settings' && (
                   <Settings
                     onResetLayout={() => {
@@ -489,6 +507,7 @@ export default function App() {
                 <Browse
                   onSelectMod={handleBrowseSelectMod}
                   initialInstanceId={browseInstanceId}
+                  initialContentType={browseContentType}
                 />
               </div>
             )}
@@ -500,6 +519,7 @@ export default function App() {
                   onOpenInstanceEditor={(id) => navigateToInstanceDetail(id)}
                   onOpenModDetail={handleInstanceEditorOpenMod}
                   onOpenBrowseForInstance={navigateToBrowse}
+                  onLaunch={handleInstanceEditorLaunch}
                 />
               </div>
             )}

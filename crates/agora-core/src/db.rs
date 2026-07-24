@@ -4,7 +4,7 @@ use serde::Serialize;
 
 /// Expected schema version for the mutable local SQLite database.
 /// Migrations are applied sequentially on startup.
-pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 4;
+pub const LOCAL_STATE_SCHEMA_VERSION: i64 = 5;
 
 /// Open a read-write connection to the local state database.
 ///
@@ -34,9 +34,7 @@ pub fn init_local_state_db(db_path: &std::path::PathBuf) -> anyhow::Result<()> {
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
     run_migrations(&conn)?;
 
-    // Network feature toggles may be stored as JSON strings ("true"/"false")
-    // or JSON booleans (true/false); is_network_enabled and
-    // is_fail_closed_enabled accept both representations.
+    // Network feature toggles default to enabled for backward compatibility.
     // Pre-existing keys default to enabled for backward compatibility.
     for key in [
         "network_modrinth_enabled",
@@ -47,12 +45,12 @@ pub fn init_local_state_db(db_path: &std::path::PathBuf) -> anyhow::Result<()> {
         "network_adoptium_enabled",
     ] {
         if get_setting(&conn, key).ok().flatten().is_none() {
-            set_setting(&conn, key, &serde_json::Value::String("true".to_string()))?;
+            set_setting(&conn, key, &serde_json::Value::Bool(true))?;
         }
     }
 
     // Launch-network toggles for Mojang metadata, Mojang content, and modloader
-    // are first-party enabled: they default to "true" so that a fresh or upgraded DB
+    // are first-party enabled: they default to true so that a fresh or upgraded DB
     // allows network access. Cached files continue to work when disabled; the user
     // must explicitly disable the category to block downloads.
     for key in [
@@ -61,7 +59,7 @@ pub fn init_local_state_db(db_path: &std::path::PathBuf) -> anyhow::Result<()> {
         "network_loader_enabled",
     ] {
         if get_setting(&conn, key).ok().flatten().is_none() {
-            set_setting(&conn, key, &serde_json::Value::String("true".to_string()))?;
+            set_setting(&conn, key, &serde_json::Value::Bool(true))?;
         }
     }
 
@@ -75,7 +73,55 @@ pub fn init_local_state_db(db_path: &std::path::PathBuf) -> anyhow::Result<()> {
         }
     }
 
+    normalize_boolean_settings(&conn)?;
+
     Ok(())
+}
+
+const BOOLEAN_SETTING_KEYS: &[&str] = &[
+    "modrinth_enabled",
+    "ai_chat_enabled",
+    "ai_mcp_enabled",
+    "always_pre_touch",
+    "onboarding_complete",
+    "network_modrinth_enabled",
+    "network_modrinth_cdn_enabled",
+    "network_registry_sync_enabled",
+    "network_github_oauth_enabled",
+    "network_msa_enabled",
+    "network_adoptium_enabled",
+    "network_mojang_metadata_enabled",
+    "network_mojang_content_enabled",
+    "network_loader_enabled",
+];
+
+/// Convert legacy boolean encodings to genuine JSON booleans on startup.
+fn normalize_boolean_settings(conn: &Connection) -> anyhow::Result<()> {
+    for key in BOOLEAN_SETTING_KEYS {
+        let Some(value) = get_setting(conn, key)? else {
+            continue;
+        };
+        let Some(normalized) = parse_boolean_value(&value) else {
+            continue;
+        };
+        if !matches!(value, serde_json::Value::Bool(_)) {
+            set_setting(conn, key, &serde_json::Value::Bool(normalized))?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_boolean_value(value: &serde_json::Value) -> Option<bool> {
+    match value {
+        serde_json::Value::Bool(value) => Some(*value),
+        serde_json::Value::String(value) => match value.as_str() {
+            "true" | "1" => Some(true),
+            "false" | "0" => Some(false),
+            _ => None,
+        },
+        serde_json::Value::Number(value) => value.as_i64().map(|number| number == 1),
+        _ => None,
+    }
 }
 
 /// Apply sequential migrations up to [LOCAL_STATE_SCHEMA_VERSION].
@@ -110,7 +156,7 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
                  is_locked BOOLEAN NOT NULL DEFAULT 0,
                  last_launched_at TEXT,
                  jvm_memory_mb INTEGER NOT NULL DEFAULT 4096,
-                 jvm_gc TEXT NOT NULL DEFAULT 'g1gc',
+                  jvm_gc TEXT NOT NULL DEFAULT 'auto',
                  jvm_custom_args TEXT NOT NULL DEFAULT '',
                  jvm_always_pre_touch INTEGER NOT NULL DEFAULT 1,
                  created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -231,6 +277,15 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
         )?;
     }
 
+    // Migration v5: new instances use the hardware- and Java-aware GC
+    // selector. Existing explicit choices remain untouched.
+    if current < 5 {
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version (version) VALUES (5)",
+            [],
+        )?;
+    }
+
     if current > target {
         anyhow::bail!("local_state.db schema version {current} is newer than supported {target}");
     }
@@ -332,16 +387,52 @@ pub fn upsert_instance(conn: &Connection, row: &InstanceRow) -> anyhow::Result<(
     Ok(())
 }
 
-/// Update the Java path and incompatible override for an instance.
+/// Update per-instance Java settings. `custom_args` is optional so Java
+/// runtime recovery can change only the executable path and compatibility flag.
 pub fn update_instance_java(
     conn: &Connection,
     instance_id: &str,
     java_path: Option<&str>,
     allow_incompatible: bool,
+    custom_args: Option<&str>,
+) -> anyhow::Result<()> {
+    if let Some(custom_args) = custom_args {
+        conn.execute(
+            "UPDATE user_instances SET java_path = ?1, java_incompatible_override = ?2, jvm_custom_args = ?3 WHERE instance_id = ?4",
+            rusqlite::params![java_path, allow_incompatible as i64, custom_args, instance_id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE user_instances SET java_path = ?1, java_incompatible_override = ?2 WHERE instance_id = ?3",
+            rusqlite::params![java_path, allow_incompatible as i64, instance_id],
+        )?;
+    }
+    Ok(())
+}
+
+/// Update the structured JVM tuning controls for an instance.
+pub fn update_instance_jvm(
+    conn: &Connection,
+    instance_id: &str,
+    memory_mb: i64,
+    gc: &str,
+    always_pre_touch: bool,
+    custom_args: &str,
 ) -> anyhow::Result<()> {
     conn.execute(
-        "UPDATE user_instances SET java_path = ?1, java_incompatible_override = ?2 WHERE instance_id = ?3",
-        rusqlite::params![java_path, allow_incompatible as i64, instance_id],
+        "UPDATE user_instances
+         SET jvm_memory_mb = ?1,
+             jvm_gc = ?2,
+             jvm_always_pre_touch = ?3,
+             jvm_custom_args = ?4
+         WHERE instance_id = ?5",
+        rusqlite::params![
+            memory_mb,
+            gc,
+            always_pre_touch as i64,
+            custom_args,
+            instance_id
+        ],
     )?;
     Ok(())
 }
@@ -812,7 +903,7 @@ mod tests {
             let val = get_setting(&conn, key).unwrap();
             assert_eq!(
                 val,
-                Some(serde_json::json!("true")),
+                Some(serde_json::json!(true)),
                 "{key} should default to true"
             );
         }
@@ -828,10 +919,29 @@ mod tests {
             let val = get_setting(&conn, key).unwrap();
             assert_eq!(
                 val,
-                Some(serde_json::json!("true")),
+                Some(serde_json::json!(true)),
                 "{key} should default to true"
             );
         }
+    }
+
+    #[test]
+    fn test_init_normalizes_legacy_boolean_settings() {
+        let (conn, path) = test_db();
+        set_setting(&conn, "modrinth_enabled", &serde_json::json!("true")).unwrap();
+        set_setting(&conn, "always_pre_touch", &serde_json::json!(0)).unwrap();
+        drop(conn);
+
+        init_local_state_db(&path).unwrap();
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(
+            get_setting(&conn, "modrinth_enabled").unwrap(),
+            Some(serde_json::json!(true))
+        );
+        assert_eq!(
+            get_setting(&conn, "always_pre_touch").unwrap(),
+            Some(serde_json::json!(false))
+        );
     }
 
     #[test]
@@ -1118,7 +1228,14 @@ mod tests {
         upsert_instance(&conn, &row).unwrap();
 
         // Set per-instance Java path
-        update_instance_java(&conn, "java-test-instance", Some("/custom/java"), false).unwrap();
+        update_instance_java(
+            &conn,
+            "java-test-instance",
+            Some("/custom/java"),
+            false,
+            None,
+        )
+        .unwrap();
 
         // Read back and verify
         let fetched = get_instance(&conn, "java-test-instance").unwrap().unwrap();
@@ -1126,10 +1243,11 @@ mod tests {
         assert!(!fetched.java_incompatible_override);
 
         // Clear per-instance Java path
-        update_instance_java(&conn, "java-test-instance", None, true).unwrap();
+        update_instance_java(&conn, "java-test-instance", None, true, Some("-XX:+UseZGC")).unwrap();
         let fetched = get_instance(&conn, "java-test-instance").unwrap().unwrap();
         assert!(fetched.java_path.is_none());
         assert!(fetched.java_incompatible_override);
+        assert_eq!(fetched.jvm_custom_args, "-XX:+UseZGC");
     }
 
     #[test]

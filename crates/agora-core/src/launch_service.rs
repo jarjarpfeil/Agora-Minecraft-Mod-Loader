@@ -111,6 +111,7 @@ struct LaunchInputs {
     jvm_memory_mb: i64,
     jvm_gc_profile: Option<crate::gc::GcProfile>,
     jvm_custom_args: String,
+    jvm_always_pre_touch: bool,
     extra_game_args: Vec<String>,
 }
 
@@ -283,10 +284,17 @@ impl LaunchService {
         let layout = crate::minecraft_runtime::ensure_runtime_layout(&minecraft_root)?;
         let jvm_gc_profile = match row.jvm_gc.to_ascii_lowercase().as_str() {
             "zgc" | "low_latency" => Some(crate::gc::GcProfile::LowLatency),
-            "g1gc" | "high_efficiency" => Some(crate::gc::GcProfile::HighEfficiency),
+            // `g1gc` was the implicit default before Auto was persisted.
+            "high_efficiency" => Some(crate::gc::GcProfile::HighEfficiency),
             "manual" => Some(crate::gc::GcProfile::Manual),
             _ => None,
         };
+        let global_pre_touch = crate::db::get_setting(&conn, "jvm_always_pre_touch")
+            .ok()
+            .flatten()
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        let jvm_always_pre_touch = row.jvm_always_pre_touch && global_pre_touch;
 
         Ok(LaunchInputs {
             mode: request.mode,
@@ -321,6 +329,7 @@ impl LaunchService {
             jvm_memory_mb: row.jvm_memory_mb,
             jvm_gc_profile,
             jvm_custom_args: row.jvm_custom_args,
+            jvm_always_pre_touch,
             extra_game_args: Vec::new(),
         })
     }
@@ -458,8 +467,8 @@ impl LaunchService {
             request.jvm_memory_mb,
             &request.jvm_custom_args,
             request.jvm_gc_profile,
-        )
-        .jvm_args;
+        );
+        let gc_args = crate::gc::apply_pre_touch(&gc_args.jvm_args, request.jvm_always_pre_touch);
         let user_jvm_args = crate::launch_planner::parse_argument_string(&gc_args)?;
         let prepared = crate::launch_planner::build_command(BuildCommandRequest {
             plan: &materialized,

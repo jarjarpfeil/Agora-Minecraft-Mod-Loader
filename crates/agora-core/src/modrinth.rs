@@ -479,7 +479,6 @@ pub async fn list_modrinth_categories(
         .await
         .map(|tags| {
             tags.into_iter()
-                .filter(|t| t.project_type == "mod")
                 .map(|t| ModrinthCategoryInfo {
                     name: t.name,
                     project_type: t.project_type,
@@ -976,7 +975,6 @@ impl ModrinthService {
             .await
             .map(|tags| {
                 tags.into_iter()
-                    .filter(|t| t.project_type == "mod")
                     .map(|t| ModrinthCategoryInfo {
                         name: t.name,
                         project_type: t.project_type,

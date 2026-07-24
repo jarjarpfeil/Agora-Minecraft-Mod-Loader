@@ -116,6 +116,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
   const [flaggingId, setFlaggingId] = useState<number | null>(null);
   const [flagResult, setFlagResult] = useState<string | null>(null);
   const [flagError, setFlagError] = useState<string | null>(null);
+  const governanceLoadedForRef = useRef<string | null>(null);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'description' | 'gallery' | 'versions' | 'agora'>('description');
@@ -302,8 +303,10 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
     return () => { cancelled = true; };
   }, [createLoader, item?.compatible_versions_json, createMcVersion]);
 
-  // Load reviews, auth status, profile, and rate limit on mount
+  // Validate GitHub only when governance/review controls become visible.
   useEffect(() => {
+    if (activeTab !== 'agora' || governanceLoadedForRef.current === itemId) return;
+    governanceLoadedForRef.current = itemId;
     let cancelled = false;
     (async () => {
       try {
@@ -321,7 +324,7 @@ export function ModDetail({ itemId, onBack, onOpenInstanceEditor }: { itemId: st
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [activeTab, itemId]);
 
   // Load reviews when item is available
   useEffect(() => {
